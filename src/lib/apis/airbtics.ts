@@ -112,9 +112,13 @@ async function findMarketId(postcode: string, apiKey: string): Promise<number | 
     'EX': 'Exeter', 'PL': 'Plymouth', 'BT': 'Belfast', 'AB': 'Aberdeen',
   };
 
-  // Find the best city name match
+  // Find the best city name match — sort by prefix length (longest first)
+  // so "NE" matches Newcastle before "N" matches London
   let searchQuery = outwardCode;
-  for (const [prefix, city] of Object.entries(postcodeToCity)) {
+  const sortedPrefixes = Object.entries(postcodeToCity).sort(
+    ([a], [b]) => b.length - a.length,
+  );
+  for (const [prefix, city] of sortedPrefixes) {
     if (outwardCode.startsWith(prefix)) {
       searchQuery = city;
       break;
