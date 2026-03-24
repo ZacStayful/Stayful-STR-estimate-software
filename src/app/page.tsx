@@ -1568,8 +1568,8 @@ export default function HomePage() {
             &copy; {new Date().getFullYear()} Stayful. All rights reserved.
           </p>
           <p className="mt-2">
-            Data sourced from Airbtics, AirDNA, OpenRent, and public market
-            research.
+            Data sourced from Airbtics, PropertyData, Google Places, Ticketmaster,
+            and public market research.
           </p>
         </div>
       </footer>
