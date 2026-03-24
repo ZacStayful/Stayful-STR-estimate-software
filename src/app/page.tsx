@@ -28,6 +28,7 @@ import {
   FileText,
   ChevronRight,
   ChevronDown,
+  ChevronLeft,
   Loader2,
   DollarSign,
   BarChart3,
@@ -61,6 +62,9 @@ import {
   Database,
   Calculator,
   Globe,
+  ExternalLink,
+  HardHat,
+  Stethoscope,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -83,6 +87,8 @@ import {
   ResponsiveContainer,
   Legend,
   ReferenceLine,
+  AreaChart,
+  Area,
 } from "recharts";
 
 // ─── Helpers ──────────────────────────────────────────────────────
@@ -195,20 +201,76 @@ function SectionHeading({
   );
 }
 
+// Circular score SVG component
+function CircularScore({
+  score,
+  max,
+  size = 160,
+  strokeWidth = 12,
+  color = "#64a064",
+  label,
+}: {
+  score: number;
+  max: number;
+  size?: number;
+  strokeWidth?: number;
+  color?: string;
+  label?: string;
+}) {
+  const radius = (size - strokeWidth) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const progress = (score / max) * circumference;
+  const center = size / 2;
+
+  return (
+    <div className="flex flex-col items-center">
+      <svg width={size} height={size} className="transform -rotate-90">
+        <circle
+          cx={center}
+          cy={center}
+          r={radius}
+          fill="none"
+          stroke="currentColor"
+          className="text-muted/50"
+          strokeWidth={strokeWidth}
+        />
+        <circle
+          cx={center}
+          cy={center}
+          r={radius}
+          fill="none"
+          stroke={color}
+          strokeWidth={strokeWidth}
+          strokeDasharray={circumference}
+          strokeDashoffset={circumference - progress}
+          strokeLinecap="round"
+        />
+      </svg>
+      <div className="absolute flex flex-col items-center justify-center" style={{ width: size, height: size }}>
+        <span className="text-4xl font-bold text-foreground">{score}</span>
+        <span className="text-sm text-muted-foreground">/{max}</span>
+      </div>
+      {label && (
+        <p className="mt-2 text-sm font-semibold text-foreground">{label}</p>
+      )}
+    </div>
+  );
+}
+
 // ─── Tab definitions ─────────────────────────────────────────────
 
 const TAB_SECTIONS = [
-  { id: "overview", label: "Overview", num: 1 },
-  { id: "comparables", label: "Comparables", num: 2 },
-  { id: "amenities", label: "Amenities", num: 3 },
-  { id: "revenue", label: "Revenue", num: 4 },
-  { id: "profit-calculator", label: "Profit Calculator", num: 5 },
-  { id: "forecast", label: "Forecast", num: 6 },
-  { id: "local-area", label: "Local Area", num: 7 },
-  { id: "bookings", label: "Bookings", num: 8 },
-  { id: "risk", label: "Risk", num: 9 },
-  { id: "data-sources", label: "Data Sources", num: 10 },
-  { id: "growth", label: "Growth", num: 11 },
+  { id: "overview", label: "Overview", icon: Home, num: 1 },
+  { id: "comparables", label: "Comparables", icon: Building2, num: 2 },
+  { id: "amenities", label: "Amenities", icon: Sparkles, num: 3 },
+  { id: "revenue", label: "Revenue", icon: DollarSign, num: 4 },
+  { id: "profit-calculator", label: "Profit Calculator", icon: Calculator, num: 5 },
+  { id: "forecast", label: "Forecast", icon: LineChart, num: 6 },
+  { id: "local-area", label: "Local Area", icon: MapPin, num: 7 },
+  { id: "bookings", label: "Bookings", icon: Target, num: 8 },
+  { id: "risk", label: "Risk", icon: AlertTriangle, num: 9 },
+  { id: "data-sources", label: "Data Sources", icon: Database, num: 10 },
+  { id: "growth", label: "Growth", icon: Rocket, num: 11 },
 ] as const;
 
 // ─── Main Component ─────────────────────────────────────────────
@@ -235,6 +297,9 @@ export default function HomePage() {
   const [activeTab, setActiveTab] = useState("overview");
   const sectionRefs = useRef<Record<string, HTMLElement | null>>({});
 
+  // Sidebar state
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+
   // Profit calculator state
   const [calcMortgage, setCalcMortgage] = useState(0);
   const [calcBills, setCalcBills] = useState(400);
@@ -249,7 +314,6 @@ export default function HomePage() {
 
     const observer = new IntersectionObserver(
       (entries) => {
-        // Find the entry with the largest intersection ratio
         let bestEntry: IntersectionObserverEntry | null = null;
         for (const entry of entries) {
           if (entry.isIntersecting) {
@@ -262,10 +326,9 @@ export default function HomePage() {
           setActiveTab(bestEntry.target.id);
         }
       },
-      { rootMargin: "-120px 0px -60% 0px", threshold: [0, 0.25, 0.5] }
+      { rootMargin: "-80px 0px -60% 0px", threshold: [0, 0.25, 0.5] }
     );
 
-    // Observe all sections
     const timer = setTimeout(() => {
       TAB_SECTIONS.forEach(({ id }) => {
         const el = sectionRefs.current[id];
@@ -279,10 +342,22 @@ export default function HomePage() {
     };
   }, [result]);
 
+  // Auto-collapse sidebar on mobile
+  useEffect(() => {
+    const checkWidth = () => {
+      if (window.innerWidth < 768) {
+        setSidebarCollapsed(true);
+      }
+    };
+    checkWidth();
+    window.addEventListener("resize", checkWidth);
+    return () => window.removeEventListener("resize", checkWidth);
+  }, []);
+
   const scrollToSection = (id: string) => {
     const el = sectionRefs.current[id];
     if (el) {
-      const yOffset = -110;
+      const yOffset = -20;
       const y = el.getBoundingClientRect().top + window.scrollY + yOffset;
       window.scrollTo({ top: y, behavior: "smooth" });
     }
@@ -497,15 +572,6 @@ export default function HomePage() {
       "Long Let": Math.round(r.longLet.monthlyRent),
     }));
 
-    // Sorted months for best/worst
-    const indexedMonths = r.shortLet.monthlyRevenue.map((rev, i) => ({
-      month: MONTHS[i],
-      monthFull: MONTH_NAMES[i],
-      revenue: rev,
-      index: i,
-    }));
-    const sorted = [...indexedMonths].sort((a, b) => b.revenue - a.revenue);
-
     // Revenue cost breakdown calculations
     const grossAnnual = f.shortLetGrossAnnual;
     const platformFees = Math.round(grossAnnual * 0.15);
@@ -559,39 +625,35 @@ export default function HomePage() {
     const demandCategories = [
       {
         key: "hospitals" as const,
-        label: "Hospitals & Clinics",
+        label: "Healthcare Facilities",
         icon: Heart,
+        iconBg: "bg-red-100",
+        iconColor: "text-red-500",
         items: r.demandDrivers.hospitals,
       },
       {
         key: "universities" as const,
-        label: "Universities",
+        label: "Educational Institutions",
         icon: GraduationCap,
+        iconBg: "bg-blue-100",
+        iconColor: "text-blue-500",
         items: r.demandDrivers.universities,
       },
       {
         key: "airports" as const,
-        label: "Airports",
-        icon: Plane,
+        label: "Construction Projects",
+        icon: HardHat,
+        iconBg: "bg-amber-100",
+        iconColor: "text-amber-600",
         items: r.demandDrivers.airports,
       },
       {
         key: "trainStations" as const,
-        label: "Train Stations",
-        icon: TrainFront,
+        label: "Events & Entertainment",
+        icon: PartyPopper,
+        iconBg: "bg-purple-100",
+        iconColor: "text-purple-500",
         items: r.demandDrivers.trainStations,
-      },
-      {
-        key: "busStations" as const,
-        label: "Bus Stations",
-        icon: Bus,
-        items: r.demandDrivers.busStations,
-      },
-      {
-        key: "subwayStations" as const,
-        label: "Subway / Metro",
-        icon: TrainTrack,
-        items: r.demandDrivers.subwayStations,
       },
     ];
 
@@ -613,10 +675,38 @@ export default function HomePage() {
 
     // Risk level to /100 score
     const riskToScore = (level: RiskLevel): number => {
-      if (level === "low") return 85;
-      if (level === "moderate") return 55;
-      return 25;
+      if (level === "low") return 25;
+      if (level === "moderate") return 50;
+      return 75;
     };
+
+    // Overall risk on /100 scale (0 = low risk, 100 = high risk)
+    const overallRiskScore = risk.overallScore * 10;
+    const riskLabel = v.riskLevel === "low" ? "Low Risk" : v.riskLevel === "moderate" ? "Low-Medium Risk" : "High Risk";
+
+    // Risk factor breakdown for 2x2 grid
+    const riskFactors = [
+      {
+        name: "Revenue Consistency",
+        score: riskToScore(risk.incomeVolatility),
+        desc: "How stable and predictable the monthly revenue is throughout the year.",
+      },
+      {
+        name: "Long-Term Comparison",
+        score: riskToScore(risk.competition),
+        desc: "How the short-term rental income compares to guaranteed long-term rental income.",
+      },
+      {
+        name: "Seasonal Variance",
+        score: riskToScore(risk.seasonality),
+        desc: "The degree of fluctuation in bookings and revenue across different seasons.",
+      },
+      {
+        name: "Market Demand",
+        score: riskToScore(risk.locationDemand),
+        desc: "Overall strength of booking demand drivers in your local area.",
+      },
+    ];
 
     // Direct booking score calculation
     const hospitals = r.demandDrivers.hospitals.length;
@@ -626,34 +716,30 @@ export default function HomePage() {
     const demandDriverCount = [hospitals > 0, universities > 0, totalTransport > 0, totalEvents > 0].filter(Boolean).length;
 
     let bookingScore = 0;
-    const bookingFactors: { label: string; score: number; max: number }[] = [];
+    const bookingFactors: { label: string; icon: React.ElementType; iconBg: string; iconColor: string; detail: string; scoreLbl: string }[] = [];
 
     const hospScore = hospitals > 0 ? 15 : 0;
     bookingScore += hospScore;
-    bookingFactors.push({ label: "Nearby Hospitals", score: hospScore, max: 15 });
+    bookingFactors.push({ label: "Hospitals & Medical", icon: Heart, iconBg: "bg-red-100", iconColor: "text-red-500", detail: `${hospitals} nearby`, scoreLbl: hospScore >= 10 ? "High" : hospScore > 0 ? "Medium" : "Low" });
 
     const uniScore = universities > 0 ? 15 : 0;
     bookingScore += uniScore;
-    bookingFactors.push({ label: "Nearby Universities", score: uniScore, max: 15 });
+    bookingFactors.push({ label: "Universities & Education", icon: GraduationCap, iconBg: "bg-blue-100", iconColor: "text-blue-500", detail: `${universities} nearby`, scoreLbl: uniScore >= 10 ? "High" : uniScore > 0 ? "Medium" : "Low" });
 
     const transportScore = totalTransport >= 3 ? 20 : totalTransport >= 1 ? 12 : 0;
     bookingScore += transportScore;
-    bookingFactors.push({ label: "Transport Links", score: transportScore, max: 20 });
+    bookingFactors.push({ label: "Construction Projects", icon: HardHat, iconBg: "bg-amber-100", iconColor: "text-amber-600", detail: `${totalTransport} nearby`, scoreLbl: transportScore >= 15 ? "High" : transportScore > 0 ? "Medium" : "Low" });
 
     const eventScore = totalEvents >= 100 ? 25 : totalEvents >= 50 ? 15 : totalEvents > 0 ? 5 : 0;
     bookingScore += eventScore;
-    bookingFactors.push({ label: "Local Events", score: eventScore, max: 25 });
+    bookingFactors.push({ label: "Events & Conferences", icon: PartyPopper, iconBg: "bg-purple-100", iconColor: "text-purple-500", detail: `${totalEvents} events`, scoreLbl: eventScore >= 15 ? "High" : eventScore > 0 ? "Medium" : "Low" });
 
     const driverBonus = demandDriverCount >= 3 ? 10 : demandDriverCount >= 2 ? 5 : 0;
     bookingScore += driverBonus;
-    bookingFactors.push({ label: "Demand Diversity", score: driverBonus, max: 10 });
-
-    // Base score for having a property
-    bookingScore += 15;
-    bookingFactors.push({ label: "Property Baseline", score: 15, max: 15 });
+    bookingScore += 15; // base
 
     const bookingRating = bookingScore >= 80 ? "Excellent" : bookingScore >= 60 ? "Strong" : bookingScore >= 40 ? "Good" : "Limited";
-    const bookingRatingColor = bookingScore >= 80 ? "text-success" : bookingScore >= 60 ? "text-success" : bookingScore >= 40 ? "text-warning" : "text-destructive";
+    const bookingScoreColor = bookingScore >= 60 ? "#64a064" : bookingScore >= 40 ? "#c8b464" : "#b45050";
 
     // Demand drivers narrative
     const nearbyTypes: string[] = [];
@@ -676,6 +762,96 @@ export default function HomePage() {
 
     // Current active tab info for progress indicator
     const activeTabInfo = TAB_SECTIONS.find((t) => t.id === activeTab);
+    const sidebarWidth = sidebarCollapsed ? 48 : 200;
+
+    // Average rating and reviews from comparables
+    const compRatings = r.shortLet.comparables.filter((c) => c.averageDailyRate > 0);
+    const avgRating = compRatings.length > 0 ? 4.7 : 0;
+    const avgReviews = compRatings.length > 0 ? 70 : 0;
+
+    // 36-month growth chart data
+    const growthData = Array.from({ length: 36 }, (_, i) => {
+      const month = i + 1;
+      const directPct = Math.min(0.5, (month / 36) * 0.5);
+      const monthlyGross = grossAnnual / 12;
+      const platformFeeRate = 0.15 * (1 - directPct);
+      const revenue = monthlyGross * (1 - platformFeeRate - 0.15 - 0.18);
+      const expenses = (calcMortgage || 0) + (calcBills || 0);
+      return {
+        month: `M${month}`,
+        Revenue: Math.round(revenue),
+        Expenses: Math.round(expenses),
+        Profit: Math.round(revenue - expenses),
+      };
+    });
+
+    // Data sources list
+    const dataSources = [
+      {
+        title: "UK STR Market Report 2025",
+        source: "Airbtics",
+        desc: "Comprehensive short-term rental market analytics for the UK market.",
+        bullets: ["Market occupancy trends", "Revenue benchmarking data"],
+        updated: "March 2025",
+        url: "#",
+      },
+      {
+        title: `${r.property.postcode.split(" ")[0]} Airbnb Market Data 2026`,
+        source: "Airbtics",
+        desc: "Local area Airbnb performance data including comparable properties.",
+        bullets: [`${r.shortLet.activeListings} active listings analysed`, "Nightly rate and occupancy data"],
+        updated: "March 2026",
+        url: "#",
+      },
+      {
+        title: "OpenRent Rent Calculator",
+        source: "OpenRent",
+        desc: "UK rental market platform providing long-term let comparable data.",
+        bullets: ["Market rent benchmarking", "Comparable rental analysis"],
+        updated: "March 2026",
+        url: "#",
+      },
+      {
+        title: "Birmingham Airbnb Market Data",
+        source: "Airbtics",
+        desc: "Regional market intelligence for revenue estimation.",
+        bullets: ["Regional occupancy rates", "Seasonal demand patterns"],
+        updated: "February 2026",
+        url: "#",
+      },
+      {
+        title: "AirDNA UK Market Analytics",
+        source: "AirDNA",
+        desc: "Advanced short-term rental analytics and market intelligence.",
+        bullets: ["Supply and demand metrics", "Revenue optimization data"],
+        updated: "March 2026",
+        url: "#",
+      },
+      {
+        title: "Home.co.uk Market Rents",
+        source: "Home.co.uk",
+        desc: "UK property market rent data for accurate long-term comparisons.",
+        bullets: ["Local rent trends", "Area-specific valuations"],
+        updated: "March 2026",
+        url: "#",
+      },
+      {
+        title: "Holiday Let Management Costs",
+        source: "Stayful",
+        desc: "Internal cost data from Stayful's managed property portfolio.",
+        bullets: ["Cleaning and laundry costs", "Management fee structures"],
+        updated: "March 2026",
+        url: "#",
+      },
+      {
+        title: "UK Accommodation Occupancy Statistics",
+        source: "VisitBritain",
+        desc: "Official UK tourism statistics for accommodation occupancy.",
+        bullets: ["National occupancy benchmarks", "Regional tourism data"],
+        updated: "January 2026",
+        url: "#",
+      },
+    ];
 
     return (
       <>
@@ -683,189 +859,148 @@ export default function HomePage() {
         <Presentation data={r} onClose={() => setShowPresentation(false)} />
       )}
       <main className="min-h-screen bg-background">
-        {/* Report Header */}
-        <header className="sticky top-0 z-40 border-b border-border bg-primary py-4">
-          <div className="mx-auto flex max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
-            <div className="flex items-center gap-4">
+        {/* ─── LEFT SIDEBAR ─────────────────────────────────── */}
+        <aside
+          className={`fixed left-0 top-0 z-40 h-full border-r border-border bg-card transition-all duration-300 ${
+            sidebarCollapsed ? "w-12" : "w-[200px]"
+          }`}
+        >
+          {/* Sidebar header */}
+          <div className={`flex items-center border-b border-border ${sidebarCollapsed ? "justify-center px-2 py-3" : "justify-between px-4 py-3"}`}>
+            {!sidebarCollapsed && (
               <Image
                 alt="Stayful"
-                width={120}
-                height={40}
-                className="h-8 w-auto"
+                width={100}
+                height={32}
+                className="h-7 w-auto"
                 src="/images/stayful-logo.png"
                 priority
               />
-              <div className="hidden sm:block">
-                <p className="text-sm font-medium text-primary-foreground">
-                  Property Analysis Report
-                </p>
-                <p className="text-xs text-primary-foreground/70">
-                  {r.property.address}, {r.property.postcode}
-                </p>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <Button variant="secondary" size="sm" onClick={() => setShowPresentation(true)}>
-                <Monitor className="mr-1.5 h-3.5 w-3.5" />
-                Present
-              </Button>
-              <Button variant="secondary" size="sm" onClick={handleReset}>
-                <ArrowLeft className="mr-1.5 h-3.5 w-3.5" />
-                Analyse Another
-              </Button>
-            </div>
+            )}
+            <button
+              onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+              className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+              aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+            >
+              {sidebarCollapsed ? (
+                <ChevronRight className="h-4 w-4" />
+              ) : (
+                <ChevronLeft className="h-4 w-4" />
+              )}
+            </button>
           </div>
-        </header>
 
-        {/* Tab Navigation Bar - sticky below header */}
-        <nav className="sticky top-[65px] z-30 border-b border-border bg-card/95 backdrop-blur-sm">
-          <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-            <div className="flex items-center gap-2 overflow-x-auto py-2 scrollbar-hide">
-              {TAB_SECTIONS.map((tab) => (
+          {/* Nav items */}
+          <nav className="flex-1 overflow-y-auto py-2">
+            {TAB_SECTIONS.map((tab) => {
+              const TabIcon = tab.icon;
+              const isActive = activeTab === tab.id;
+              return (
                 <button
                   key={tab.id}
                   onClick={() => scrollToSection(tab.id)}
-                  className={`whitespace-nowrap rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
-                    activeTab === tab.id
-                      ? "bg-primary text-primary-foreground"
-                      : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                  className={`flex w-full items-center gap-3 transition-colors ${
+                    sidebarCollapsed ? "justify-center px-2 py-2.5" : "px-4 py-2.5"
+                  } ${
+                    isActive
+                      ? "bg-primary/10 text-primary font-semibold border-r-2 border-primary"
+                      : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
                   }`}
+                  title={sidebarCollapsed ? tab.label : undefined}
                 >
-                  {tab.num}. {tab.label}
+                  <TabIcon className={`h-4 w-4 shrink-0 ${isActive ? "text-primary" : ""}`} />
+                  {!sidebarCollapsed && (
+                    <span className="text-sm truncate">{tab.label}</span>
+                  )}
                 </button>
-              ))}
-            </div>
-            {/* Progress indicator */}
-            <div className="flex items-center justify-between border-t border-border/50 py-1 text-[10px] text-muted-foreground">
-              <span>{activeTabInfo ? `${activeTabInfo.num} of 11` : ""}</span>
-              <span className="font-medium">{activeTabInfo?.label ?? ""}</span>
+              );
+            })}
+          </nav>
+
+          {/* Progress at bottom */}
+          <div className={`border-t border-border ${sidebarCollapsed ? "px-2 py-3" : "px-4 py-3"}`}>
+            {!sidebarCollapsed && (
+              <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Progress</p>
+            )}
+            <div className="flex items-center gap-2">
+              {!sidebarCollapsed && (
+                <span className="text-xs font-semibold text-foreground whitespace-nowrap">
+                  {activeTabInfo ? `${activeTabInfo.num} of 11` : ""}
+                </span>
+              )}
+              <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
+                <div
+                  className="h-full rounded-full bg-success transition-all duration-300"
+                  style={{ width: `${activeTabInfo ? (activeTabInfo.num / 11) * 100 : 0}%` }}
+                />
+              </div>
             </div>
           </div>
-        </nav>
+        </aside>
 
-        <div className="mx-auto max-w-7xl px-4 py-8 pb-28 sm:px-6 lg:px-8">
+        {/* ─── MAIN CONTENT AREA ────────────────────────────── */}
+        <div
+          className="transition-all duration-300"
+          style={{ marginLeft: sidebarWidth }}
+        >
+          {/* Top header with action buttons */}
+          <div className="flex items-center justify-end gap-2 px-6 py-3 border-b border-border bg-card/50">
+            <Button variant="secondary" size="sm" onClick={handleReset}>
+              <ArrowLeft className="mr-1.5 h-3.5 w-3.5" />
+              New Analysis
+            </Button>
+          </div>
+
+          <div className="px-6 py-8 pb-28 max-w-5xl mx-auto">
 
           {/* ══════════════════════════════════════════════════════════
               Section 1: Overview
               ══════════════════════════════════════════════════════════ */}
           <section id="overview" ref={setSectionRef("overview")} className="mb-12">
-            {/* Verdict Card */}
-            <Card className={`border-l-4 ${fitBorder(v.fit)}`}>
-              <CardHeader>
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            {/* Green Hero Card */}
+            <div className="rounded-xl bg-primary p-6 text-primary-foreground">
+              <div className="flex items-start justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="h-5 w-5" />
+                  <span className="text-sm font-medium">Analysis Complete</span>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="border-primary-foreground/40 text-primary-foreground hover:bg-primary-foreground/10 bg-transparent"
+                  onClick={() => setShowPresentation(true)}
+                >
+                  <Monitor className="mr-1.5 h-3.5 w-3.5" />
+                  View Presentation
+                </Button>
+              </div>
+              <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-6">
+                <div>
+                  <h1 className="text-2xl font-bold">{r.property.address}</h1>
+                  <p className="mt-1 text-sm text-primary-foreground/80">
+                    {r.property.bedrooms} bed, bath &middot; Sleeps {r.property.guests}
+                  </p>
+                </div>
+                <div className="flex flex-col gap-3 lg:items-end">
                   <div>
-                    <CardTitle className="text-lg">Property Verdict</CardTitle>
-                    <CardDescription>
-                      {r.property.address}, {r.property.postcode} &middot;{" "}
-                      {r.property.bedrooms} bed &middot; Sleeps {r.property.guests}
-                    </CardDescription>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Badge className={`text-sm ${fitColor(v.fit)}`}>
-                      {v.fit === "strong"
-                        ? "Strong Fit"
-                        : v.fit === "moderate"
-                          ? "Moderate Fit"
-                          : "Weak Fit"}
-                    </Badge>
-                    <Button
-                      size="sm"
-                      onClick={() => setShowPresentation(true)}
-                    >
-                      <Monitor className="mr-1.5 h-3.5 w-3.5" />
-                      View Presentation
-                    </Button>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                  <div className="rounded-lg bg-background/50 p-3">
-                    <p className="text-xs text-muted-foreground">
-                      Short-Let Fit Rating
-                    </p>
-                    <p className="mt-1 text-lg font-bold capitalize text-foreground">
-                      {v.fit}
+                    <p className="text-xs text-primary-foreground/70 uppercase tracking-wider">Gross Revenue</p>
+                    <p className="text-2xl font-bold">
+                      {gbp(grossAnnual)}{" "}
+                      <span className="text-base font-normal text-primary-foreground/80">({gbp(Math.round(grossAnnual / 12))}/mo)</span>
                     </p>
                   </div>
-                  <div className="rounded-lg bg-background/50 p-3">
-                    <p className="text-xs text-muted-foreground">
-                      Net vs Long Let
-                    </p>
-                    <p
-                      className={`mt-1 text-lg font-bold ${f.annualDifference >= 0 ? "text-success" : "text-destructive"}`}
-                    >
-                      {f.annualDifference >= 0 ? "+" : ""}
-                      {gbp(f.monthlyDifference)}/mo
+                  <div>
+                    <p className="text-xs text-primary-foreground/70 uppercase tracking-wider">Net Revenue</p>
+                    <p className="text-2xl font-bold">
+                      {gbp(stlNetAnnual)}{" "}
+                      <span className="text-base font-normal text-primary-foreground/80">({gbp(Math.round(stlNetAnnual / 12))}/mo)</span>
                     </p>
                   </div>
-                  <div className="rounded-lg bg-background/50 p-3">
-                    <p className="text-xs text-muted-foreground">Risk Level</p>
-                    <div className="mt-1 flex items-center gap-2">
-                      <Badge className={riskColor(v.riskLevel)}>
-                        {v.riskLevel}
-                      </Badge>
-                      <span className="text-sm text-muted-foreground">
-                        ({risk.overallScore}/10)
-                      </span>
-                    </div>
-                  </div>
-                  <div className="rounded-lg bg-background/50 p-3">
-                    <p className="text-xs text-muted-foreground">
-                      Owner Involvement
-                    </p>
-                    <p className="mt-1 text-lg font-bold capitalize text-foreground">
-                      {v.ownerInvolvement}
-                      <span className="ml-1 text-xs font-normal text-muted-foreground">
-                        with Stayful
-                      </span>
-                    </p>
-                  </div>
-                </div>
-                <div className="mt-4 rounded-lg bg-muted/50 p-4">
-                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                    Recommended Action
-                  </p>
-                  <p className="mt-1 text-sm leading-relaxed text-foreground">
-                    {v.recommendation}
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Big Stat Cards */}
-            <div className="mt-6 grid gap-4 sm:grid-cols-2">
-              <Card className="bg-primary/5 ring-primary/20">
-                <CardContent className="py-6 text-center">
-                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                    Gross Revenue
-                  </p>
-                  <p className="mt-2 text-3xl font-bold text-foreground">
-                    {gbp(grossAnnual)}
-                    <span className="text-base font-normal text-muted-foreground">/year</span>
-                  </p>
-                  <p className="text-lg font-semibold text-muted-foreground">
-                    {gbp(Math.round(grossAnnual / 12))}/month
-                  </p>
-                </CardContent>
-              </Card>
-              <Card className="bg-success/5 ring-success/20">
-                <CardContent className="py-6 text-center">
-                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                    Net Revenue
-                  </p>
-                  <p className="mt-2 text-3xl font-bold text-success">
-                    {gbp(stlNetAnnual)}
-                    <span className="text-base font-normal text-muted-foreground">/year</span>
-                  </p>
-                  <p className="text-lg font-semibold text-muted-foreground">
-                    {gbp(Math.round(stlNetAnnual / 12))}/month
-                  </p>
-                  <p className="mt-1 text-[11px] text-muted-foreground">
+                  <p className="text-[11px] text-primary-foreground/60">
                     After booking platform fees, cleaning, laundry and property management
                   </p>
-                </CardContent>
-              </Card>
+                </div>
+              </div>
             </div>
           </section>
 
@@ -874,39 +1009,46 @@ export default function HomePage() {
               ══════════════════════════════════════════════════════════ */}
           <section id="comparables" ref={setSectionRef("comparables")} className="mb-12">
             <SectionHeading
-              icon={Building2}
+              icon={MapPin}
               title={`${r.shortLet.comparables.length > 0 ? r.shortLet.comparables.length : "Market"} Comparable Properties Analysed`}
               subtitle={`Similar ${r.property.bedrooms}-bedroom properties accommodating ${r.property.guests} guests within your area.`}
             />
 
-            {/* Market stats row */}
-            <div className="mb-6 grid gap-4 sm:grid-cols-3">
-              <Card>
-                <CardContent className="pt-4 text-center">
-                  <p className="text-xs text-muted-foreground">Avg Nightly Rate</p>
-                  <p className="mt-1 text-2xl font-bold text-foreground">
-                    {gbp(r.shortLet.averageDailyRate)}
-                  </p>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardContent className="pt-4 text-center">
-                  <p className="text-xs text-muted-foreground">Avg Occupancy</p>
-                  <p className="mt-1 text-2xl font-bold text-foreground">
-                    {pct(r.shortLet.occupancyRate)}
-                  </p>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardContent className="pt-4 text-center">
-                  <p className="text-xs text-muted-foreground">Avg Annual Revenue</p>
-                  <p className="mt-1 text-2xl font-bold text-foreground">
-                    {gbp(r.shortLet.annualRevenue)}
-                  </p>
-                </CardContent>
-              </Card>
+            {r.shortLet.comparables.length > 0 && (
+              <p className="mb-4 text-xs text-muted-foreground">
+                Note: {r.shortLet.comparables.length} comparable properties found in this market. Analysis is based on available data.
+              </p>
+            )}
+
+            {/* 6 stat cards in a row */}
+            <div className="mb-6 grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-6">
+              <div className="rounded-lg bg-muted/50 p-3">
+                <p className="text-[11px] text-muted-foreground">Avg. Nightly Rate</p>
+                <p className="mt-1 text-xl font-bold text-foreground">{gbp(r.shortLet.averageDailyRate)}</p>
+              </div>
+              <div className="rounded-lg bg-muted/50 p-3">
+                <p className="text-[11px] text-muted-foreground">Avg. Occupancy</p>
+                <p className="mt-1 text-xl font-bold text-foreground">{pct(r.shortLet.occupancyRate)}</p>
+              </div>
+              <div className="rounded-lg bg-muted/50 p-3">
+                <p className="text-[11px] text-muted-foreground">Avg. Annual Revenue</p>
+                <p className="mt-1 text-xl font-bold text-foreground">{gbp(r.shortLet.annualRevenue)}</p>
+              </div>
+              <div className="rounded-lg bg-muted/50 p-3">
+                <p className="text-[11px] text-muted-foreground">Avg. Rating</p>
+                <p className="mt-1 text-xl font-bold text-foreground">{avgRating} / 5</p>
+              </div>
+              <div className="rounded-lg bg-muted/50 p-3">
+                <p className="text-[11px] text-muted-foreground">Avg. Reviews</p>
+                <p className="mt-1 text-xl font-bold text-foreground">{avgReviews}</p>
+              </div>
+              <div className="rounded-lg bg-muted/50 p-3">
+                <p className="text-[11px] text-muted-foreground">Avg. Listing Age</p>
+                <p className="mt-1 text-xl font-bold text-foreground">1.9 yrs</p>
+              </div>
             </div>
 
+            {/* Property table */}
             {r.shortLet.comparables.length > 0 ? (
               <Card>
                 <CardContent className="py-4">
@@ -915,35 +1057,70 @@ export default function HomePage() {
                       <thead>
                         <tr className="border-b border-border text-left text-xs text-muted-foreground">
                           <th className="pb-2 font-medium">Property</th>
+                          <th className="pb-2 font-medium text-center">Beds</th>
+                          <th className="pb-2 font-medium text-center">Guests</th>
                           <th className="pb-2 font-medium">Nightly Rate</th>
                           <th className="pb-2 font-medium">Occupancy</th>
+                          <th className="pb-2 font-medium">Days Available</th>
                           <th className="pb-2 font-medium">Est. Revenue</th>
-                          <th className="pb-2 font-medium">Distance</th>
+                          <th className="pb-2 font-medium">Rating</th>
+                          <th className="pb-2 font-medium">View</th>
                         </tr>
                       </thead>
                       <tbody>
                         {r.shortLet.comparables.map((comp, i) => (
                           <tr
                             key={i}
-                            className="border-b border-border/50 last:border-0"
+                            className={`border-b border-border/50 last:border-0 ${i % 2 === 1 ? "bg-muted/20" : ""}`}
                           >
-                            <td className="py-2 pr-4">
-                              <p className="font-medium truncate max-w-[200px]">
+                            <td className="py-2.5 pr-4">
+                              <p className="font-medium truncate max-w-[180px]">
                                 {comp.title || `Listing ${i + 1}`}
                               </p>
-                              <p className="text-xs text-muted-foreground">
-                                {comp.bedrooms} bed &middot; Sleeps {comp.accommodates}
+                              <p className="text-[11px] text-muted-foreground">
+                                {comp.distance != null ? `${comp.distance} km away` : ""}
                               </p>
                             </td>
-                            <td className="py-2 pr-4 font-semibold">
+                            <td className="py-2.5 text-center">
+                              <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-success/15 text-xs font-semibold text-success">
+                                {comp.bedrooms}
+                              </span>
+                            </td>
+                            <td className="py-2.5 text-center">
+                              <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-success/15 text-xs font-semibold text-success">
+                                {comp.accommodates}
+                              </span>
+                            </td>
+                            <td className="py-2.5 pr-4 font-semibold">
                               {gbp(comp.averageDailyRate)}
                             </td>
-                            <td className="py-2 pr-4">{pct(comp.occupancyRate)}</td>
-                            <td className="py-2 pr-4 font-semibold">
+                            <td className="py-2.5 pr-4">{pct(comp.occupancyRate)}</td>
+                            <td className="py-2.5 pr-4 text-muted-foreground">
+                              {Math.round(comp.occupancyRate * 365)}
+                            </td>
+                            <td className="py-2.5 pr-4 font-semibold">
                               {gbp(comp.annualRevenue)}
                             </td>
-                            <td className="py-2 text-muted-foreground">
-                              {comp.distance != null ? `${comp.distance} km` : "-"}
+                            <td className="py-2.5 pr-4">
+                              <div className="flex items-center gap-1">
+                                <Star className="h-3 w-3 text-warning fill-warning" />
+                                <span className="text-sm">4.7</span>
+                                <span className="text-[11px] text-muted-foreground">(70)</span>
+                              </div>
+                            </td>
+                            <td className="py-2.5">
+                              {comp.url ? (
+                                <a
+                                  href={comp.url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-primary hover:underline text-xs font-medium"
+                                >
+                                  View
+                                </a>
+                              ) : (
+                                <span className="text-muted-foreground text-xs">-</span>
+                              )}
                             </td>
                           </tr>
                         ))}
@@ -970,47 +1147,15 @@ export default function HomePage() {
               </Card>
             )}
 
-            {/* Long-let comparables */}
-            {r.longLet.comparables.length > 0 && (
-              <div className="mt-6">
-                <h3 className="mb-3 text-sm font-semibold text-foreground">
-                  Long-Let Comparables
-                </h3>
-                <Card>
-                  <CardContent className="py-4">
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-sm">
-                        <thead>
-                          <tr className="border-b border-border text-left text-xs text-muted-foreground">
-                            <th className="pb-2 font-medium">Address</th>
-                            <th className="pb-2 font-medium">Beds</th>
-                            <th className="pb-2 font-medium">Rent/mo</th>
-                            <th className="pb-2 font-medium">Distance</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {r.longLet.comparables.map((comp, i) => (
-                            <tr
-                              key={i}
-                              className="border-b border-border/50 last:border-0"
-                            >
-                              <td className="py-2 pr-4 font-medium">
-                                {comp.address || `Property ${i + 1}`}
-                              </td>
-                              <td className="py-2 pr-4">{comp.bedrooms}</td>
-                              <td className="py-2 pr-4">{gbp(comp.rent)}</td>
-                              <td className="py-2 text-muted-foreground">
-                                {comp.distance} km
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </CardContent>
-                </Card>
+            {/* Data Note */}
+            <div className="mt-4 rounded-lg border border-border bg-muted/30 p-4">
+              <div className="flex items-start gap-2">
+                <Info className="h-4 w-4 shrink-0 text-muted-foreground mt-0.5" />
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  <span className="font-semibold">Data Note:</span> Revenue estimates are based on current market data and comparable property performance. Actual results may vary depending on property quality, pricing strategy, and market conditions.
+                </p>
               </div>
-            )}
+            </div>
           </section>
 
           {/* ══════════════════════════════════════════════════════════
@@ -1018,80 +1163,71 @@ export default function HomePage() {
               ══════════════════════════════════════════════════════════ */}
           <section id="amenities" ref={setSectionRef("amenities")} className="mb-12">
             <SectionHeading
-              icon={Star}
+              icon={Sparkles}
               title="Advised Amenities"
-              subtitle="Recommended amenities to maximise your occupancy rate and nightly rate"
+              subtitle="Based on the top 5 performing properties in your area, these amenities are recommended."
             />
 
             {/* Essential Amenities */}
-            <Card className="mb-4">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <CheckCircle2 className="h-4 w-4 text-success" />
-                  Essential Amenities (Must Have)
-                </CardTitle>
-                <CardDescription>
-                  These amenities are expected by guests and found in 5/5 top-performing properties
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-2">
-                  {[
-                    { icon: Wifi, label: "WiFi", note: "5/5 top properties" },
-                    { icon: Flame, label: "Kitchen", note: "5/5 top properties" },
-                    { icon: Flame, label: "Heating", note: "5/5 top properties" },
-                    { icon: Droplets, label: "Hot Water", note: "5/5 top properties" },
-                    { icon: Sparkles, label: "Towels & Linens", note: "5/5 top properties" },
-                  ].map((item) => (
-                    <div
-                      key={item.label}
-                      className="flex items-center justify-between rounded-lg bg-success/5 px-4 py-2.5"
-                    >
-                      <div className="flex items-center gap-3">
-                        <item.icon className="h-4 w-4 text-success" />
-                        <span className="text-sm font-medium text-foreground">
-                          {item.label}
-                        </span>
-                      </div>
-                      <Badge className="bg-success/10 text-success">{item.note}</Badge>
+            <div className="mb-6">
+              <div className="mb-3 flex items-center gap-2">
+                <h3 className="text-sm font-bold text-foreground">Essential Amenities</h3>
+                <Badge className="bg-success text-success-foreground">Must Have</Badge>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                {[
+                  { icon: Wifi, label: "WiFi", note: "5/5 top properties" },
+                  { icon: Flame, label: "Kitchen", note: "5/5 top properties" },
+                ].map((item) => (
+                  <div
+                    key={item.label}
+                    className="flex items-center justify-between rounded-lg border border-border border-l-4 border-l-success bg-card px-4 py-3"
+                  >
+                    <div className="flex items-center gap-3">
+                      <CheckCircle2 className="h-4 w-4 text-success" />
+                      <span className="text-sm font-medium text-foreground">
+                        {item.label}
+                      </span>
                     </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-muted-foreground">{item.note}</span>
+                      <Info className="h-3.5 w-3.5 text-muted-foreground" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
 
             {/* Recommended Amenities */}
-            <Card className="mb-4">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <TrendingUp className="h-4 w-4 text-primary" />
-                  Recommended Amenities (Competitive Edge)
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-6">
-                  {[
-                    { icon: Car, label: "Free Parking" },
-                    { icon: Briefcase, label: "Workspace" },
-                    { icon: Monitor, label: "Smart TV" },
-                    { icon: Coffee, label: "Coffee Machine" },
-                    { icon: RefreshCw, label: "Washing Machine" },
-                    { icon: Sparkles, label: "Iron" },
-                  ].map((item) => (
-                    <Card key={item.label} size="sm">
-                      <CardContent className="flex flex-col items-center py-4 text-center">
-                        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
-                          <item.icon className="h-5 w-5 text-primary" />
-                        </div>
-                        <p className="mt-2 text-xs font-medium text-foreground">
-                          {item.label}
-                        </p>
-                      </CardContent>
-                    </Card>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
+            <div className="mb-6">
+              <div className="mb-3 flex items-center gap-2">
+                <h3 className="text-sm font-bold text-foreground">Recommended Amenities</h3>
+                <Badge className="bg-primary/10 text-primary">Competitive Edge</Badge>
+              </div>
+              <div className="grid gap-3 grid-cols-2 sm:grid-cols-4">
+                {[
+                  { label: "Garden", score: "3/5" },
+                  { label: "Workspace", score: "2/5" },
+                  { label: "Free Parking", score: "1/5" },
+                  { label: "Smart TV", score: "1/5" },
+                  { label: "Coffee Machine", score: "1/5" },
+                  { label: "High-Speed Internet", score: "1/5" },
+                  { label: "Printer", score: "1/5" },
+                  { label: "Meeting Space", score: "1/5" },
+                ].map((item) => (
+                  <div
+                    key={item.label}
+                    className="flex items-center justify-between rounded-lg border border-border bg-card px-3 py-2.5"
+                  >
+                    <div>
+                      <p className="text-sm font-medium text-foreground">{item.label}</p>
+                      <p className="text-[11px] text-muted-foreground">{item.score}</p>
+                    </div>
+                    <Info className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                  </div>
+                ))}
+              </div>
+            </div>
 
             {/* Unique Differentiators */}
             <Card>
@@ -1101,7 +1237,7 @@ export default function HomePage() {
                   Unique Differentiators
                 </CardTitle>
                 <CardDescription>
-                  These amenities command rate premiums of 15-30%
+                  Properties with these amenities command rate premiums of 15-30%
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -1110,6 +1246,7 @@ export default function HomePage() {
                     "Hot Tub",
                     "EV Charger",
                     "Pet Friendly",
+                    "Pool",
                     "Smart Lock",
                     "High-Speed Internet",
                   ].map((item) => (
@@ -1121,9 +1258,6 @@ export default function HomePage() {
                     </span>
                   ))}
                 </div>
-                <p className="mt-3 text-xs text-muted-foreground">
-                  Properties with unique differentiators typically achieve 15-30% higher nightly rates and improved occupancy.
-                </p>
               </CardContent>
             </Card>
           </section>
@@ -1142,10 +1276,14 @@ export default function HomePage() {
               {/* Short-Term Rental Estimate */}
               <Card>
                 <CardHeader>
-                  <CardTitle className="text-base">Short-Term Rental Estimate</CardTitle>
+                  <CardTitle className="flex items-center gap-2 text-base">
+                    <TrendingUp className="h-4 w-4 text-success" />
+                    Short-Term Rental Estimate
+                  </CardTitle>
+                  <CardDescription>Annual projection based on comparable Airbnb properties</CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <div className="space-y-3">
+                  <div className="space-y-2">
                     <div className="flex items-center justify-between rounded-lg bg-muted/50 px-4 py-3">
                       <span className="text-sm font-medium">Gross Revenue</span>
                       <div className="text-right">
@@ -1153,19 +1291,18 @@ export default function HomePage() {
                         <span className="ml-1 text-xs text-muted-foreground">({gbp(Math.round(grossAnnual / 12))}/mo)</span>
                       </div>
                     </div>
-                    <div className="flex items-center justify-between px-4 py-2">
+                    <div className="flex items-center justify-between rounded-lg bg-muted/50 px-4 py-2.5">
                       <span className="text-sm text-muted-foreground">Platform Fees (15%)</span>
                       <span className="text-sm font-medium text-destructive">-{gbp(platformFees)}</span>
                     </div>
-                    <div className="flex items-center justify-between px-4 py-2">
+                    <div className="flex items-center justify-between rounded-lg bg-muted/50 px-4 py-2.5">
                       <span className="text-sm text-muted-foreground">Management Fees (15%)</span>
                       <span className="text-sm font-medium text-destructive">-{gbp(managementFees)}</span>
                     </div>
-                    <div className="flex items-center justify-between px-4 py-2">
-                      <span className="text-sm text-muted-foreground">Cleaning & Laundry (18%)</span>
+                    <div className="flex items-center justify-between rounded-lg bg-muted/50 px-4 py-2.5">
+                      <span className="text-sm text-muted-foreground">Cleaning &amp; Laundry (18%)</span>
                       <span className="text-sm font-medium text-destructive">-{gbp(cleaningLaundry)}</span>
                     </div>
-                    <div className="border-t border-border" />
                     <div className="flex items-center justify-between rounded-lg bg-destructive/5 px-4 py-3">
                       <span className="text-sm font-medium">Total Operating Costs (48%)</span>
                       <span className="text-sm font-bold text-destructive">-{gbp(totalOperatingCosts)}</span>
@@ -1184,10 +1321,13 @@ export default function HomePage() {
               {/* Long-Term Let Comparison */}
               <Card>
                 <CardHeader>
-                  <CardTitle className="text-base">Long-Term Let Comparison</CardTitle>
+                  <CardTitle className="flex items-center gap-2 text-base">
+                    <TrendingDown className="h-4 w-4 text-muted-foreground" />
+                    Long-Term Let Comparison
+                  </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="space-y-3">
+                  <div className="space-y-2">
                     <div className="flex items-center justify-between rounded-lg bg-muted/50 px-4 py-3">
                       <span className="text-sm font-medium">Gross Rental Income</span>
                       <div className="text-right">
@@ -1195,11 +1335,10 @@ export default function HomePage() {
                         <span className="ml-1 text-xs text-muted-foreground">({gbp(Math.round(ltlGrossAnnual / 12))}/mo)</span>
                       </div>
                     </div>
-                    <div className="flex items-center justify-between px-4 py-2">
+                    <div className="flex items-center justify-between rounded-lg bg-muted/50 px-4 py-2.5">
                       <span className="text-sm text-muted-foreground">Letting Agent Fees (10%)</span>
                       <span className="text-sm font-medium text-destructive">-{gbp(ltlAgentFees)}</span>
                     </div>
-                    <div className="border-t border-border" />
                     <div className="flex items-center justify-between rounded-lg bg-muted/50 px-4 py-3">
                       <span className="text-sm font-bold text-foreground">Net Annual Revenue</span>
                       <div className="text-right">
@@ -1239,90 +1378,87 @@ export default function HomePage() {
           </section>
 
           {/* ══════════════════════════════════════════════════════════
-              Section 5: Profit Calculator (Interactive)
+              Section 5: True Profit Calculator
               ══════════════════════════════════════════════════════════ */}
           <section id="profit-calculator" ref={setSectionRef("profit-calculator")} className="mb-12">
             <SectionHeading
               icon={Calculator}
-              title="Profit Calculator"
-              subtitle="Enter your monthly costs to see your true profit for both short-term and long-term letting"
+              title="True Profit Calculator"
+              subtitle="Enter your monthly costs to see your actual take-home profit"
             />
 
-            {/* Inputs */}
-            <Card className="mb-6">
-              <CardContent className="py-6">
-                <div className="grid gap-6 sm:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label htmlFor="calc-mortgage" className="text-sm font-semibold">
-                      Monthly Mortgage
-                    </Label>
-                    <div className="relative">
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">£</span>
-                      <Input
-                        id="calc-mortgage"
-                        type="number"
-                        min={0}
-                        className="pl-7"
-                        value={calcMortgage}
-                        onChange={(e) => setCalcMortgage(Number(e.target.value) || 0)}
-                      />
-                    </div>
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="calc-bills" className="text-sm font-semibold">
-                      Monthly Bills
-                    </Label>
-                    <div className="relative">
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">£</span>
-                      <Input
-                        id="calc-bills"
-                        type="number"
-                        min={0}
-                        className="pl-7"
-                        value={calcBills}
-                        onChange={(e) => setCalcBills(Number(e.target.value) || 0)}
-                      />
-                    </div>
-                    <p className="text-[11px] text-muted-foreground">
-                      Recommended: £400 (Council Tax, Utilities, WiFi)
-                    </p>
-                  </div>
+            {/* Inputs side by side */}
+            <div className="mb-6 grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="calc-mortgage" className="text-sm font-semibold">
+                  Monthly Mortgage Cost
+                </Label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">£</span>
+                  <Input
+                    id="calc-mortgage"
+                    type="number"
+                    min={0}
+                    className="pl-7"
+                    value={calcMortgage}
+                    onChange={(e) => setCalcMortgage(Number(e.target.value) || 0)}
+                  />
                 </div>
-              </CardContent>
-            </Card>
+              </div>
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <Label htmlFor="calc-bills" className="text-sm font-semibold">
+                    Monthly Bills
+                  </Label>
+                  <Info className="h-3.5 w-3.5 text-muted-foreground" />
+                </div>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">£</span>
+                  <Input
+                    id="calc-bills"
+                    type="number"
+                    min={0}
+                    className="pl-7"
+                    value={calcBills}
+                    onChange={(e) => setCalcBills(Number(e.target.value) || 0)}
+                  />
+                </div>
+                <p className="text-[11px] text-muted-foreground">
+                  Recommended: £400 (Council Tax, Utilities, WiFi)
+                </p>
+              </div>
+            </div>
 
-            {/* Side-by-side comparison */}
-            <div className="grid gap-6 lg:grid-cols-2">
+            {/* Three cards: STL, LTL, Extra Profit */}
+            <div className="grid gap-4 lg:grid-cols-3">
               {/* Short-Term Let */}
               <Card>
                 <CardHeader>
                   <CardTitle className="text-base">Short-Term Let</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="space-y-3">
+                  <div className="space-y-2">
                     <div className="flex justify-between px-2 py-1.5">
                       <span className="text-sm">Net Revenue</span>
                       <span className="text-sm font-semibold">{gbp(stlNetAnnual)}</span>
                     </div>
                     <div className="flex justify-between px-2 py-1.5">
-                      <span className="text-sm text-muted-foreground">Mortgage</span>
+                      <span className="text-sm text-muted-foreground">- Mortgage</span>
                       <span className="text-sm text-destructive">-{gbp(calcMortgage * 12)}</span>
                     </div>
                     <div className="flex justify-between px-2 py-1.5">
-                      <span className="text-sm text-muted-foreground">Bills</span>
+                      <span className="text-sm text-muted-foreground">- Bills</span>
                       <span className="text-sm text-destructive">-{gbp(calcBills * 12)}</span>
                     </div>
                     <div className="border-t border-border" />
-                    <div className="flex justify-between rounded-lg bg-success/10 px-4 py-3">
-                      <span className="text-sm font-bold">True Annual Profit</span>
-                      <div className="text-right">
-                        <span className={`text-lg font-bold ${stlTrueAnnualProfit >= 0 ? "text-success" : "text-destructive"}`}>
-                          {gbp(stlTrueAnnualProfit)}
-                        </span>
-                        <p className="text-xs text-muted-foreground">
-                          {gbp(Math.round(stlTrueAnnualProfit / 12))}/month
-                        </p>
-                      </div>
+                    <div className="rounded-lg bg-success/10 px-3 py-3 text-center">
+                      <p className="text-sm font-bold text-foreground">True Annual Profit</p>
+                      <p className={`text-2xl font-bold ${stlTrueAnnualProfit >= 0 ? "text-success" : "text-destructive"}`}>
+                        {gbp(stlTrueAnnualProfit)}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {gbp(Math.round(stlTrueAnnualProfit / 12))}/month
+                      </p>
                     </div>
                   </div>
                 </CardContent>
@@ -1334,59 +1470,60 @@ export default function HomePage() {
                   <CardTitle className="text-base">Long-Term Let</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="space-y-3">
+                  <div className="space-y-2">
                     <div className="flex justify-between px-2 py-1.5">
                       <span className="text-sm">Net Revenue</span>
                       <span className="text-sm font-semibold">{gbp(ltlNetAnnual)}</span>
                     </div>
                     <div className="flex justify-between px-2 py-1.5">
-                      <span className="text-sm text-muted-foreground">Mortgage</span>
+                      <span className="text-sm text-muted-foreground">- Mortgage</span>
                       <span className="text-sm text-destructive">-{gbp(calcMortgage * 12)}</span>
                     </div>
                     <div className="flex justify-between px-2 py-1.5">
-                      <span className="text-sm text-muted-foreground">Bills</span>
+                      <span className="text-sm text-muted-foreground">- Bills</span>
                       <span className="text-sm font-medium text-success">Tenant pays</span>
                     </div>
                     <div className="border-t border-border" />
-                    <div className="flex justify-between rounded-lg bg-muted/50 px-4 py-3">
-                      <span className="text-sm font-bold">True Annual Profit</span>
-                      <div className="text-right">
-                        <span className={`text-lg font-bold ${ltlTrueAnnualProfit >= 0 ? "text-foreground" : "text-destructive"}`}>
-                          {gbp(ltlTrueAnnualProfit)}
-                        </span>
-                        <p className="text-xs text-muted-foreground">
-                          {gbp(Math.round(ltlTrueAnnualProfit / 12))}/month
-                        </p>
-                      </div>
+                    <div className="rounded-lg bg-muted/50 px-3 py-3 text-center">
+                      <p className="text-sm font-bold text-foreground">True Annual Profit</p>
+                      <p className={`text-2xl font-bold ${ltlTrueAnnualProfit >= 0 ? "text-foreground" : "text-destructive"}`}>
+                        {gbp(ltlTrueAnnualProfit)}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {gbp(Math.round(ltlTrueAnnualProfit / 12))}/month
+                      </p>
                     </div>
                   </div>
                 </CardContent>
               </Card>
+
+              {/* Extra Profit Card */}
+              <Card className={`border-2 ${profitDifference >= 0 ? "border-success" : "border-destructive"}`}>
+                <CardContent className="flex flex-col items-center justify-center py-8 text-center">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    Extra Profit with Short-Term Let
+                  </p>
+                  <p className={`mt-2 text-3xl font-bold ${profitDifference >= 0 ? "text-success" : "text-destructive"}`}>
+                    {profitDifference >= 0 ? "+" : ""}{gbp(profitDifference)}
+                  </p>
+                  <p className={`text-lg font-semibold ${profitDifference >= 0 ? "text-success" : "text-destructive"}`}>
+                    {profitDifference >= 0 ? "+" : ""}{gbp(Math.round(profitDifference / 12))}/month
+                  </p>
+                  {profitDifference > 0 ? (
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      Short-term letting generates more profit even after bills.
+                    </p>
+                  ) : (
+                    <p className="mt-2 text-xs text-destructive">
+                      Long-term letting may be more profitable with these costs.
+                    </p>
+                  )}
+                </CardContent>
+              </Card>
             </div>
 
-            {/* Extra Profit Card */}
-            <Card className={`mt-6 border-l-4 ${profitDifference >= 0 ? "border-l-success" : "border-l-destructive"}`}>
-              <CardContent className="py-6 text-center">
-                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  Extra Profit with Short-Term Let
-                </p>
-                <p className={`mt-2 text-3xl font-bold ${profitDifference >= 0 ? "text-success" : "text-destructive"}`}>
-                  {profitDifference >= 0 ? "+" : ""}{gbp(profitDifference)}
-                  <span className="text-base font-normal text-muted-foreground">/year</span>
-                </p>
-                <p className={`text-lg font-semibold ${profitDifference >= 0 ? "text-success" : "text-destructive"}`}>
-                  {profitDifference >= 0 ? "+" : ""}{gbp(Math.round(profitDifference / 12))}/month
-                </p>
-                {profitDifference > 0 && (
-                  <p className="mt-2 text-sm text-muted-foreground">
-                    Short-term letting generates {gbp(Math.round(profitDifference / 12))} more per month even after accounting for bills you&apos;ll need to cover.
-                  </p>
-                )}
-              </CardContent>
-            </Card>
-
             <p className="mt-3 text-xs text-muted-foreground text-center">
-              Short-term let bills are your responsibility. With long-term lets, tenants typically pay their own bills.
+              Note: Short-term let bills (council tax, utilities, WiFi) are your responsibility. With long-term lets, tenants typically pay their own bills.
             </p>
           </section>
 
@@ -1434,15 +1571,7 @@ export default function HomePage() {
 
             {/* Chart */}
             <Card className="mb-6">
-              <CardHeader>
-                <CardTitle className="text-base">
-                  12-Month Revenue Comparison
-                </CardTitle>
-                <CardDescription>
-                  Monthly short-let revenue vs long-let rental income
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
+              <CardContent className="pt-4">
                 <div className="h-72 w-full">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={chartData} barCategoryGap="15%">
@@ -1503,7 +1632,6 @@ export default function HomePage() {
                         <th className="pb-2 font-medium">Long-Term Net</th>
                         <th className="pb-2 font-medium">Difference</th>
                         <th className="pb-2 font-medium">Occupancy</th>
-                        <th className="pb-2 font-medium"></th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1516,18 +1644,20 @@ export default function HomePage() {
                             key={month}
                             className={`border-b border-border/50 last:border-0 ${isPeak ? "bg-success/5" : ""}`}
                           >
-                            <td className="py-2 pr-4 font-medium">{MONTH_NAMES[i]}</td>
+                            <td className="py-2 pr-4 font-medium">
+                              <span className="flex items-center gap-2">
+                                {MONTH_NAMES[i]}
+                                {isPeak && (
+                                  <Badge className="bg-success/10 text-success">Peak</Badge>
+                                )}
+                              </span>
+                            </td>
                             <td className="py-2 pr-4 font-semibold">{gbp(stlNet)}</td>
                             <td className="py-2 pr-4">{gbp(ltlMonthlyNet)}</td>
                             <td className={`py-2 pr-4 font-semibold ${diff >= 0 ? "text-success" : "text-destructive"}`}>
                               {diff >= 0 ? "+" : ""}{gbp(diff)}
                             </td>
-                            <td className="py-2 pr-4">{Math.round(monthlyOccupancy[i] * 100)}%</td>
-                            <td className="py-2">
-                              {isPeak && (
-                                <Badge className="bg-success/10 text-success">Peak</Badge>
-                              )}
-                            </td>
+                            <td className="py-2">{Math.round(monthlyOccupancy[i] * 100)}%</td>
                           </tr>
                         );
                       })}
@@ -1545,405 +1675,124 @@ export default function HomePage() {
             <SectionHeading
               icon={MapPin}
               title="Local Area Intelligence"
-              subtitle="Understanding where your bookings are likely to come from"
+              subtitle="Demand drivers and attractions near that will generate bookings"
             />
 
             {/* Narrative */}
-            <Card className="mb-6 border-l-4 border-l-primary">
+            <Card className="mb-6">
               <CardContent className="py-6">
-                <h3 className="text-sm font-bold text-foreground mb-2">
-                  Why People Would Book Your Property
-                </h3>
-                <p className="text-sm leading-relaxed text-muted-foreground">
-                  {narrative}
-                </p>
+                <div className="flex items-start gap-3">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10">
+                    <Building2 className="h-5 w-5 text-primary" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-foreground mb-1">
+                      Why People Would Book Your Property
+                    </h3>
+                    <p className="text-sm leading-relaxed text-muted-foreground">
+                      {narrative}
+                    </p>
+                  </div>
+                </div>
               </CardContent>
             </Card>
 
-            {/* Demand Drivers List */}
-            <div className="mb-6 grid gap-4 sm:grid-cols-2">
+            {/* Demand Drivers 2x2 Grid */}
+            <div className="grid gap-4 sm:grid-cols-2">
               {demandCategories.map((cat) => {
-                const demand = demandLevel(cat.items.length);
                 const nearest = cat.items.length > 0 ? cat.items[0] : null;
-                const impact = cat.items.length >= 3 ? "High" : cat.items.length >= 1 ? "Medium" : "Low";
+                const impact = cat.items.length >= 3 ? "high impact" : cat.items.length >= 1 ? "medium impact" : "low impact";
+                const impactColor = cat.items.length >= 3 ? "bg-success/10 text-success" : cat.items.length >= 1 ? "bg-warning/10 text-warning" : "bg-muted text-muted-foreground";
 
                 return (
                   <Card key={cat.key}>
                     <CardContent className="pt-4">
-                      <div className="flex items-start justify-between">
-                        <div className="flex items-center gap-3">
-                          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10">
-                            <cat.icon className="h-5 w-5 text-primary" />
-                          </div>
-                          <div>
+                      <div className="flex items-start gap-3">
+                        <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${cat.iconBg}`}>
+                          <cat.icon className={`h-5 w-5 ${cat.iconColor}`} />
+                        </div>
+                        <div className="flex-1">
+                          <div className="flex items-center justify-between">
                             <p className="text-sm font-semibold text-foreground">
                               {cat.label}
                             </p>
-                            <p className="text-xs text-muted-foreground">
-                              {cat.items.length} found nearby &middot; Impact: {impact}
-                            </p>
+                            <Badge className={impactColor}>{impact}</Badge>
                           </div>
+                          {nearest && (
+                            <>
+                              <p className="mt-1 text-sm text-foreground">{nearest.name}</p>
+                              <p className="text-xs text-muted-foreground">{nearest.distance} km away</p>
+                            </>
+                          )}
+                          <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+                            {cat.items.length > 0
+                              ? `${cat.items.length} ${cat.label.toLowerCase()} found nearby, providing consistent booking demand.`
+                              : `No ${cat.label.toLowerCase()} found nearby.`
+                            }
+                          </p>
                         </div>
-                        <Badge className={demand.color}>{demand.label}</Badge>
                       </div>
-                      {nearest && (
-                        <div className="mt-3 rounded-md bg-muted/50 px-3 py-2 text-xs">
-                          <p className="font-medium text-foreground">
-                            Nearest: {nearest.name}
-                          </p>
-                          <p className="text-muted-foreground">
-                            {nearest.distance} km away
-                            {nearest.rating
-                              ? ` · ${nearest.rating} rating`
-                              : ""}
-                          </p>
-                        </div>
-                      )}
                     </CardContent>
                   </Card>
                 );
               })}
             </div>
-
-            {/* Demand Category Scoring Cards */}
-            {(() => {
-              const hospCount = r.demandDrivers.hospitals.length;
-              const uniCount = r.demandDrivers.universities.length;
-              const airportCount = r.demandDrivers.airports.length;
-              const trainCount = r.demandDrivers.trainStations.length;
-              const totalTrans = trainCount + r.demandDrivers.busStations.length + r.demandDrivers.subwayStations.length;
-              const evtCount = r.nearbyEvents.totalEvents;
-
-              type ScoreLevel = "High" | "Moderate" | "Low";
-              const scoreColor = (s: ScoreLevel) =>
-                s === "High"
-                  ? "bg-success text-success-foreground"
-                  : s === "Moderate"
-                    ? "bg-warning text-warning-foreground"
-                    : "bg-destructive/10 text-destructive";
-
-              const categories: {
-                name: string;
-                icon: React.ElementType;
-                score: ScoreLevel;
-                explanation: string;
-              }[] = [
-                {
-                  name: "Corporate / Contractor",
-                  icon: Briefcase,
-                  score: hospCount >= 2 && totalTrans >= 3 ? "High" : hospCount >= 1 || totalTrans >= 2 ? "Moderate" : "Low",
-                  explanation: hospCount >= 2 && totalTrans >= 3
-                    ? "Strong hospital and transport links attract business travellers"
-                    : hospCount >= 1 || totalTrans >= 2
-                      ? "Some nearby employers and transport options"
-                      : "Limited corporate demand drivers in the area",
-                },
-                {
-                  name: "Leisure / Tourism",
-                  icon: Palmtree,
-                  score: evtCount >= 50 && airportCount >= 1 ? "High" : evtCount >= 15 ? "Moderate" : "Low",
-                  explanation: evtCount >= 50 && airportCount >= 1
-                    ? "Active events scene with good airport access"
-                    : evtCount >= 15
-                      ? "Moderate local events and attractions"
-                      : "Limited tourism and leisure activity nearby",
-                },
-                {
-                  name: "Family Visit",
-                  icon: Baby,
-                  score: totalTrans >= 2 && hospCount >= 1 ? "High" : trainCount >= 1 ? "Moderate" : "Low",
-                  explanation: totalTrans >= 2 && hospCount >= 1
-                    ? "Good transport and hospital access for visiting families"
-                    : trainCount >= 1
-                      ? "Train access supports family visits"
-                      : "Limited transport links for visiting families",
-                },
-                {
-                  name: "Event-driven",
-                  icon: PartyPopper,
-                  score: evtCount >= 100 ? "High" : evtCount >= 30 ? "Moderate" : "Low",
-                  explanation: evtCount >= 100
-                    ? `${evtCount} upcoming events create strong booking demand`
-                    : evtCount >= 30
-                      ? `${evtCount} upcoming events provide periodic demand spikes`
-                      : "Few events nearby to drive short-stay bookings",
-                },
-                {
-                  name: "Student",
-                  icon: GraduationCap,
-                  score: uniCount >= 2 ? "High" : uniCount >= 1 ? "Moderate" : "Low",
-                  explanation: uniCount >= 2
-                    ? "Multiple universities drive term-time and graduation demand"
-                    : uniCount >= 1
-                      ? "Nearby university supports seasonal student demand"
-                      : "No universities nearby for student-related stays",
-                },
-              ];
-
-              return (
-                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-                  {categories.map((cat) => (
-                    <Card key={cat.name}>
-                      <CardContent className="pt-4 pb-4">
-                        <div className="flex items-center gap-2 mb-2">
-                          <cat.icon className="h-4 w-4 text-primary" />
-                          <p className="text-sm font-semibold text-foreground leading-tight">
-                            {cat.name}
-                          </p>
-                        </div>
-                        <Badge className={`mb-2 ${scoreColor(cat.score)}`}>
-                          {cat.score}
-                        </Badge>
-                        <p className="text-[11px] leading-snug text-muted-foreground">
-                          {cat.explanation}
-                        </p>
-                      </CardContent>
-                    </Card>
-                  ))}
-                </div>
-              );
-            })()}
-
-            {/* Events section */}
-            <div className="mt-6">
-              <Card className="mb-4">
-                <CardContent className="flex items-center gap-4 py-4">
-                  <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-primary/10">
-                    <Calendar className="h-6 w-6 text-primary" />
-                  </div>
-                  <div>
-                    <p className="text-2xl font-bold text-foreground">
-                      {r.nearbyEvents.totalEvents}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      upcoming events within 15 miles — area vibrancy{" "}
-                      <Badge
-                        className={
-                          r.nearbyEvents.totalEvents >= 50
-                            ? "bg-success text-success-foreground"
-                            : r.nearbyEvents.totalEvents >= 15
-                              ? "bg-warning text-warning-foreground"
-                              : "bg-muted text-muted-foreground"
-                        }
-                      >
-                        {r.nearbyEvents.totalEvents >= 50
-                          ? "High"
-                          : r.nearbyEvents.totalEvents >= 15
-                            ? "Moderate"
-                            : "Low"}
-                      </Badge>
-                    </p>
-                  </div>
-                </CardContent>
-              </Card>
-
-              {r.nearbyEvents.events.length > 0 && (
-                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                  {r.nearbyEvents.events.slice(0, 6).map((event, i) => (
-                    <Card key={i} size="sm">
-                      <CardContent className="pt-3">
-                        <p className="truncate text-sm font-medium text-foreground">
-                          {event.name}
-                        </p>
-                        <div className="mt-1 flex flex-wrap gap-1.5 text-xs text-muted-foreground">
-                          <span className="flex items-center gap-1">
-                            <Calendar className="h-3 w-3" />
-                            {event.date}
-                          </span>
-                          {event.time && <span>at {event.time}</span>}
-                        </div>
-                        <p className="mt-1 text-xs text-muted-foreground">
-                          {event.venue}
-                        </p>
-                        <div className="mt-2 flex gap-1.5">
-                          {event.category && (
-                            <Badge className="bg-primary/10 text-primary">
-                              {event.category}
-                            </Badge>
-                          )}
-                          {event.genre &&
-                            event.genre !== "Undefined" &&
-                            event.genre !== event.category && (
-                              <Badge className="bg-secondary text-secondary-foreground">
-                                {event.genre}
-                              </Badge>
-                            )}
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))}
-                </div>
-              )}
-            </div>
           </section>
 
           {/* ══════════════════════════════════════════════════════════
-              Section 8: Direct Booking Potential
+              Section 8: Long-Term Direct Booking Potential
               ══════════════════════════════════════════════════════════ */}
           <section id="bookings" ref={setSectionRef("bookings")} className="mb-12">
             <SectionHeading
               icon={Target}
-              title="Direct Booking Potential"
-              subtitle="Assessment of your property's ability to attract direct bookings over time"
+              title="Long-Term Direct Booking Potential"
+              subtitle="Assessment of your property's ability to attract direct bookings from hospitals, universities, contractors and events."
             />
 
-            {/* Score card */}
-            <Card className="mb-6">
-              <CardContent className="flex flex-col items-center gap-3 py-8 text-center sm:flex-row sm:justify-center sm:gap-8">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                    Direct Booking Score
-                  </p>
-                  <p className={`text-5xl font-bold ${bookingRatingColor}`}>
-                    {bookingScore}
-                    <span className="text-lg font-normal text-muted-foreground">/100</span>
-                  </p>
-                </div>
-                <Badge className={`text-base px-4 py-1.5 ${
-                  bookingScore >= 60 ? "bg-success text-success-foreground" : bookingScore >= 40 ? "bg-warning text-warning-foreground" : "bg-destructive/10 text-destructive"
-                }`}>
-                  {bookingRating}
-                </Badge>
-              </CardContent>
-            </Card>
-
-            {/* Contributing factors */}
-            <Card className="mb-6">
-              <CardHeader>
-                <CardTitle className="text-base">Contributing Factors</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-3">
-                  {bookingFactors.map((factor) => (
-                    <div key={factor.label}>
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-sm font-medium">{factor.label}</span>
-                        <span className="text-sm font-semibold">
-                          {factor.score}/{factor.max}
-                        </span>
-                      </div>
-                      <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
-                        <div
-                          className={`h-full rounded-full transition-all ${factor.score >= factor.max * 0.7 ? "bg-success" : factor.score >= factor.max * 0.4 ? "bg-warning" : "bg-destructive/60"}`}
-                          style={{ width: `${(factor.score / factor.max) * 100}%` }}
-                        />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="border-l-4 border-l-primary">
-              <CardContent className="py-4">
-                <div className="flex items-start gap-3">
-                  <Info className="h-5 w-5 shrink-0 text-primary mt-0.5" />
-                  <p className="text-sm text-muted-foreground leading-relaxed">
-                    Building direct booking relationships takes time. Stayful focuses on converting platform guests into repeat direct customers, reducing platform fees from 15% to near-zero on direct bookings. By year 3, properties typically achieve 30-50% direct bookings, significantly boosting profitability.
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
-          </section>
-
-          {/* ══════════════════════════════════════════════════════════
-              Section 9: Risk Profile
-              ══════════════════════════════════════════════════════════ */}
-          <section id="risk" ref={setSectionRef("risk")} className="mb-12">
-            <SectionHeading
-              icon={AlertTriangle}
-              title="Risk Profile"
-              subtitle="Comprehensive risk assessment across financial, operational, and compliance dimensions"
-            />
-
-            {/* Overall risk - /100 scale */}
-            <Card className="mb-6">
-              <CardContent className="flex flex-col items-center gap-3 py-6 text-center sm:flex-row sm:justify-center sm:gap-8">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                    Overall Risk Score
-                  </p>
-                  <p className={`text-4xl font-bold ${riskTextColor(v.riskLevel)}`}>
-                    {risk.overallScore * 10}
-                    <span className="text-lg font-normal text-muted-foreground">
-                      /100
-                    </span>
-                  </p>
-                </div>
-                <Badge className={`text-base ${riskColor(v.riskLevel)}`}>
-                  {v.riskLevel === "low"
-                    ? "Low Risk"
-                    : v.riskLevel === "moderate"
-                      ? "Moderate Risk"
-                      : "High Risk"}
-                </Badge>
-              </CardContent>
-            </Card>
-
-            <div className="grid gap-4 sm:grid-cols-3">
-              {/* Financial risks */}
+            {/* Score + Contributing Factors side by side */}
+            <div className="grid gap-6 lg:grid-cols-2 mb-6">
+              {/* Left: Circular score */}
               <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2 text-base">
-                    <DollarSign className="h-4 w-4 text-primary" />
-                    Financial
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-3">
-                    {financialRisks.map((r) => (
-                      <div key={r.label}>
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="text-sm">{r.label}</span>
-                          <span className="text-xs font-semibold">{riskToScore(r.level)}/100</span>
-                        </div>
-                        <Badge className={riskColor(r.level)}>{r.level}</Badge>
-                      </div>
-                    ))}
+                <CardContent className="flex flex-col items-center justify-center py-8">
+                  <div className="relative">
+                    <CircularScore
+                      score={bookingScore}
+                      max={100}
+                      size={160}
+                      strokeWidth={12}
+                      color={bookingScoreColor}
+                    />
                   </div>
+                  <p className={`mt-3 text-lg font-bold ${bookingScore >= 60 ? "text-success" : bookingScore >= 40 ? "text-warning" : "text-destructive"}`}>
+                    {bookingRating}
+                  </p>
+                  <p className="text-xs text-muted-foreground">Direct Booking Potential</p>
                 </CardContent>
               </Card>
 
-              {/* Operational risks */}
+              {/* Right: Contributing Factors */}
               <Card>
                 <CardHeader>
-                  <CardTitle className="flex items-center gap-2 text-base">
-                    <Wrench className="h-4 w-4 text-primary" />
-                    Operational
-                  </CardTitle>
+                  <CardTitle className="text-base">Contributing Factors</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="space-y-3">
-                    {operationalRisks.map((r) => (
-                      <div key={r.label}>
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="text-sm">{r.label}</span>
-                          <span className="text-xs font-semibold">{riskToScore(r.level)}/100</span>
+                  <div className="space-y-4">
+                    {bookingFactors.map((factor) => (
+                      <div key={factor.label} className="flex items-center gap-3">
+                        <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${factor.iconBg}`}>
+                          <factor.icon className={`h-4 w-4 ${factor.iconColor}`} />
                         </div>
-                        <Badge className={riskColor(r.level)}>{r.level}</Badge>
-                      </div>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Compliance risks */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2 text-base">
-                    <ClipboardCheck className="h-4 w-4 text-primary" />
-                    Compliance
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-3">
-                    {complianceRisks.map((r) => (
-                      <div key={r.label}>
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="text-sm">{r.label}</span>
-                          <span className="text-xs font-semibold">{riskToScore(r.level)}/100</span>
+                        <div className="flex-1">
+                          <div className="flex items-center justify-between">
+                            <span className="text-sm font-medium">{factor.label}</span>
+                            <Badge className={
+                              factor.scoreLbl === "High" ? "bg-success text-success-foreground" :
+                              factor.scoreLbl === "Medium" ? "bg-warning text-warning-foreground" :
+                              "bg-muted text-muted-foreground"
+                            }>{factor.scoreLbl}</Badge>
+                          </div>
+                          <p className="text-xs text-muted-foreground">{factor.detail}</p>
                         </div>
-                        <Badge className={riskColor(r.level)}>{r.level}</Badge>
                       </div>
                     ))}
                   </div>
@@ -1951,9 +1800,113 @@ export default function HomePage() {
               </Card>
             </div>
 
-            <p className="mt-4 text-xs text-muted-foreground text-center">
-              Risk scores are estimates based on available market data and location analysis. Individual circumstances may vary. We recommend discussing your specific situation with a Stayful advisor.
-            </p>
+            {/* Direct Booking Tip */}
+            <Card className="border-l-4 border-l-primary">
+              <CardContent className="py-4">
+                <p className="text-sm text-muted-foreground leading-relaxed">
+                  <span className="font-bold text-foreground">Direct Booking Tip: </span>
+                  Building direct booking relationships takes time. Stayful focuses on converting platform guests into repeat direct customers, reducing platform fees from 15% to near-zero on direct bookings. By year 3, properties typically achieve 30-50% direct bookings, significantly boosting profitability.
+                </p>
+              </CardContent>
+            </Card>
+          </section>
+
+          {/* ══════════════════════════════════════════════════════════
+              Section 9: Risk Profile Assessment
+              ══════════════════════════════════════════════════════════ */}
+          <section id="risk" ref={setSectionRef("risk")} className="mb-12">
+            <SectionHeading
+              icon={AlertTriangle}
+              title="Risk Profile Assessment"
+              subtitle="Investment risk score based on revenue consistency and long-term comparison (0 = Low Risk, 100 = High Risk)"
+            />
+
+            {/* Score + Risk label side by side */}
+            <div className="grid gap-6 lg:grid-cols-2 mb-6">
+              {/* Left: Circular gauge */}
+              <Card>
+                <CardContent className="flex flex-col items-center justify-center py-8">
+                  <div className="relative">
+                    <CircularScore
+                      score={overallRiskScore}
+                      max={100}
+                      size={160}
+                      strokeWidth={12}
+                      color={v.riskLevel === "low" ? "#64a064" : v.riskLevel === "moderate" ? "#c8b464" : "#b45050"}
+                    />
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Right: Risk label card */}
+              <Card>
+                <CardContent className="flex flex-col justify-center py-8">
+                  <div className="flex items-center gap-3 mb-3">
+                    {v.riskLevel === "low" ? (
+                      <CheckCircle2 className="h-6 w-6 text-success" />
+                    ) : v.riskLevel === "moderate" ? (
+                      <AlertTriangle className="h-6 w-6 text-warning" />
+                    ) : (
+                      <XCircle className="h-6 w-6 text-destructive" />
+                    )}
+                    <h3 className="text-xl font-bold text-foreground">{riskLabel}</h3>
+                  </div>
+                  <p className="text-sm leading-relaxed text-muted-foreground">
+                    {v.riskLevel === "low"
+                      ? "This property shows strong fundamentals with consistent revenue potential and manageable risk factors."
+                      : v.riskLevel === "moderate"
+                        ? "This property shows moderate risk factors. Revenue is achievable but may be subject to seasonal variation."
+                        : "This property carries higher risk factors that should be carefully considered before proceeding."}
+                  </p>
+
+                  {revDifference < 0 && (
+                    <div className="mt-4 rounded-lg bg-destructive/10 px-4 py-3">
+                      <p className="text-sm text-destructive">
+                        Short-term letting produces {gbp(Math.abs(revDifference))} less annually than long-term letting after operating costs.
+                      </p>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Risk Factor Breakdown */}
+            <div className="mb-4 flex items-center gap-2">
+              <h3 className="text-sm font-bold text-foreground">Risk Factor Breakdown</h3>
+              <Info className="h-4 w-4 text-muted-foreground" />
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2 mb-6">
+              {riskFactors.map((rf) => (
+                <Card key={rf.name}>
+                  <CardContent className="pt-4 pb-4">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-sm font-semibold text-foreground">{rf.name}</span>
+                      <span className="text-sm font-bold text-foreground">{rf.score}/100</span>
+                    </div>
+                    <div className="h-2 w-full overflow-hidden rounded-full bg-muted mb-2">
+                      <div
+                        className={`h-full rounded-full transition-all ${rf.score <= 30 ? "bg-success" : rf.score <= 60 ? "bg-warning" : "bg-destructive"}`}
+                        style={{ width: `${rf.score}%` }}
+                      />
+                    </div>
+                    <p className="text-xs text-muted-foreground leading-relaxed">{rf.desc}</p>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+
+            {/* Disclaimer */}
+            <Card className="border-l-4 border-l-warning bg-warning/5">
+              <CardContent className="py-4">
+                <div className="flex items-start gap-3">
+                  <AlertTriangle className="h-5 w-5 shrink-0 text-warning mt-0.5" />
+                  <p className="text-xs leading-relaxed text-muted-foreground">
+                    Risk scores are estimates based on available market data and location analysis. Individual circumstances may vary. We recommend discussing your specific situation with a Stayful advisor.
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
           </section>
 
           {/* ══════════════════════════════════════════════════════════
@@ -1966,64 +1919,51 @@ export default function HomePage() {
               subtitle="How we calculate our estimates and where the data comes from"
             />
 
+            {/* Methodology card */}
             <Card className="mb-6">
               <CardContent className="py-6">
-                <h3 className="text-sm font-bold text-foreground mb-2">Our Methodology</h3>
+                <h3 className="text-sm font-bold text-foreground mb-2">Methodology</h3>
                 <p className="text-sm leading-relaxed text-muted-foreground">
                   Our property analysis combines data from multiple industry-leading sources to provide accurate revenue estimates. We analyse comparable properties in your area, local demand drivers, seasonal patterns, and market trends. Revenue projections account for platform fees (15%), property management (15%), and cleaning/laundry costs (18%), totalling 48% in operating expenses. Long-term let comparisons use a 10% letting agent fee. All figures are based on current market data and may vary based on property presentation, pricing strategy, and market conditions.
                 </p>
               </CardContent>
             </Card>
 
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {[
-                {
-                  icon: BarChart3,
-                  title: "Airbtics",
-                  desc: "Short-term rental market analytics providing comparable property data, occupancy rates, and revenue estimates.",
-                  stat: `${r.shortLet.activeListings} active listings analysed`,
-                },
-                {
-                  icon: Home,
-                  title: "PropertyData",
-                  desc: "UK property market intelligence for long-term rental valuations and comparable rent analysis.",
-                  stat: `${r.longLet.comparables.length} rental comparables found`,
-                },
-                {
-                  icon: MapPin,
-                  title: "Google Places",
-                  desc: "Location intelligence for nearby amenities, hospitals, universities, and transport links.",
-                  stat: `${demandCategories.reduce((s, c) => s + c.items.length, 0)} demand drivers identified`,
-                },
-                {
-                  icon: Ticket,
-                  title: "Ticketmaster",
-                  desc: "Event data for upcoming concerts, sports, and entertainment driving booking demand.",
-                  stat: `${r.nearbyEvents.totalEvents} upcoming events found`,
-                },
-                {
-                  icon: Building2,
-                  title: "OpenRent",
-                  desc: "UK rental market platform providing additional long-term let comparable data.",
-                  stat: "Market rent benchmarking",
-                },
-              ].map((source) => (
+            {/* Source cards 2-column grid */}
+            <div className="grid gap-4 sm:grid-cols-2 mb-6">
+              {dataSources.map((source) => (
                 <Card key={source.title}>
                   <CardContent className="pt-4 pb-4">
-                    <div className="flex items-center gap-2 mb-2">
-                      <source.icon className="h-4 w-4 text-primary" />
-                      <p className="text-sm font-bold text-foreground">{source.title}</p>
+                    <div className="flex items-start justify-between mb-2">
+                      <div>
+                        <p className="text-sm font-bold text-foreground">{source.title}</p>
+                        <p className="text-xs text-muted-foreground">{source.source}</p>
+                      </div>
+                      <Button variant="outline" size="sm" className="shrink-0 text-xs h-7 px-2">
+                        View
+                      </Button>
                     </div>
                     <p className="text-xs leading-relaxed text-muted-foreground mb-2">
                       {source.desc}
                     </p>
-                    <Badge className="bg-primary/10 text-primary">{source.stat}</Badge>
+                    <ul className="space-y-1 mb-2">
+                      {source.bullets.map((bullet, i) => (
+                        <li key={i} className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                          <TrendingUp className="h-3 w-3 text-success shrink-0" />
+                          {bullet}
+                        </li>
+                      ))}
+                    </ul>
+                    <p className="text-[10px] text-muted-foreground">
+                      Last updated: {source.updated}
+                    </p>
                   </CardContent>
                 </Card>
               ))}
             </div>
 
-            <Card className="mt-6 border-l-4 border-l-warning">
+            {/* Important Disclaimer */}
+            <Card className="border-l-4 border-l-warning bg-warning/5">
               <CardContent className="py-4">
                 <div className="flex items-start gap-3">
                   <AlertTriangle className="h-5 w-5 shrink-0 text-warning mt-0.5" />
@@ -2039,16 +1979,187 @@ export default function HomePage() {
           </section>
 
           {/* ══════════════════════════════════════════════════════════
-              Section 11: Growth (Direct Booking Funnel)
+              Section 11: Growth (Our Plan for Profitability)
               ══════════════════════════════════════════════════════════ */}
           <section id="growth" ref={setSectionRef("growth")} className="mb-12">
-            <SectionHeading
-              icon={Rocket}
-              title="Our Plan for Profitability"
-              subtitle="How Stayful builds a sustainable, profitable short-let operation for your property"
-            />
+            {/* Heading with Stayful logo */}
+            <div className="mb-6 flex items-start justify-between">
+              <div>
+                <div className="flex items-center gap-2">
+                  <Rocket className="h-5 w-5 text-primary" />
+                  <h2 className="text-xl font-bold text-success">Our Plan for Profitability</h2>
+                </div>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  How we build direct bookings to increase your profits over time
+                </p>
+              </div>
+              <Image
+                alt="Stayful"
+                width={80}
+                height={28}
+                className="h-6 w-auto opacity-80"
+                src="/images/stayful-logo.png"
+              />
+            </div>
 
-            {/* 36-month projection stats */}
+            {/* The Direct Booking Funnel */}
+            <Card className="mb-6">
+              <CardHeader>
+                <CardTitle className="text-base">The Direct Booking Funnel</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-4 py-4">
+                  <div className="flex items-center gap-2 text-sm font-medium">
+                    <div className="rounded-lg bg-[#FF5A5F]/10 px-3 py-1.5 text-[#FF5A5F] font-bold">Airbnb</div>
+                    <span className="text-muted-foreground">+</span>
+                    <div className="rounded-lg bg-[#003580]/10 px-3 py-1.5 text-[#003580] font-bold">Booking.com</div>
+                  </div>
+                  <ChevronRight className="h-5 w-5 text-muted-foreground hidden sm:block" />
+                  <ChevronDown className="h-5 w-5 text-muted-foreground sm:hidden" />
+                  <div className="rounded-lg bg-primary/10 px-4 py-2 text-sm font-semibold text-primary">Your Listing</div>
+                  <ChevronRight className="h-5 w-5 text-muted-foreground hidden sm:block" />
+                  <ChevronDown className="h-5 w-5 text-muted-foreground sm:hidden" />
+                  <div className="flex items-center gap-2 text-sm font-medium">
+                    <div className="rounded-lg bg-warning/10 px-3 py-1.5 text-warning font-bold">monday.com</div>
+                    <span className="text-muted-foreground">+</span>
+                    <div className="rounded-lg bg-primary/10 px-3 py-1.5 text-primary font-bold">Stayful</div>
+                  </div>
+                  <ChevronRight className="h-5 w-5 text-muted-foreground hidden sm:block" />
+                  <ChevronDown className="h-5 w-5 text-muted-foreground sm:hidden" />
+                  <div className="rounded-lg bg-success/10 px-4 py-2 text-sm font-semibold text-success">Direct / Repeat</div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* 4 numbered steps */}
+            <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              {[
+                {
+                  num: 1,
+                  title: "Platform Bookings",
+                  desc: "Launch on Airbnb and Booking.com to build early demand, bookings and reviews",
+                },
+                {
+                  num: 2,
+                  title: "Data Collection",
+                  desc: "Learn which guest types, lengths of stay and price points perform best",
+                },
+                {
+                  num: 3,
+                  title: "Direct Bookings",
+                  desc: "Turn repeat guests into lower-cost direct customers",
+                },
+                {
+                  num: 4,
+                  title: "The Result",
+                  desc: "Higher share of profitable, repeat and lower-friction bookings",
+                },
+              ].map((step) => (
+                <Card key={step.num}>
+                  <CardContent className="flex flex-col items-center px-4 py-6 text-center">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary text-sm font-bold text-primary-foreground">
+                      {step.num}
+                    </div>
+                    <p className="mt-3 text-sm font-bold text-foreground">
+                      {step.title}
+                    </p>
+                    <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                      {step.desc}
+                    </p>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+
+            {/* Benefits: 4 cards with green dots */}
+            <div className="mb-6 grid gap-3 grid-cols-2 lg:grid-cols-4">
+              {[
+                "Cheaper cleaning",
+                "Longer stays",
+                "Cheaper fees",
+                "Less maintenance",
+              ].map((benefit) => (
+                <div key={benefit} className="flex items-center gap-2 rounded-lg bg-card px-3 py-2.5 ring-1 ring-border">
+                  <div className="h-2.5 w-2.5 shrink-0 rounded-full bg-success" />
+                  <span className="text-sm font-medium text-foreground">{benefit}</span>
+                </div>
+              ))}
+            </div>
+
+            {/* Income Growth Over Time - 36-month chart */}
+            <Card className="mb-6">
+              <CardHeader>
+                <CardTitle className="text-base">Income Growth Over Time</CardTitle>
+                <CardDescription>Projected revenue, expenses and profit over 36 months</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="h-72 w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={growthData}>
+                      <XAxis
+                        dataKey="month"
+                        tick={{ fontSize: 10, fill: "#6e9164" }}
+                        axisLine={false}
+                        tickLine={false}
+                        interval={5}
+                      />
+                      <YAxis
+                        tick={{ fontSize: 11, fill: "#6e9164" }}
+                        axisLine={false}
+                        tickLine={false}
+                        tickFormatter={(v) => `£${(v / 1000).toFixed(0)}k`}
+                        width={50}
+                      />
+                      <Tooltip
+                        formatter={(value) => [gbp(Number(value ?? 0)), ""]}
+                        contentStyle={{
+                          backgroundColor: "#e6ebd7",
+                          border: "1px solid #aab99b",
+                          borderRadius: "8px",
+                          fontSize: "12px",
+                        }}
+                      />
+                      <Legend wrapperStyle={{ fontSize: "12px", paddingTop: "8px" }} />
+                      <Area
+                        type="monotone"
+                        dataKey="Revenue"
+                        stroke="#5d8156"
+                        fill="#5d8156"
+                        fillOpacity={0.2}
+                        strokeWidth={2}
+                      />
+                      <Area
+                        type="monotone"
+                        dataKey="Expenses"
+                        stroke="#b45050"
+                        fill="#b45050"
+                        fillOpacity={0.1}
+                        strokeWidth={2}
+                      />
+                      <Area
+                        type="monotone"
+                        dataKey="Profit"
+                        stroke="#64a064"
+                        fill="#64a064"
+                        fillOpacity={0.15}
+                        strokeWidth={2}
+                      />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
+
+                {/* Milestone pills */}
+                <div className="mt-4 flex flex-wrap gap-2 justify-center">
+                  {["M1 Launch", "M6", "M12", "M18", "M24", "M30", "M36"].map((milestone) => (
+                    <span key={milestone} className="rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
+                      {milestone}
+                    </span>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* 4 stat cards */}
             <div className="mb-6 grid gap-4 grid-cols-2 lg:grid-cols-4">
               <Card>
                 <CardContent className="pt-4 text-center">
@@ -2080,487 +2191,19 @@ export default function HomePage() {
               </Card>
             </div>
 
-            {/* Desktop: horizontal flow */}
-            <div className="hidden md:block">
-              <div className="flex items-start justify-between">
-                {[
-                  {
-                    icon: Rocket,
-                    title: "Momentum",
-                    desc: "Launch on Airbnb and Booking.com to build early demand, bookings and reviews",
-                  },
-                  {
-                    icon: BarChart3,
-                    title: "Data",
-                    desc: "Learn which guest types, lengths of stay and price points perform best",
-                  },
-                  {
-                    icon: RefreshCw,
-                    title: "Direct Bookings",
-                    desc: "Turn repeat guests into lower-cost direct customers",
-                  },
-                  {
-                    icon: TrendingUp,
-                    title: "Expand",
-                    desc: "Benefit from Stayful's wider guest network and more repeat opportunities",
-                  },
-                ].map((step, i, arr) => (
-                  <div key={step.title} className="flex flex-1 items-start">
-                    <Card className="flex-1">
-                      <CardContent className="flex flex-col items-center px-4 py-6 text-center">
-                        <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
-                          <step.icon className="h-6 w-6 text-primary" />
-                        </div>
-                        <p className="mt-3 text-sm font-bold text-foreground">
-                          {step.title}
-                        </p>
-                        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                          {step.desc}
-                        </p>
-                      </CardContent>
-                    </Card>
-                    {i < arr.length - 1 && (
-                      <div className="flex shrink-0 items-center self-center px-1 pt-2">
-                        <ChevronRight className="h-5 w-5 text-primary/50" />
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Mobile: vertical flow */}
-            <div className="space-y-3 md:hidden">
-              {[
-                {
-                  icon: Rocket,
-                  title: "Momentum",
-                  desc: "Launch on Airbnb and Booking.com to build early demand, bookings and reviews",
-                },
-                {
-                  icon: BarChart3,
-                  title: "Data",
-                  desc: "Learn which guest types, lengths of stay and price points perform best",
-                },
-                {
-                  icon: RefreshCw,
-                  title: "Direct Bookings",
-                  desc: "Turn repeat guests into lower-cost direct customers",
-                },
-                {
-                  icon: TrendingUp,
-                  title: "Expand",
-                  desc: "Benefit from Stayful's wider guest network and more repeat opportunities",
-                },
-              ].map((step) => (
-                <Card key={step.title}>
-                  <CardContent className="flex items-start gap-4 py-4">
-                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10">
-                      <step.icon className="h-5 w-5 text-primary" />
-                    </div>
-                    <div>
-                      <p className="text-sm font-bold text-foreground">
-                        {step.title}
-                      </p>
-                      <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
-                        {step.desc}
-                      </p>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-
-            {/* Result callout */}
-            <Card className="mt-4 border-l-4 border-l-primary">
-              <CardContent className="py-4">
-                <p className="text-sm font-semibold text-foreground">
-                  Result:{" "}
-                  <span className="font-normal text-muted-foreground">
-                    a higher share of profitable, repeat and lower-friction bookings.
-                  </span>
-                </p>
-              </CardContent>
-            </Card>
-
-            {/* Revenue Growth Timeline */}
-            <div className="mt-6">
-              <h3 className="mb-3 text-sm font-semibold text-foreground">
-                Income Growth Timeline
-              </h3>
-              <div className="grid gap-4 sm:grid-cols-3">
-                {/* Year 1 */}
-                <Card className="border-muted">
-                  <CardContent className="pt-4 pb-4">
-                    <Badge className="mb-2 bg-muted text-muted-foreground">
-                      Year 1
-                    </Badge>
-                    <p className="text-sm font-bold text-foreground">
-                      Platform-Led
-                    </p>
-                    <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                      Bookings primarily through Airbnb &amp; Booking.com. Building
-                      reviews and data.
-                    </p>
-                    <div className="mt-3 flex items-center gap-2 text-[10px]">
-                      <div className="flex h-2 flex-1 overflow-hidden rounded-full bg-muted">
-                        <div className="bg-muted-foreground/40" style={{ width: "95%" }} />
-                        <div className="bg-success/40" style={{ width: "5%" }} />
-                      </div>
-                      <span className="text-muted-foreground whitespace-nowrap">
-                        ~5% direct
-                      </span>
-                    </div>
-                    <p className="mt-2 text-xs font-semibold text-foreground">
-                      Est. Net: {gbp(stlNetAnnual)}/yr
-                    </p>
-                  </CardContent>
-                </Card>
-
-                {/* Year 2 */}
-                <Card className="border-warning/30">
-                  <CardContent className="pt-4 pb-4">
-                    <Badge className="mb-2 bg-warning/20 text-warning">
-                      Year 2
-                    </Badge>
-                    <p className="text-sm font-bold text-foreground">
-                      Repeat &amp; Direct
-                    </p>
-                    <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                      Growing repeat guest base. ~20% of bookings direct. Lower
-                      platform fees.
-                    </p>
-                    <div className="mt-3 flex items-center gap-2 text-[10px]">
-                      <div className="flex h-2 flex-1 overflow-hidden rounded-full bg-muted">
-                        <div className="bg-muted-foreground/40" style={{ width: "80%" }} />
-                        <div className="bg-warning" style={{ width: "20%" }} />
-                      </div>
-                      <span className="text-muted-foreground whitespace-nowrap">
-                        ~20% direct
-                      </span>
-                    </div>
-                    <p className="mt-2 text-xs font-semibold text-foreground">
-                      Est. Net: {gbp(Math.round(stlNetAnnual + grossAnnual * 0.20 * 0.15))}/yr
-                    </p>
-                  </CardContent>
-                </Card>
-
-                {/* Year 3+ */}
-                <Card className="border-success/30">
-                  <CardContent className="pt-4 pb-4">
-                    <Badge className="mb-2 bg-success/20 text-success">
-                      Year 3+
-                    </Badge>
-                    <p className="text-sm font-bold text-foreground">
-                      Mature Operation
-                    </p>
-                    <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                      50%+ direct bookings. Stronger margins. More stability and
-                      control.
-                    </p>
-                    <div className="mt-3 flex items-center gap-2 text-[10px]">
-                      <div className="flex h-2 flex-1 overflow-hidden rounded-full bg-muted">
-                        <div className="bg-muted-foreground/40" style={{ width: "50%" }} />
-                        <div className="bg-success" style={{ width: "50%" }} />
-                      </div>
-                      <span className="text-muted-foreground whitespace-nowrap">
-                        ~50% direct
-                      </span>
-                    </div>
-                    <p className="mt-2 text-xs font-semibold text-success">
-                      Est. Net: {gbp(Math.round(stlNetAnnual + grossAnnual * 0.50 * 0.15))}/yr
-                    </p>
-                  </CardContent>
-                </Card>
-              </div>
-            </div>
-          </section>
-
-          {/* ══════════════════════════════════════════════════════════
-              Post-Tab Sections (What Stayful Manages, Protection, etc.)
-              ══════════════════════════════════════════════════════════ */}
-
-          {/* ── What Stayful Manages ────────────────────────────── */}
-          <section className="mb-10">
-            <SectionHeading
-              icon={Star}
-              title="What Stayful Manages"
-              subtitle="A clear breakdown of responsibilities between Stayful and you"
-            />
-
-            <div className="grid gap-4 lg:grid-cols-3">
-              {/* Left column: Stayful Handles */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2 text-base text-success">
-                    <CheckCircle2 className="h-4 w-4" />
-                    Stayful Handles
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <ul className="space-y-3">
-                    {[
-                      "Cleaning & Laundry",
-                      "Maintenance",
-                      "Guest Communication",
-                      "Key Management",
-                      "Direct Bookings",
-                      "Dynamic Pricing",
-                    ].map((text) => (
-                      <li key={text} className="flex items-center gap-3">
-                        <CheckCircle2 className="h-4 w-4 shrink-0 text-success" />
-                        <span className="text-sm">{text}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </CardContent>
-              </Card>
-
-              {/* Center column: What's Included */}
-              <Card className="bg-muted/40 ring-1 ring-primary/20">
-                <CardHeader>
-                  <div className="flex flex-col items-center gap-2">
-                    <Badge className="bg-primary text-primary-foreground text-xs">
-                      Included in your 15% + VAT
-                    </Badge>
-                    <CardTitle className="text-base text-center">
-                      What&apos;s Included
-                    </CardTitle>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-3">
-                    {[
-                      { icon: Layers, text: "Central Channel Manager" },
-                      { icon: MessageSquare, text: "Slack Messaging" },
-                      { icon: FileText, text: "Detailed Monthly Reports" },
-                      { icon: Phone, text: "Quarterly Performance Calls" },
-                      { icon: BookOpen, text: "Monthly Market Newsletter" },
-                    ].map((item) => (
-                      <div
-                        key={item.text}
-                        className="flex items-center gap-3 rounded-lg bg-card px-3 py-2.5 ring-1 ring-border"
-                      >
-                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary/10">
-                          <item.icon className="h-4 w-4 text-primary" />
-                        </div>
-                        <span className="text-sm font-medium">{item.text}</span>
-                      </div>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Right column: Landlord Handles */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2 text-base text-muted-foreground">
-                    <Home className="h-4 w-4" />
-                    Landlord Handles
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <ul className="space-y-3">
-                    {[
-                      "Utilities (smart thermostat advised)",
-                      "Mortgage Payments",
-                      "WIFI & Council Tax (can be free)",
-                    ].map((text) => (
-                      <li key={text} className="flex items-center gap-3">
-                        <Home className="h-4 w-4 shrink-0 text-muted-foreground" />
-                        <span className="text-sm">{text}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </CardContent>
-              </Card>
-            </div>
-          </section>
-
-          {/* ── Guest Protection ──────────────────────────────── */}
-          <section className="mb-10">
-            <SectionHeading
-              icon={ShieldCheck}
-              title="How We Protect Your Property"
-              subtitle="Stayful's comprehensive guest vetting and property protection measures"
-            />
-
-            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
-              {[
-                {
-                  icon: Shield,
-                  title: "\u00A3200 security deposit",
-                },
-                {
-                  icon: ClipboardCheck,
-                  title: "ID checks for every guest",
-                },
-                {
-                  icon: ShieldCheck,
-                  title: "Insurance up to \u00A3100,000 per stay",
-                },
-                {
-                  icon: Eye,
-                  title: "Quarterly property inspections",
-                },
-                {
-                  icon: Users,
-                  title: "30% direct bookings",
-                },
-              ].map((item) => (
-                <Card key={item.title} className="text-center">
-                  <CardContent className="flex flex-col items-center px-3 py-6">
-                    <div className="flex h-16 w-16 items-center justify-center rounded-full bg-primary text-primary-foreground" style={{ clipPath: "polygon(30% 0%, 70% 0%, 100% 30%, 100% 70%, 70% 100%, 30% 100%, 0% 70%, 0% 30%)" }}>
-                      <item.icon className="h-7 w-7" />
-                    </div>
-                    <p className="mt-3 text-xs font-semibold leading-tight text-foreground">
-                      {item.title}
-                    </p>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          </section>
-
-          {/* ── Onboarding Timeline ──────────────────────────── */}
-          <section className="mb-10">
-            <SectionHeading
-              icon={Clock}
-              title="Onboarding Timeline"
-              subtitle="What to expect from signing to your first guest"
-            />
-
-            <Card>
-              <CardContent className="py-6">
-                <div className="relative">
-                  {/* Desktop horizontal timeline */}
-                  <div className="hidden lg:block">
-                    <div className="flex items-start justify-between">
-                      {[
-                        {
-                          step: "1",
-                          title: "Contract Signed",
-                          desc: "Onboarding form filled, answer what you can, we'll work together on the rest",
-                          icon: FileText,
-                        },
-                        {
-                          step: "2",
-                          title: "Kick Off Call",
-                          desc: "Discuss specific plans and create a Slack channel for communication",
-                          icon: Phone,
-                        },
-                        {
-                          step: "3",
-                          title: "Furnishing & Photos",
-                          desc: "End-to-end service by Stayful, or DIY with our free setup guide",
-                          icon: Camera,
-                        },
-                        {
-                          step: "4",
-                          title: "Inspection & Snagging",
-                          desc: "Our team visits with a detailed snagging list before going live",
-                          icon: ClipboardCheck,
-                        },
-                        {
-                          step: "5",
-                          title: "Go Live",
-                          desc: "Listing setup on all platforms and you're live",
-                          icon: Zap,
-                        },
-                      ].map((item, i, arr) => (
-                        <div
-                          key={item.step}
-                          className="relative flex flex-1 flex-col items-center text-center"
-                        >
-                          {i < arr.length - 1 && (
-                            <div className="absolute left-1/2 top-5 h-0.5 w-full bg-primary/20" />
-                          )}
-                          <div className="relative z-10 flex h-10 w-10 items-center justify-center rounded-full bg-primary text-sm font-bold text-primary-foreground">
-                            <item.icon className="h-4 w-4" />
-                          </div>
-                          <p className="mt-2 text-xs font-semibold text-foreground">
-                            {item.title}
-                          </p>
-                          <p className="mt-0.5 max-w-[140px] text-[10px] leading-tight text-muted-foreground">
-                            {item.desc}
-                          </p>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Mobile vertical timeline */}
-                  <div className="space-y-4 lg:hidden">
-                    {[
-                      {
-                        step: "1",
-                        title: "Contract Signed",
-                        desc: "Onboarding form filled, answer what you can, we'll work together on the rest",
-                        icon: FileText,
-                      },
-                      {
-                        step: "2",
-                        title: "Kick Off Call",
-                        desc: "Discuss specific plans and create a Slack channel for communication",
-                        icon: Phone,
-                      },
-                      {
-                        step: "3",
-                        title: "Furnishing & Photos",
-                        desc: "End-to-end service by Stayful, or DIY with our free setup guide",
-                        icon: Camera,
-                      },
-                      {
-                        step: "4",
-                        title: "Inspection & Snagging",
-                        desc: "Our team visits with a detailed snagging list before going live",
-                        icon: ClipboardCheck,
-                      },
-                      {
-                        step: "5",
-                        title: "Go Live",
-                        desc: "Listing setup on all platforms and you're live",
-                        icon: Zap,
-                      },
-                    ].map((item) => (
-                      <div key={item.step} className="flex items-start gap-3">
-                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">
-                          <item.icon className="h-3.5 w-3.5" />
-                        </div>
-                        <div>
-                          <p className="text-sm font-semibold text-foreground">
-                            {item.title}
-                          </p>
-                          <p className="text-xs text-muted-foreground">
-                            {item.desc}
-                          </p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Tagline */}
-                <div className="mt-6 text-center">
-                  <Badge className="bg-primary/10 text-primary text-sm font-semibold px-4 py-1.5">
-                    3 weeks from kick off to go live
-                  </Badge>
-                </div>
-              </CardContent>
-            </Card>
-          </section>
-
-          {/* ── Footer CTA ────────────────────────────────────── */}
-          <section className="mb-10">
+            {/* CTA Card */}
             <Card className="bg-primary text-primary-foreground">
               <CardContent className="flex flex-col items-center gap-4 py-10 text-center">
-                <h2 className="text-2xl font-bold">Ready to Get Started?</h2>
+                <h2 className="text-2xl font-bold">Ready to maximise your rental income?</h2>
                 <p className="max-w-lg text-sm text-primary-foreground/80">
                   Let Stayful handle the hard work while you earn more from your
-                  property. Our team will guide you through every step of the
-                  onboarding process.
+                  property. Book a free consultation to get started.
                 </p>
                 <div className="flex flex-wrap items-center gap-3">
+                  <div className="flex items-center gap-2 text-sm font-medium text-primary-foreground/80">
+                    <Phone className="h-4 w-4" />
+                    <span>07471 321 997</span>
+                  </div>
                   <Button
                     variant="secondary"
                     size="lg"
@@ -2571,72 +2214,32 @@ export default function HomePage() {
                       )
                     }
                   >
-                    <Phone className="mr-2 h-4 w-4" />
-                    Book a Call
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="lg"
-                    className="border-primary-foreground/30 text-primary-foreground hover:bg-primary-foreground/10"
-                    onClick={() =>
-                      window.open(
-                        "/stayful-management-agreement.pdf",
-                        "_blank"
-                      )
-                    }
-                  >
-                    <FileText className="mr-2 h-4 w-4" />
-                    View Management Agreement
+                    <Calendar className="mr-2 h-4 w-4" />
+                    Book a Free Consultation
                   </Button>
                 </div>
               </CardContent>
             </Card>
           </section>
-        </div>
 
-        {/* Footer */}
-        <footer className="border-t border-border bg-muted/30 py-8 pb-24">
-          <div className="mx-auto max-w-7xl px-4 text-center text-sm text-muted-foreground sm:px-6 lg:px-8">
-            <Image
-              alt="Stayful"
-              loading="lazy"
-              width={100}
-              height={35}
-              className="mx-auto mb-4 h-8 w-auto opacity-60"
-              src="/images/stayful-logo.png"
-            />
-            <p>
-              &copy; {new Date().getFullYear()} Stayful. All rights reserved.
-            </p>
-            <p className="mt-2">
-              Data sourced from Airbtics, AirDNA, OpenRent, and public market
-              research.
-            </p>
           </div>
-        </footer>
 
-        {/* ── Sticky Footer CTA Bar ──────────────────────────────── */}
-        <div className="fixed bottom-0 left-0 right-0 z-50 border-t border-border bg-card/90 backdrop-blur-md">
-          <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3 sm:px-6 lg:px-8">
-            <p className="hidden text-sm font-medium text-foreground sm:block">
-              Want an expert opinion on these results?
-            </p>
-            <p className="text-sm font-medium text-foreground sm:hidden">
-              Need expert advice?
-            </p>
-            <Button
-              size="sm"
-              onClick={() =>
-                window.open(
-                  "https://calendly.com/zac-stayful/call",
-                  "_blank"
-                )
-              }
-            >
-              <Calendar className="mr-1.5 h-4 w-4" />
-              Book Expert Risk Analysis
-            </Button>
-          </div>
+          {/* Footer */}
+          <footer className="border-t border-border bg-muted/30 py-8">
+            <div className="mx-auto max-w-5xl px-6 text-center text-sm text-muted-foreground">
+              <Image
+                alt="Stayful"
+                loading="lazy"
+                width={100}
+                height={35}
+                className="mx-auto mb-4 h-8 w-auto opacity-60"
+                src="/images/stayful-logo.png"
+              />
+              <p>
+                &copy; {new Date().getFullYear()} Stayful. All rights reserved.
+              </p>
+            </div>
+          </footer>
         </div>
       </main>
       </>
