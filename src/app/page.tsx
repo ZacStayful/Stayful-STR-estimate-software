@@ -72,6 +72,7 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import Presentation from "@/components/Presentation";
 import type { AnalysisResult, RiskLevel, VerdictFit } from "@/lib/types";
 import {
   BarChart,
@@ -225,6 +226,7 @@ export default function HomePage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<AnalysisResult | null>(null);
+  const [showPresentation, setShowPresentation] = useState(false);
   const [progress, setProgress] = useState(0);
   const [completedStages, setCompletedStages] = useState<Set<string>>(new Set());
   const [currentMessage, setCurrentMessage] = useState("");
@@ -676,6 +678,10 @@ export default function HomePage() {
     const activeTabInfo = TAB_SECTIONS.find((t) => t.id === activeTab);
 
     return (
+      <>
+      {showPresentation && (
+        <Presentation data={r} onClose={() => setShowPresentation(false)} />
+      )}
       <main className="min-h-screen bg-background">
         {/* Report Header */}
         <header className="sticky top-0 z-40 border-b border-border bg-primary py-4">
@@ -698,10 +704,16 @@ export default function HomePage() {
                 </p>
               </div>
             </div>
-            <Button variant="secondary" size="sm" onClick={handleReset}>
-              <ArrowLeft className="mr-1.5 h-3.5 w-3.5" />
-              Analyse Another
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button variant="secondary" size="sm" onClick={() => setShowPresentation(true)}>
+                <Monitor className="mr-1.5 h-3.5 w-3.5" />
+                Present
+              </Button>
+              <Button variant="secondary" size="sm" onClick={handleReset}>
+                <ArrowLeft className="mr-1.5 h-3.5 w-3.5" />
+                Analyse Another
+              </Button>
+            </div>
           </div>
         </header>
 
@@ -758,14 +770,9 @@ export default function HomePage() {
                     </Badge>
                     <Button
                       size="sm"
-                      onClick={() =>
-                        window.open(
-                          "https://calendly.com/zac-stayful/call",
-                          "_blank"
-                        )
-                      }
+                      onClick={() => setShowPresentation(true)}
                     >
-                      <Phone className="mr-1.5 h-3.5 w-3.5" />
+                      <Monitor className="mr-1.5 h-3.5 w-3.5" />
                       View Presentation
                     </Button>
                   </div>
@@ -2632,6 +2639,7 @@ export default function HomePage() {
           </div>
         </div>
       </main>
+      </>
     );
   }
 
