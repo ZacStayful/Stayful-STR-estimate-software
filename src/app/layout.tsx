@@ -12,6 +12,14 @@ export const metadata: Metadata = {
   description:
     "Analyse your property's short-term rental potential with Stayful. Compare Airbnb income vs long-term let, view local demand drivers, and get a comprehensive risk assessment.",
   generator: "Stayful",
+  icons: {
+    icon: [
+      { url: "/favicon.svg", type: "image/svg+xml" },
+      { url: "/icon-light-32x32.png", sizes: "32x32", type: "image/png", media: "(prefers-color-scheme: light)" },
+      { url: "/icon-dark-32x32.png", sizes: "32x32", type: "image/png", media: "(prefers-color-scheme: dark)" },
+    ],
+    apple: "/apple-icon.png",
+  },
 };
 
 export default function RootLayout({
