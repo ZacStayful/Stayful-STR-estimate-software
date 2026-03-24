@@ -5,211 +5,196 @@
  * Auth: x-api-key header
  * Docs: https://documenter.getpostman.com/view/25155751/2sB3QRoSvW
  *
- * Endpoints used:
- *   - report/summary ($0.10/call) — revenue estimate for a postcode/bedrooms
- *   - report/all ($0.50/call) — full report with comparables and percentiles
- *
- * Falls back to UK market estimates when API is unavailable or has no credits.
+ * Flow:
+ *   1. markets/search — find market_id from postcode/city ($0.01)
+ *   2. markets/metrics/revenue — monthly revenue with percentiles ($0.20)
+ *   3. markets/metrics/occupancy — monthly occupancy ($0.20)
+ *   4. markets/metrics/average-daily-rate — monthly ADR ($0.20)
+ *   5. markets/metrics/active-listings — competition count ($0.20)
+ *   Total: ~$0.81 per analysis
  */
 
-import type { ShortLetData, ShortLetComparable } from '../types';
+import type { ShortLetData } from '../types';
 
 const BASE_URL = 'https://crap0y5bx5.execute-api.us-east-2.amazonaws.com/prod';
 
 export async function getShortLetData(
   postcode: string,
   bedrooms: number,
-  guests: number,
+  _guests: number,
 ): Promise<ShortLetData> {
   const apiKey = process.env.AIRBTICS_API_KEY;
 
-  if (apiKey) {
-    try {
-      // Try report/all first for comparables, fall back to report/summary
-      const result = await fetchReportAll(postcode, bedrooms, apiKey);
-      if (result) return result;
-
-      const summary = await fetchReportSummary(postcode, bedrooms, apiKey);
-      if (summary) return summary;
-
-      console.log('Airbtics API returned no data, using market estimates');
-    } catch (err) {
-      console.log('Airbtics API error, using market estimates:', err);
-    }
-  } else {
+  if (!apiKey) {
     console.log('AIRBTICS_API_KEY not set, using market estimates');
+    return generateMarketEstimate(bedrooms);
   }
 
-  return generateMarketEstimate(bedrooms);
+  try {
+    // Step 1: Find market ID from postcode area
+    const marketId = await findMarketId(postcode, apiKey);
+    if (!marketId) {
+      console.log('Airbtics: no market found for postcode, using estimates');
+      return generateMarketEstimate(bedrooms);
+    }
+
+    // Step 2: Fetch all metrics in parallel
+    const [revenueData, occupancyData, adrData, listingsData] = await Promise.allSettled([
+      fetchMetric('revenue', marketId, bedrooms, apiKey, 'GBP'),
+      fetchMetric('occupancy', marketId, bedrooms, apiKey),
+      fetchMetric('average-daily-rate', marketId, bedrooms, apiKey, 'GBP'),
+      fetchMetric('active-listings', marketId, bedrooms, apiKey),
+    ]);
+
+    const revenue = revenueData.status === 'fulfilled' ? revenueData.value : [];
+    const occupancy = occupancyData.status === 'fulfilled' ? occupancyData.value : [];
+    const adr = adrData.status === 'fulfilled' ? adrData.value : [];
+    const listings = listingsData.status === 'fulfilled' ? listingsData.value : [];
+
+    if (revenue.length === 0) {
+      console.log('Airbtics: no revenue data returned, using estimates');
+      return generateMarketEstimate(bedrooms);
+    }
+
+    // Use p50 (median) values — most realistic for typical performance
+    const monthlyRevenue = extractLast12Months(revenue, 'p50');
+    const monthlyOccupancy = extractLast12Months(occupancy, 'p50');
+    const monthlyAdr = extractLast12Months(adr, 'p50');
+
+    const annualRevenue = monthlyRevenue.reduce((a, b) => a + b, 0);
+    const avgOccupancy = monthlyOccupancy.length > 0
+      ? monthlyOccupancy.reduce((a, b) => a + b, 0) / monthlyOccupancy.length / 100
+      : 0.65;
+    const avgAdr = monthlyAdr.length > 0
+      ? Math.round(monthlyAdr.reduce((a, b) => a + b, 0) / monthlyAdr.length)
+      : 0;
+
+    // Get latest active listings count
+    const latestListings = listings.length > 0
+      ? (listings[listings.length - 1] as Record<string, number>).count ?? 0
+      : 0;
+
+    // Ensure we have exactly 12 months of revenue
+    const paddedRevenue = padTo12Months(monthlyRevenue);
+
+    return {
+      annualRevenue: Math.round(annualRevenue),
+      monthlyRevenue: paddedRevenue,
+      occupancyRate: Math.round(avgOccupancy * 100) / 100,
+      averageDailyRate: avgAdr,
+      activeListings: latestListings,
+      comparables: [],
+    };
+  } catch (err) {
+    console.log('Airbtics API error, using market estimates:', err);
+    return generateMarketEstimate(bedrooms);
+  }
 }
 
 /**
- * Calls report/all ($0.50) — includes percentiles and 10-40 comparable listings.
+ * Finds the Airbtics market_id for a given UK postcode.
+ * Extracts the city/area from the postcode prefix and searches.
  */
-async function fetchReportAll(
-  postcode: string,
-  bedrooms: number,
-  apiKey: string,
-): Promise<ShortLetData | null> {
-  const url = new URL(`${BASE_URL}/report/all`);
-  url.searchParams.set('zipcode', postcode);
-  url.searchParams.set('bedrooms', String(bedrooms));
-  url.searchParams.set('country_code', 'GB');
-  url.searchParams.set('currency', 'GBP');
+async function findMarketId(postcode: string, apiKey: string): Promise<number | null> {
+  // Extract the outward code (e.g., "M1" from "M1 1AD", "SW1A" from "SW1A 1AA")
+  const parts = postcode.trim().split(/\s+/);
+  const outwardCode = parts[0];
 
-  const response = await fetch(url.toString(), {
-    headers: { 'x-api-key': apiKey },
-  });
-
-  if (!response.ok) return null;
-
-  const data = await response.json();
-
-  if (data.message === 'insufficient_credits' || data.error) {
-    console.log('Airbtics report/all:', data.message || data.error);
-    return null;
-  }
-
-  // Parse comparables from report/all
-  const comparables: ShortLetComparable[] = Array.isArray(data.comparables)
-    ? data.comparables.map((comp: Record<string, unknown>) => ({
-        title: String(comp.title ?? comp.name ?? ''),
-        url: String(comp.url ?? comp.listing_url ?? ''),
-        bedrooms: Number(comp.bedrooms ?? 0),
-        accommodates: Number(comp.accommodates ?? comp.guests ?? 0),
-        averageDailyRate: Number(comp.adr ?? comp.average_daily_rate ?? 0),
-        occupancyRate: Number(comp.occupancy_rate ?? comp.occ ?? 0),
-        annualRevenue: Number(comp.revenue ?? comp.annual_revenue ?? 0),
-        distance: comp.distance != null ? Number(comp.distance) : undefined,
-      }))
-    : [];
-
-  return parseAirbticResponse(data, comparables);
-}
-
-/**
- * Calls report/summary ($0.10) — lighter, no comparables.
- */
-async function fetchReportSummary(
-  postcode: string,
-  bedrooms: number,
-  apiKey: string,
-): Promise<ShortLetData | null> {
-  const url = new URL(`${BASE_URL}/report/summary`);
-  url.searchParams.set('zipcode', postcode);
-  url.searchParams.set('bedrooms', String(bedrooms));
-  url.searchParams.set('country_code', 'GB');
-  url.searchParams.set('currency', 'GBP');
-
-  const response = await fetch(url.toString(), {
-    headers: { 'x-api-key': apiKey },
-  });
-
-  if (!response.ok) return null;
-
-  const data = await response.json();
-
-  if (data.message === 'insufficient_credits' || data.error) {
-    console.log('Airbtics report/summary:', data.message || data.error);
-    return null;
-  }
-
-  return parseAirbticResponse(data, []);
-}
-
-/**
- * Parses Airbtics API response into our ShortLetData type.
- * Handles multiple response shapes from different endpoints.
- */
-function parseAirbticResponse(
-  data: Record<string, unknown>,
-  comparables: ShortLetComparable[],
-): ShortLetData | null {
-  // Try various field name patterns the API might use
-  const annualRevenue = Number(
-    data.annual_revenue ?? data.revenue ?? data.estimated_revenue ?? 0,
-  );
-  const occupancyRate = Number(
-    data.occupancy_rate ?? data.occ ?? data.occupancy ?? 0,
-  );
-  const averageDailyRate = Number(
-    data.adr ?? data.average_daily_rate ?? data.avg_daily_rate ?? 0,
-  );
-  const activeListings = Number(
-    data.active_listings ?? data.total_listings ?? data.listing_count ?? 0,
-  );
-
-  // If we got no meaningful data, return null
-  if (annualRevenue === 0 && averageDailyRate === 0 && occupancyRate === 0) {
-    return null;
-  }
-
-  const monthlyRevenue = parseMonthlyRevenue(data, annualRevenue);
-
-  return {
-    annualRevenue,
-    monthlyRevenue,
-    occupancyRate: occupancyRate > 1 ? occupancyRate / 100 : occupancyRate,
-    averageDailyRate,
-    activeListings,
-    comparables,
+  // Map common UK postcode prefixes to city names for better search
+  const postcodeToCity: Record<string, string> = {
+    'M': 'Manchester', 'SW': 'London', 'SE': 'London', 'N': 'London', 'E': 'London',
+    'W': 'London', 'EC': 'London', 'WC': 'London', 'NW': 'London',
+    'B': 'Birmingham', 'BS': 'Bristol', 'LS': 'Leeds', 'S': 'Sheffield',
+    'L': 'Liverpool', 'EH': 'Edinburgh', 'G': 'Glasgow', 'CF': 'Cardiff',
+    'NE': 'Newcastle', 'NG': 'Nottingham', 'LE': 'Leicester', 'BN': 'Brighton',
+    'OX': 'Oxford', 'CB': 'Cambridge', 'BA': 'Bath', 'YO': 'York',
+    'PO': 'Portsmouth', 'SO': 'Southampton', 'CV': 'Coventry', 'DE': 'Derby',
+    'EX': 'Exeter', 'PL': 'Plymouth', 'BT': 'Belfast', 'AB': 'Aberdeen',
   };
-}
 
-/**
- * Attempts to parse monthly revenue from various response shapes.
- */
-function parseMonthlyRevenue(
-  data: Record<string, unknown>,
-  annualRevenue: number,
-): ShortLetData['monthlyRevenue'] {
-  const empty: ShortLetData['monthlyRevenue'] = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
-
-  // Shape 1: array of 12 numbers
-  if (Array.isArray(data.monthly_revenue) && data.monthly_revenue.length === 12) {
-    return data.monthly_revenue.map(Number) as ShortLetData['monthlyRevenue'];
-  }
-
-  // Shape 2: object keyed by month
-  if (data.monthly_revenue && typeof data.monthly_revenue === 'object') {
-    const obj = data.monthly_revenue as Record<string, number>;
-    const monthKeys = Object.keys(obj);
-
-    if (monthKeys.length >= 12) {
-      const numericAttempt = Array.from({ length: 12 }, (_, i) =>
-        Number(obj[String(i + 1)] ?? 0),
-      );
-      if (numericAttempt.some((v) => v > 0)) {
-        return numericAttempt as ShortLetData['monthlyRevenue'];
-      }
-
-      const sorted = monthKeys.sort().slice(0, 12);
-      return sorted.map((k) => Number(obj[k] ?? 0)) as ShortLetData['monthlyRevenue'];
+  // Find the best city name match
+  let searchQuery = outwardCode;
+  for (const [prefix, city] of Object.entries(postcodeToCity)) {
+    if (outwardCode.startsWith(prefix)) {
+      searchQuery = city;
+      break;
     }
   }
 
-  // Shape 3: calendar or months array
-  const calendar = data.calendar ?? data.months;
-  if (Array.isArray(calendar) && calendar.length >= 12) {
-    return calendar
-      .slice(0, 12)
-      .map((m: Record<string, unknown>) =>
-        Number(m.revenue ?? m.monthly_revenue ?? 0),
-      ) as ShortLetData['monthlyRevenue'];
+  const url = new URL(`${BASE_URL}/markets/search`);
+  url.searchParams.set('query', searchQuery);
+  url.searchParams.set('country_code', 'GB');
+
+  const response = await fetch(url.toString(), {
+    headers: { 'x-api-key': apiKey },
+  });
+
+  if (!response.ok) return null;
+
+  const data = await response.json();
+  const markets = data.message;
+
+  if (!Array.isArray(markets) || markets.length === 0) return null;
+
+  // Prefer verified markets
+  const verified = markets.find((m: Record<string, unknown>) => m.verified === true);
+  return (verified?.id ?? markets[0].id) as number;
+}
+
+/**
+ * Fetches a specific metric from the Airbtics markets/metrics endpoint.
+ */
+async function fetchMetric(
+  metric: string,
+  marketId: number,
+  bedrooms: number,
+  apiKey: string,
+  currency?: string,
+): Promise<Record<string, unknown>[]> {
+  const url = new URL(`${BASE_URL}/markets/metrics/${metric}`);
+  url.searchParams.set('market_id', String(marketId));
+  url.searchParams.set('bedrooms', String(bedrooms));
+  if (currency) url.searchParams.set('currency', currency);
+
+  const response = await fetch(url.toString(), {
+    headers: { 'x-api-key': apiKey },
+  });
+
+  if (!response.ok) return [];
+
+  const data = await response.json();
+
+  if (data.message === 'insufficient_credits') {
+    console.log(`Airbtics: insufficient credits for metrics/${metric}`);
+    return [];
   }
 
-  // Distribute annual revenue with seasonal variation if we have it
-  if (annualRevenue > 0) {
-    const seasonalMultipliers = [
-      0.82, 0.85, 0.95, 1.00, 1.08, 1.18, 1.25, 1.22, 1.10, 0.98, 0.88, 0.80,
-    ];
-    const baseMonthly = annualRevenue / 12;
-    return seasonalMultipliers.map((m) =>
-      Math.round(baseMonthly * m),
-    ) as ShortLetData['monthlyRevenue'];
-  }
+  return Array.isArray(data.message) ? data.message : [];
+}
 
-  return empty;
+/**
+ * Extracts the last 12 months of a specific percentile value from metric data.
+ */
+function extractLast12Months(
+  data: Record<string, unknown>[],
+  field: string,
+): number[] {
+  const last12 = data.slice(-12);
+  return last12.map((item) => Number(item[field] ?? 0));
+}
+
+/**
+ * Pads or trims monthly data to exactly 12 entries.
+ */
+function padTo12Months(data: number[]): ShortLetData['monthlyRevenue'] {
+  if (data.length >= 12) {
+    return data.slice(-12) as ShortLetData['monthlyRevenue'];
+  }
+  const padded = [...data];
+  while (padded.length < 12) {
+    padded.unshift(padded[0] ?? 0);
+  }
+  return padded as ShortLetData['monthlyRevenue'];
 }
 
 /**
