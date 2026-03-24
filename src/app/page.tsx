@@ -46,6 +46,11 @@ import {
   Rocket,
   ShieldCheck,
   Eye,
+  Briefcase,
+  Palmtree,
+  Baby,
+  PartyPopper,
+  Info,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -735,6 +740,57 @@ export default function HomePage() {
                       occupancy needed to match long-let
                     </p>
                   </div>
+                  {/* Break-even gauge */}
+                  {(() => {
+                    const beOcc = Math.round(f.breakEvenOccupancy * 100);
+                    const currentOcc = Math.round(r.shortLet.occupancyRate * 100);
+                    const amberEnd = Math.min(beOcc + 10, 100);
+                    const diff = currentOcc - beOcc;
+
+                    return (
+                      <div className="mb-4">
+                        <div className="relative h-6 w-full rounded-full overflow-hidden bg-muted">
+                          {/* Red zone: 0 to break-even */}
+                          <div
+                            className="absolute inset-y-0 left-0 bg-destructive/60"
+                            style={{ width: `${beOcc}%` }}
+                          />
+                          {/* Amber zone: break-even to break-even + 10 */}
+                          <div
+                            className="absolute inset-y-0 bg-warning/60"
+                            style={{ left: `${beOcc}%`, width: `${amberEnd - beOcc}%` }}
+                          />
+                          {/* Green zone: above amber */}
+                          <div
+                            className="absolute inset-y-0 bg-success/60"
+                            style={{ left: `${amberEnd}%`, width: `${100 - amberEnd}%` }}
+                          />
+                          {/* Current occupancy marker */}
+                          <div
+                            className="absolute inset-y-0 w-0.5 bg-foreground"
+                            style={{ left: `${Math.min(currentOcc, 100)}%` }}
+                          >
+                            <div className="absolute -top-5 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-foreground px-1.5 py-0.5 text-[9px] font-bold text-background">
+                              {currentOcc}%
+                            </div>
+                          </div>
+                        </div>
+                        <div className="mt-1 flex justify-between text-[9px] text-muted-foreground">
+                          <span>0%</span>
+                          <span>Break-even ({beOcc}%)</span>
+                          <span>100%</span>
+                        </div>
+                        <p
+                          className={`mt-2 text-xs font-medium text-center ${diff >= 0 ? "text-success" : "text-destructive"}`}
+                        >
+                          Your current occupancy ({currentOcc}%) is{" "}
+                          {Math.abs(diff)}%{" "}
+                          {diff >= 0 ? "above" : "below"} break-even
+                        </p>
+                      </div>
+                    );
+                  })()}
+
                   <div className="space-y-1">
                     <p className="mb-1 text-xs font-semibold text-muted-foreground">
                       Monthly Health
@@ -776,6 +832,93 @@ export default function HomePage() {
                 </CardContent>
               </Card>
             </div>
+
+            {/* Cash Reserve Suggestion */}
+            {(() => {
+              const weakestMonth = Math.min(...r.shortLet.monthlyRevenue);
+              const reserve = Math.round(weakestMonth * 2);
+              return (
+                <Card className="mt-4 border-l-4 border-l-primary">
+                  <CardContent className="flex items-start gap-4 py-4">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10">
+                      <Shield className="h-5 w-5 text-primary" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-bold text-foreground">
+                        Recommended Cash Reserve
+                      </p>
+                      <p className="mt-1 text-sm text-muted-foreground leading-relaxed">
+                        We recommend keeping{" "}
+                        <span className="font-semibold text-foreground">
+                          {gbp(reserve)}
+                        </span>{" "}
+                        as a cash reserve to cover the weakest trading periods
+                        comfortably.
+                      </p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Based on 2 months of worst-case revenue ({gbp(weakestMonth)}/month)
+                      </p>
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })()}
+          </section>
+
+          {/* ── Section 3b: Estimated Setup Costs ──────────────────── */}
+          <section className="mb-10">
+            <SectionHeading
+              icon={Wrench}
+              title="Estimated Setup Costs"
+              subtitle="Typical investment to get your property guest-ready"
+            />
+
+            <Card>
+              <CardContent className="py-6">
+                <div className="space-y-3">
+                  {[
+                    { item: "Furniture & Staging", range: "\u00A32,000 - \u00A35,000", included: false },
+                    { item: "Professional Photography", range: "\u00A3150 - \u00A3350", included: false },
+                    { item: "Key Safe & Small Items", range: "\u00A350 - \u00A3150", included: false },
+                    { item: "Listing Setup & Launch", range: "Included", included: true },
+                    { item: "Optional Done-For-You Setup", range: "\u00A3500 - \u00A31,500", included: false },
+                  ].map((row) => (
+                    <div
+                      key={row.item}
+                      className="flex items-center justify-between rounded-lg bg-muted/50 px-4 py-3"
+                    >
+                      <div className="flex items-center gap-3">
+                        {row.included ? (
+                          <CheckCircle2 className="h-4 w-4 shrink-0 text-success" />
+                        ) : (
+                          <div className="h-4 w-4 shrink-0" />
+                        )}
+                        <span className="text-sm font-medium text-foreground">
+                          {row.item}
+                        </span>
+                      </div>
+                      <span
+                        className={`text-sm font-semibold ${row.included ? "text-success" : "text-foreground"}`}
+                      >
+                        {row.range}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-4 flex items-center justify-between rounded-lg bg-primary/10 px-4 py-3">
+                  <span className="text-sm font-bold text-foreground">
+                    Estimated Total
+                  </span>
+                  <span className="text-sm font-bold text-foreground">
+                    {"\u00A3"}2,200 - {"\u00A3"}6,000
+                  </span>
+                </div>
+                <p className="mt-3 text-xs text-muted-foreground leading-relaxed">
+                  These are typical ranges for a 2-bedroom property. Costs vary based on
+                  current furnishing level and property condition.
+                </p>
+              </CardContent>
+            </Card>
           </section>
 
           {/* ── Section 4: Market Comparables ──────────────────────── */}
@@ -895,8 +1038,138 @@ export default function HomePage() {
             <SectionHeading
               icon={Zap}
               title="Demand Drivers"
-              subtitle="Nearby amenities that drive guest demand in this area"
+              subtitle="Understanding where your bookings are likely to come from"
             />
+
+            {/* Demand Category Scoring */}
+            {(() => {
+              const hospitals = r.demandDrivers.hospitals.length;
+              const universities = r.demandDrivers.universities.length;
+              const airports = r.demandDrivers.airports.length;
+              const trainStations = r.demandDrivers.trainStations.length;
+              const busStations = r.demandDrivers.busStations.length;
+              const totalTransport = trainStations + busStations + r.demandDrivers.subwayStations.length;
+              const totalEvents = r.nearbyEvents.totalEvents;
+
+              type ScoreLevel = "High" | "Moderate" | "Low";
+              const scoreColor = (s: ScoreLevel) =>
+                s === "High"
+                  ? "bg-success text-success-foreground"
+                  : s === "Moderate"
+                    ? "bg-warning text-warning-foreground"
+                    : "bg-destructive/10 text-destructive";
+
+              const categories: {
+                name: string;
+                icon: React.ElementType;
+                score: ScoreLevel;
+                explanation: string;
+              }[] = [
+                {
+                  name: "Corporate / Contractor",
+                  icon: Briefcase,
+                  score:
+                    hospitals >= 2 && totalTransport >= 3
+                      ? "High"
+                      : hospitals >= 1 || totalTransport >= 2
+                        ? "Moderate"
+                        : "Low",
+                  explanation:
+                    hospitals >= 2 && totalTransport >= 3
+                      ? "Strong hospital and transport links attract business travellers"
+                      : hospitals >= 1 || totalTransport >= 2
+                        ? "Some nearby employers and transport options"
+                        : "Limited corporate demand drivers in the area",
+                },
+                {
+                  name: "Leisure / Tourism",
+                  icon: Palmtree,
+                  score:
+                    totalEvents >= 50 && airports >= 1
+                      ? "High"
+                      : totalEvents >= 15
+                        ? "Moderate"
+                        : "Low",
+                  explanation:
+                    totalEvents >= 50 && airports >= 1
+                      ? "Active events scene with good airport access"
+                      : totalEvents >= 15
+                        ? "Moderate local events and attractions"
+                        : "Limited tourism and leisure activity nearby",
+                },
+                {
+                  name: "Family Visit",
+                  icon: Baby,
+                  score:
+                    totalTransport >= 2 && hospitals >= 1
+                      ? "High"
+                      : trainStations >= 1
+                        ? "Moderate"
+                        : "Low",
+                  explanation:
+                    totalTransport >= 2 && hospitals >= 1
+                      ? "Good transport and hospital access for visiting families"
+                      : trainStations >= 1
+                        ? "Train access supports family visits"
+                        : "Limited transport links for visiting families",
+                },
+                {
+                  name: "Event-driven",
+                  icon: PartyPopper,
+                  score:
+                    totalEvents >= 100
+                      ? "High"
+                      : totalEvents >= 30
+                        ? "Moderate"
+                        : "Low",
+                  explanation:
+                    totalEvents >= 100
+                      ? `${totalEvents} upcoming events create strong booking demand`
+                      : totalEvents >= 30
+                        ? `${totalEvents} upcoming events provide periodic demand spikes`
+                        : "Few events nearby to drive short-stay bookings",
+                },
+                {
+                  name: "Student",
+                  icon: GraduationCap,
+                  score:
+                    universities >= 2
+                      ? "High"
+                      : universities >= 1
+                        ? "Moderate"
+                        : "Low",
+                  explanation:
+                    universities >= 2
+                      ? "Multiple universities drive term-time and graduation demand"
+                      : universities >= 1
+                        ? "Nearby university supports seasonal student demand"
+                        : "No universities nearby for student-related stays",
+                },
+              ];
+
+              return (
+                <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+                  {categories.map((cat) => (
+                    <Card key={cat.name}>
+                      <CardContent className="pt-4 pb-4">
+                        <div className="flex items-center gap-2 mb-2">
+                          <cat.icon className="h-4 w-4 text-primary" />
+                          <p className="text-sm font-semibold text-foreground leading-tight">
+                            {cat.name}
+                          </p>
+                        </div>
+                        <Badge className={`mb-2 ${scoreColor(cat.score)}`}>
+                          {cat.score}
+                        </Badge>
+                        <p className="text-[11px] leading-snug text-muted-foreground">
+                          {cat.explanation}
+                        </p>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              );
+            })()}
 
             <div className="grid gap-4 sm:grid-cols-2">
               {demandCategories.map((cat) => {
@@ -1052,6 +1325,89 @@ export default function HomePage() {
                 </p>
               </CardContent>
             </Card>
+
+            {/* Revenue Growth Timeline */}
+            <div className="mt-6">
+              <h3 className="mb-3 text-sm font-semibold text-foreground">
+                Revenue Growth Timeline
+              </h3>
+              <div className="grid gap-4 sm:grid-cols-3">
+                {/* Year 1 */}
+                <Card className="border-muted">
+                  <CardContent className="pt-4 pb-4">
+                    <Badge className="mb-2 bg-muted text-muted-foreground">
+                      Year 1
+                    </Badge>
+                    <p className="text-sm font-bold text-foreground">
+                      Platform-Led
+                    </p>
+                    <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                      Bookings primarily through Airbnb &amp; Booking.com. Building
+                      reviews and data.
+                    </p>
+                    <div className="mt-3 flex items-center gap-2 text-[10px]">
+                      <div className="flex h-2 flex-1 overflow-hidden rounded-full bg-muted">
+                        <div className="bg-muted-foreground/40" style={{ width: "95%" }} />
+                        <div className="bg-success/40" style={{ width: "5%" }} />
+                      </div>
+                      <span className="text-muted-foreground whitespace-nowrap">
+                        ~5% direct
+                      </span>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Year 2 */}
+                <Card className="border-warning/30">
+                  <CardContent className="pt-4 pb-4">
+                    <Badge className="mb-2 bg-warning/20 text-warning">
+                      Year 2
+                    </Badge>
+                    <p className="text-sm font-bold text-foreground">
+                      Repeat &amp; Direct
+                    </p>
+                    <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                      Growing repeat guest base. ~20% of bookings direct. Lower
+                      platform fees.
+                    </p>
+                    <div className="mt-3 flex items-center gap-2 text-[10px]">
+                      <div className="flex h-2 flex-1 overflow-hidden rounded-full bg-muted">
+                        <div className="bg-muted-foreground/40" style={{ width: "80%" }} />
+                        <div className="bg-warning" style={{ width: "20%" }} />
+                      </div>
+                      <span className="text-muted-foreground whitespace-nowrap">
+                        ~20% direct
+                      </span>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Year 3+ */}
+                <Card className="border-success/30">
+                  <CardContent className="pt-4 pb-4">
+                    <Badge className="mb-2 bg-success/20 text-success">
+                      Year 3+
+                    </Badge>
+                    <p className="text-sm font-bold text-foreground">
+                      Mature Operation
+                    </p>
+                    <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                      30%+ direct bookings. Stronger margins. More stability and
+                      control.
+                    </p>
+                    <div className="mt-3 flex items-center gap-2 text-[10px]">
+                      <div className="flex h-2 flex-1 overflow-hidden rounded-full bg-muted">
+                        <div className="bg-muted-foreground/40" style={{ width: "65%" }} />
+                        <div className="bg-success" style={{ width: "35%" }} />
+                      </div>
+                      <span className="text-muted-foreground whitespace-nowrap">
+                        ~35% direct
+                      </span>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            </div>
           </section>
 
           {/* ── Section 6: Events & Entertainment ──────────────────── */}
