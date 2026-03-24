@@ -27,6 +27,7 @@ import {
   Phone,
   FileText,
   ChevronRight,
+  ChevronDown,
   Loader2,
   DollarSign,
   BarChart3,
@@ -167,6 +168,10 @@ export default function HomePage() {
   const [postcode, setPostcode] = useState("");
   const [bedrooms, setBedrooms] = useState("2");
   const [guests, setGuests] = useState("4");
+  const [propertyType, setPropertyType] = useState("Flat");
+  const [monthlyMortgage, setMonthlyMortgage] = useState("");
+  const [monthlyBills, setMonthlyBills] = useState("");
+  const [showAdvanced, setShowAdvanced] = useState(false);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -186,6 +191,9 @@ export default function HomePage() {
           postcode,
           bedrooms: Number(bedrooms),
           guests: Number(guests),
+          propertyType,
+          ...(monthlyMortgage !== "" && { monthlyMortgage: Number(monthlyMortgage) }),
+          ...(monthlyBills !== "" && { monthlyBills: Number(monthlyBills) }),
         }),
       });
 
@@ -1705,6 +1713,73 @@ export default function HomePage() {
                       onChange={(e) => setGuests(e.target.value)}
                     />
                   </div>
+                </div>
+
+                {/* Advanced Options */}
+                <div className="space-y-4">
+                  <button
+                    type="button"
+                    className="flex w-full items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+                    onClick={() => setShowAdvanced(!showAdvanced)}
+                  >
+                    <ChevronDown
+                      className={`h-4 w-4 transition-transform ${showAdvanced ? "" : "-rotate-90"}`}
+                      aria-hidden="true"
+                    />
+                    Advanced Options
+                  </button>
+
+                  {showAdvanced && (
+                    <div className="space-y-4 rounded-lg border border-border bg-muted/30 p-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="propertyType" className="flex items-center gap-2">
+                          <Home className="h-4 w-4" aria-hidden="true" />
+                          Property Type
+                        </Label>
+                        <select
+                          id="propertyType"
+                          value={propertyType}
+                          onChange={(e) => setPropertyType(e.target.value)}
+                          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                        >
+                          <option value="Flat">Flat</option>
+                          <option value="Terraced House">Terraced House</option>
+                          <option value="Semi-Detached House">Semi-Detached House</option>
+                          <option value="Detached House">Detached House</option>
+                        </select>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="monthlyMortgage" className="flex items-center gap-2">
+                            Monthly Mortgage
+                          </Label>
+                          <Input
+                            type="number"
+                            id="monthlyMortgage"
+                            min={0}
+                            placeholder="e.g. 800"
+                            value={monthlyMortgage}
+                            onChange={(e) => setMonthlyMortgage(e.target.value)}
+                          />
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label htmlFor="monthlyBills" className="flex items-center gap-2">
+                            Monthly Bills
+                          </Label>
+                          <Input
+                            type="number"
+                            id="monthlyBills"
+                            min={0}
+                            placeholder="e.g. 250"
+                            value={monthlyBills}
+                            onChange={(e) => setMonthlyBills(e.target.value)}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {error && (

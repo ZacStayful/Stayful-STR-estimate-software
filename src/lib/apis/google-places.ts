@@ -5,6 +5,7 @@
 import type { DemandDrivers, NearbyAmenity } from '../types';
 
 const SEARCH_RADIUS = 5000; // metres
+const AIRPORT_SEARCH_RADIUS = 50_000; // metres — real airports are further away
 const MAX_RESULTS = 5;
 
 const FIELD_MASK = [
@@ -50,13 +51,15 @@ async function searchNearbyByType(
   includedType: string,
   apiKey: string,
 ): Promise<NearbyAmenity[]> {
+  const radius = includedType === 'airport' ? AIRPORT_SEARCH_RADIUS : SEARCH_RADIUS;
+
   const body = {
     includedTypes: [includedType],
     maxResultCount: MAX_RESULTS,
     locationRestriction: {
       circle: {
         center: { latitude: lat, longitude: lng },
-        radius: SEARCH_RADIUS,
+        radius,
       },
     },
   };
@@ -84,7 +87,7 @@ async function searchNearbyByType(
   const data = await response.json();
   const places: PlaceResult[] = data.places ?? [];
 
-  return places.map((place) => {
+  const amenities = places.map((place) => {
     const placeLat = place.location?.latitude ?? lat;
     const placeLng = place.location?.longitude ?? lng;
 
@@ -96,6 +99,15 @@ async function searchNearbyByType(
       rating: place.rating ?? null,
     };
   });
+
+  // Filter out hospital helipads from airport results
+  if (includedType === 'airport') {
+    return amenities.filter(
+      (a) => !/helipad|heliport/i.test(a.name),
+    );
+  }
+
+  return amenities;
 }
 
 export async function getNearbyAmenities(

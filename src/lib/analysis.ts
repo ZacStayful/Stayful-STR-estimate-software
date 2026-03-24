@@ -16,8 +16,10 @@ import type {
 // ─── Default cost assumptions (annual, GBP) ─────────────────────
 const SHORT_LET_MANAGEMENT_FEE_RATE = 0.15;
 const LONG_LET_MANAGEMENT_FEE_RATE = 0.10;
-const DEFAULT_ANNUAL_MORTGAGE = 12_000; // ~£1,000/month
-const DEFAULT_ANNUAL_BILLS = 3_600; // ~£300/month (council tax, utilities, insurance, broadband)
+// When the user hasn't entered mortgage/bills, default to 0 for a gross-vs-gross comparison.
+// Net-vs-net comparison is shown only when the user provides their actual costs.
+const DEFAULT_ANNUAL_MORTGAGE = 0;
+const DEFAULT_ANNUAL_BILLS = 0;
 const SHORT_LET_FURNISHING_ANNUAL = 1_200; // amortised furniture replacement
 const SHORT_LET_CONSUMABLES_ANNUAL = 600; // linen, toiletries, cleaning supplies
 const SHORT_LET_PLATFORM_FEES_RATE = 0.03; // Airbnb host service fee ~3%

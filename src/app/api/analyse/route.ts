@@ -50,7 +50,7 @@ export async function POST(request: Request) {
     const body = await request.json();
 
     // Validate input
-    const { address, postcode, bedrooms, guests } = body;
+    const { address, postcode, bedrooms, guests, propertyType, monthlyMortgage, monthlyBills } = body;
 
     if (!address || typeof address !== 'string' || address.trim().length === 0) {
       return Response.json(
@@ -101,10 +101,19 @@ export async function POST(request: Request) {
       );
     }
 
+    // Map property type to PropertyData format
+    const propertyTypeMap: Record<string, string> = {
+      'Flat': 'flat',
+      'Terraced House': 'terraced_house',
+      'Semi-Detached House': 'semi-detached_house',
+      'Detached House': 'detached_house',
+    };
+    const mappedPropertyType = propertyType ? propertyTypeMap[propertyType] ?? 'flat' : 'flat';
+
     // Call all 4 APIs in parallel
     const [shortLetResult, longLetResult, amenitiesResult, eventsResult] = await Promise.allSettled([
       getShortLetData(property.postcode, property.bedrooms, property.guests),
-      getLongLetData(property.postcode, property.bedrooms),
+      getLongLetData(property.postcode, property.bedrooms, { propertyType: mappedPropertyType }),
       getNearbyAmenities(coordinates.lat, coordinates.lng),
       getNearbyEvents(coordinates.lat, coordinates.lng),
     ]);
@@ -161,7 +170,14 @@ export async function POST(request: Request) {
     }
 
     // Run analysis calculations
-    const financials = calculateFinancials(shortLet, longLet);
+    const annualMortgage = monthlyMortgage != null && Number.isFinite(Number(monthlyMortgage))
+      ? Number(monthlyMortgage) * 12
+      : undefined;
+    const annualBills = monthlyBills != null && Number.isFinite(Number(monthlyBills))
+      ? Number(monthlyBills) * 12
+      : undefined;
+
+    const financials = calculateFinancials(shortLet, longLet, annualMortgage, annualBills);
     const risk = assessRisk(shortLet, longLet, demandDrivers, nearbyEvents);
     const verdict = generateVerdict(financials, risk);
 
