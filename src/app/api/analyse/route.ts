@@ -6,8 +6,47 @@ import { getNearbyAmenities } from '@/lib/apis/google-places';
 import { getNearbyEvents } from '@/lib/apis/ticketmaster';
 import { calculateFinancials, assessRisk, generateVerdict } from '@/lib/analysis';
 
+// ─── Rate Limiter (in-memory, per IP) ────────────────────────────
+// 10 requests per IP per 60-second window. Protects against API credit abuse.
+const RATE_LIMIT_WINDOW_MS = 60_000;
+const RATE_LIMIT_MAX = 10;
+const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
+
+function isRateLimited(ip: string): boolean {
+  const now = Date.now();
+  const entry = rateLimitMap.get(ip);
+
+  if (!entry || now > entry.resetAt) {
+    rateLimitMap.set(ip, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
+    return false;
+  }
+
+  entry.count++;
+  if (entry.count > RATE_LIMIT_MAX) return true;
+  return false;
+}
+
+// Clean up stale entries every 5 minutes to prevent memory leak
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, entry] of rateLimitMap) {
+    if (now > entry.resetAt) rateLimitMap.delete(ip);
+  }
+}, 300_000);
+
 export async function POST(request: Request) {
   try {
+    // Rate limiting
+    const forwarded = request.headers.get('x-forwarded-for');
+    const ip = forwarded?.split(',')[0]?.trim() || 'unknown';
+
+    if (isRateLimited(ip)) {
+      return Response.json(
+        { error: 'Too many requests. Please wait a minute before trying again.' },
+        { status: 429 },
+      );
+    }
+
     const body = await request.json();
 
     // Validate input
