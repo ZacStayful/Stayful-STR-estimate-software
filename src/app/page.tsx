@@ -181,11 +181,26 @@ export default function HomePage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<AnalysisResult | null>(null);
+  const [progress, setProgress] = useState(0);
+  const [completedStages, setCompletedStages] = useState<Set<string>>(new Set());
+  const [currentMessage, setCurrentMessage] = useState("");
+
+  const ANALYSIS_STAGES = [
+    { key: "geocoding", label: "Locating property..." },
+    { key: "short_let", label: "Fetching short-let data..." },
+    { key: "long_let", label: "Fetching long-let valuation..." },
+    { key: "amenities", label: "Finding nearby amenities..." },
+    { key: "events", label: "Discovering local events..." },
+    { key: "analysis", label: "Running analysis..." },
+  ];
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError(null);
+    setProgress(0);
+    setCompletedStages(new Set());
+    setCurrentMessage("Starting analysis...");
 
     try {
       const res = await fetch("/api/analyse", {
@@ -202,20 +217,93 @@ export default function HomePage() {
         }),
       });
 
-      const data = await res.json();
-
       if (!res.ok) {
+        // Non-streaming error (rate limit, validation)
+        const data = await res.json();
         setError(data.error || "Something went wrong. Please try again.");
         setLoading(false);
         return;
       }
 
-      setResult(data as AnalysisResult);
+      if (!res.body) {
+        setError("Streaming not supported by this browser.");
+        setLoading(false);
+        return;
+      }
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+
+        // Parse SSE events from buffer
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || ""; // Keep incomplete line in buffer
+
+        for (const line of lines) {
+          if (line.startsWith("data: ")) {
+            try {
+              const event = JSON.parse(line.slice(6));
+
+              if (event.stage === "error") {
+                setError(event.message);
+                setLoading(false);
+                return;
+              }
+
+              if (event.progress != null) {
+                setProgress(event.progress);
+              }
+              if (event.message) {
+                setCurrentMessage(event.message);
+              }
+
+              // Mark stages as completed based on progress thresholds
+              if (event.stage === "geocoding" && event.progress >= 20) {
+                setCompletedStages((prev) => new Set(prev).add("geocoding"));
+              }
+              if (event.stage === "short_let") {
+                setCompletedStages((prev) => new Set(prev).add("short_let"));
+              }
+              if (event.stage === "long_let") {
+                setCompletedStages((prev) => new Set(prev).add("long_let"));
+              }
+              if (event.stage === "amenities" && event.progress >= 75) {
+                setCompletedStages((prev) => new Set(prev).add("amenities"));
+              }
+              if (event.stage === "events") {
+                setCompletedStages((prev) => new Set(prev).add("events"));
+              }
+              if (event.stage === "analysis") {
+                setCompletedStages((prev) => new Set(prev).add("analysis"));
+              }
+
+              if (event.stage === "complete" && event.data) {
+                setResult(event.data as AnalysisResult);
+                setLoading(false);
+                return;
+              }
+            } catch {
+              // Skip malformed JSON lines
+            }
+          }
+        }
+      }
+
+      // Stream ended without a complete event
+      if (!result) {
+        setError("Analysis stream ended unexpectedly. Please try again.");
+        setLoading(false);
+      }
     } catch {
       setError(
         "Could not reach the server. Please check your connection and try again."
       );
-    } finally {
       setLoading(false);
     }
   };
@@ -230,7 +318,7 @@ export default function HomePage() {
   if (loading) {
     return (
       <main className="flex min-h-screen flex-col items-center justify-center bg-background px-4">
-        <div className="flex flex-col items-center gap-6 text-center">
+        <div className="flex w-full max-w-md flex-col items-center gap-6 text-center">
           <Image
             alt="Stayful"
             width={140}
@@ -245,27 +333,51 @@ export default function HomePage() {
               Analysing your property...
             </span>
           </div>
-          <p className="max-w-md text-sm text-muted-foreground">
-            We are gathering data from multiple sources including Airbtics,
-            PropertyData, Google Places, and Ticketmaster. This usually takes
-            10-20 seconds.
-          </p>
-          <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-            {[
-              "Short-let revenue",
-              "Long-let valuation",
-              "Nearby amenities",
-              "Local events",
-            ].map((label) => (
+
+          {/* Progress bar */}
+          <div className="w-full">
+            <div className="mb-2 flex items-center justify-between text-xs text-muted-foreground">
+              <span>{currentMessage}</span>
+              <span className="font-mono font-semibold">{progress}%</span>
+            </div>
+            <div className="h-3 w-full overflow-hidden rounded-full bg-muted">
               <div
-                key={label}
-                className="flex items-center gap-2 rounded-lg bg-card px-3 py-2 text-xs text-card-foreground ring-1 ring-foreground/10"
-              >
-                <div className="h-2 w-2 animate-pulse rounded-full bg-primary" />
-                {label}
-              </div>
-            ))}
+                className="h-full rounded-full bg-primary transition-all duration-500 ease-out"
+                style={{ width: `${progress}%` }}
+              />
+            </div>
           </div>
+
+          {/* Stage checklist */}
+          <div className="w-full space-y-2 text-left">
+            {ANALYSIS_STAGES.map((stage) => {
+              const done = completedStages.has(stage.key);
+              return (
+                <div
+                  key={stage.key}
+                  className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm ring-1 transition-colors duration-300 ${
+                    done
+                      ? "bg-success/10 text-success ring-success/20"
+                      : "bg-card text-card-foreground ring-foreground/10"
+                  }`}
+                >
+                  {done ? (
+                    <CheckCircle2 className="h-4 w-4 flex-shrink-0 text-success" />
+                  ) : (
+                    <div className="h-4 w-4 flex-shrink-0 animate-pulse rounded-full border-2 border-muted-foreground/30" />
+                  )}
+                  <span className={done ? "line-through opacity-70" : ""}>
+                    {stage.label}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+
+          <p className="max-w-md text-xs text-muted-foreground">
+            Gathering data from Airbtics, PropertyData, Google Places, and
+            Ticketmaster. This usually takes 10-20 seconds.
+          </p>
         </div>
       </main>
     );

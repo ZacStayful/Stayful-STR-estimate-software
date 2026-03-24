@@ -34,175 +34,226 @@ setInterval(() => {
   }
 }, 300_000);
 
+// ─── SSE Helper ──────────────────────────────────────────────────
+function sseEvent(data: Record<string, unknown>): string {
+  return `data: ${JSON.stringify(data)}\n\n`;
+}
+
 export async function POST(request: Request) {
-  try {
-    // Rate limiting
-    const forwarded = request.headers.get('x-forwarded-for');
-    const ip = forwarded?.split(',')[0]?.trim() || 'unknown';
+  // Rate limiting
+  const forwarded = request.headers.get('x-forwarded-for');
+  const ip = forwarded?.split(',')[0]?.trim() || 'unknown';
 
-    if (isRateLimited(ip)) {
-      return Response.json(
-        { error: 'Too many requests. Please wait a minute before trying again.' },
-        { status: 429 },
-      );
-    }
-
-    const body = await request.json();
-
-    // Validate input
-    const { address, postcode, bedrooms, guests, propertyType, monthlyMortgage, monthlyBills } = body;
-
-    if (!address || typeof address !== 'string' || address.trim().length === 0) {
-      return Response.json(
-        { error: 'A valid property address is required.' },
-        { status: 400 },
-      );
-    }
-
-    if (!postcode || typeof postcode !== 'string' || postcode.trim().length < 3) {
-      return Response.json(
-        { error: 'A valid UK postcode is required.' },
-        { status: 400 },
-      );
-    }
-
-    const bedroomCount = Number(bedrooms);
-    if (!Number.isFinite(bedroomCount) || bedroomCount < 1 || bedroomCount > 10) {
-      return Response.json(
-        { error: 'Bedrooms must be a number between 1 and 10.' },
-        { status: 400 },
-      );
-    }
-
-    const guestCount = Number(guests);
-    if (!Number.isFinite(guestCount) || guestCount < 1 || guestCount > 16) {
-      return Response.json(
-        { error: 'Guests must be a number between 1 and 16.' },
-        { status: 400 },
-      );
-    }
-
-    const property: PropertyInput = {
-      address: address.trim(),
-      postcode: postcode.trim().toUpperCase(),
-      bedrooms: bedroomCount,
-      guests: guestCount,
-    };
-
-    // Geocode the postcode
-    let coordinates: { lat: number; lng: number };
-    try {
-      coordinates = await geocodePostcode(property.postcode);
-    } catch (err) {
-      console.error('Geocoding failed:', err);
-      return Response.json(
-        { error: 'Could not geocode the provided postcode. Please check it and try again.' },
-        { status: 422 },
-      );
-    }
-
-    // Map property type to PropertyData format
-    const propertyTypeMap: Record<string, string> = {
-      'Flat': 'flat',
-      'Terraced House': 'terraced_house',
-      'Semi-Detached House': 'semi-detached_house',
-      'Detached House': 'detached_house',
-    };
-    const mappedPropertyType = propertyType ? propertyTypeMap[propertyType] ?? 'flat' : 'flat';
-
-    // Call all 4 APIs in parallel
-    const [shortLetResult, longLetResult, amenitiesResult, eventsResult] = await Promise.allSettled([
-      getShortLetData(property.postcode, property.bedrooms, property.guests),
-      getLongLetData(property.postcode, property.bedrooms, { propertyType: mappedPropertyType }),
-      getNearbyAmenities(coordinates.lat, coordinates.lng),
-      getNearbyEvents(coordinates.lat, coordinates.lng),
-    ]);
-
-    // Extract results with safe defaults
-    const shortLet: ShortLetData = shortLetResult.status === 'fulfilled'
-      ? shortLetResult.value
-      : {
-          annualRevenue: 0,
-          monthlyRevenue: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-          occupancyRate: 0,
-          averageDailyRate: 0,
-          activeListings: 0,
-          comparables: [],
-        };
-
-    const longLet: LongLetData = longLetResult.status === 'fulfilled'
-      ? longLetResult.value
-      : {
-          monthlyRent: 0,
-          estimateHigh: 0,
-          estimateLow: 0,
-          comparables: [],
-        };
-
-    const demandDrivers: DemandDrivers = amenitiesResult.status === 'fulfilled'
-      ? amenitiesResult.value
-      : {
-          hospitals: [],
-          universities: [],
-          airports: [],
-          trainStations: [],
-          busStations: [],
-          subwayStations: [],
-        };
-
-    const nearbyEvents: { events: NearbyEvent[]; totalEvents: number } =
-      eventsResult.status === 'fulfilled'
-        ? eventsResult.value
-        : { events: [], totalEvents: 0 };
-
-    // Log any API failures
-    if (shortLetResult.status === 'rejected') {
-      console.error('Airbtics API failed:', shortLetResult.reason);
-    }
-    if (longLetResult.status === 'rejected') {
-      console.error('PropertyData API failed:', longLetResult.reason);
-    }
-    if (amenitiesResult.status === 'rejected') {
-      console.error('Google Places API failed:', amenitiesResult.reason);
-    }
-    if (eventsResult.status === 'rejected') {
-      console.error('Ticketmaster API failed:', eventsResult.reason);
-    }
-
-    // Run analysis calculations
-    const annualMortgage = monthlyMortgage != null && Number.isFinite(Number(monthlyMortgage))
-      ? Number(monthlyMortgage) * 12
-      : undefined;
-    const annualBills = monthlyBills != null && Number.isFinite(Number(monthlyBills))
-      ? Number(monthlyBills) * 12
-      : undefined;
-
-    const financials = calculateFinancials(shortLet, longLet, annualMortgage, annualBills);
-    const risk = assessRisk(shortLet, longLet, demandDrivers, nearbyEvents);
-    const verdict = generateVerdict(financials, risk);
-
-    const now = new Date().toISOString();
-
-    const result: AnalysisResult = {
-      property,
-      coordinates,
-      shortLet,
-      longLet,
-      demandDrivers,
-      nearbyEvents,
-      financials,
-      risk,
-      verdict,
-      createdAt: now,
-      updatedAt: now,
-    };
-
-    return Response.json(result);
-  } catch (err) {
-    console.error('Unexpected error in /api/analyse:', err);
+  if (isRateLimited(ip)) {
     return Response.json(
-      { error: 'An unexpected error occurred. Please try again.' },
-      { status: 500 },
+      { error: 'Too many requests. Please wait a minute before trying again.' },
+      { status: 429 },
     );
   }
+
+  let body: Record<string, unknown>;
+  try {
+    body = await request.json();
+  } catch {
+    return Response.json(
+      { error: 'Invalid request body.' },
+      { status: 400 },
+    );
+  }
+
+  // Validate input
+  const { address, postcode, bedrooms, guests, propertyType, monthlyMortgage, monthlyBills } = body as {
+    address: unknown; postcode: unknown; bedrooms: unknown; guests: unknown;
+    propertyType: unknown; monthlyMortgage: unknown; monthlyBills: unknown;
+  };
+
+  if (!address || typeof address !== 'string' || (address as string).trim().length === 0) {
+    return Response.json(
+      { error: 'A valid property address is required.' },
+      { status: 400 },
+    );
+  }
+
+  if (!postcode || typeof postcode !== 'string' || (postcode as string).trim().length < 3) {
+    return Response.json(
+      { error: 'A valid UK postcode is required.' },
+      { status: 400 },
+    );
+  }
+
+  const bedroomCount = Number(bedrooms);
+  if (!Number.isFinite(bedroomCount) || bedroomCount < 1 || bedroomCount > 10) {
+    return Response.json(
+      { error: 'Bedrooms must be a number between 1 and 10.' },
+      { status: 400 },
+    );
+  }
+
+  const guestCount = Number(guests);
+  if (!Number.isFinite(guestCount) || guestCount < 1 || guestCount > 16) {
+    return Response.json(
+      { error: 'Guests must be a number between 1 and 16.' },
+      { status: 400 },
+    );
+  }
+
+  const property: PropertyInput = {
+    address: (address as string).trim(),
+    postcode: (postcode as string).trim().toUpperCase(),
+    bedrooms: bedroomCount,
+    guests: guestCount,
+  };
+
+  // Map property type to PropertyData format
+  const propertyTypeMap: Record<string, string> = {
+    'Flat': 'flat',
+    'Terraced House': 'terraced_house',
+    'Semi-Detached House': 'semi-detached_house',
+    'Detached House': 'detached_house',
+  };
+  const mappedPropertyType = propertyType ? propertyTypeMap[propertyType as string] ?? 'flat' : 'flat';
+
+  // ─── Streaming SSE Response ──────────────────────────────────
+  const stream = new ReadableStream({
+    async start(controller) {
+      const send = (data: Record<string, unknown>) => {
+        controller.enqueue(new TextEncoder().encode(sseEvent(data)));
+      };
+
+      try {
+        // ── Group 1 (parallel): Geocoding + (Short-let + Long-let) ──
+        send({ stage: 'geocoding', progress: 10, message: 'Locating property...' });
+
+        const geocodePromise = geocodePostcode(property.postcode);
+        const shortLetPromise = getShortLetData(property.postcode, property.bedrooms, property.guests);
+        const longLetPromise = getLongLetData(property.postcode, property.bedrooms, { propertyType: mappedPropertyType });
+
+        // Wait for geocoding
+        let coordinates: { lat: number; lng: number };
+        try {
+          coordinates = await geocodePromise;
+        } catch (err) {
+          console.error('Geocoding failed:', err);
+          send({ stage: 'error', progress: 0, message: 'Could not geocode the provided postcode. Please check it and try again.' });
+          controller.close();
+          return;
+        }
+
+        send({ stage: 'geocoding', progress: 20, message: 'Property located' });
+
+        // Wait for short-let + long-let (already running in parallel)
+        const [shortLetResult, longLetResult] = await Promise.allSettled([shortLetPromise, longLetPromise]);
+
+        const shortLet: ShortLetData = shortLetResult.status === 'fulfilled'
+          ? shortLetResult.value
+          : {
+              annualRevenue: 0,
+              monthlyRevenue: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+              occupancyRate: 0,
+              averageDailyRate: 0,
+              activeListings: 0,
+              comparables: [],
+            };
+
+        const longLet: LongLetData = longLetResult.status === 'fulfilled'
+          ? longLetResult.value
+          : {
+              monthlyRent: 0,
+              estimateHigh: 0,
+              estimateLow: 0,
+              comparables: [],
+            };
+
+        if (shortLetResult.status === 'rejected') {
+          console.error('Airbtics API failed:', shortLetResult.reason);
+        }
+        if (longLetResult.status === 'rejected') {
+          console.error('PropertyData API failed:', longLetResult.reason);
+        }
+
+        send({ stage: 'short_let', progress: 40, message: 'Short-let revenue data received' });
+        send({ stage: 'long_let', progress: 50, message: 'Long-let valuation received' });
+
+        // ── Group 2 (parallel, needs geocoding): Amenities + Events ──
+        send({ stage: 'amenities', progress: 55, message: 'Finding nearby amenities & transport...' });
+
+        const [amenitiesResult, eventsResult] = await Promise.allSettled([
+          getNearbyAmenities(coordinates.lat, coordinates.lng),
+          getNearbyEvents(coordinates.lat, coordinates.lng),
+        ]);
+
+        const demandDrivers: DemandDrivers = amenitiesResult.status === 'fulfilled'
+          ? amenitiesResult.value
+          : {
+              hospitals: [],
+              universities: [],
+              airports: [],
+              trainStations: [],
+              busStations: [],
+              subwayStations: [],
+            };
+
+        const nearbyEvents: { events: NearbyEvent[]; totalEvents: number } =
+          eventsResult.status === 'fulfilled'
+            ? eventsResult.value
+            : { events: [], totalEvents: 0 };
+
+        if (amenitiesResult.status === 'rejected') {
+          console.error('Google Places API failed:', amenitiesResult.reason);
+        }
+        if (eventsResult.status === 'rejected') {
+          console.error('Ticketmaster API failed:', eventsResult.reason);
+        }
+
+        send({ stage: 'amenities', progress: 75, message: 'Nearby amenities found' });
+        send({ stage: 'events', progress: 80, message: 'Local events discovered' });
+
+        // ── Final: Run analysis ──────────────────────────────────────
+        send({ stage: 'analysis', progress: 90, message: 'Running financial analysis...' });
+
+        const annualMortgage = monthlyMortgage != null && Number.isFinite(Number(monthlyMortgage))
+          ? Number(monthlyMortgage) * 12
+          : undefined;
+        const annualBills = monthlyBills != null && Number.isFinite(Number(monthlyBills))
+          ? Number(monthlyBills) * 12
+          : undefined;
+
+        const financials = calculateFinancials(shortLet, longLet, annualMortgage, annualBills);
+        const risk = assessRisk(shortLet, longLet, demandDrivers, nearbyEvents);
+        const verdict = generateVerdict(financials, risk);
+
+        const now = new Date().toISOString();
+
+        const result: AnalysisResult = {
+          property,
+          coordinates,
+          shortLet,
+          longLet,
+          demandDrivers,
+          nearbyEvents,
+          financials,
+          risk,
+          verdict,
+          createdAt: now,
+          updatedAt: now,
+        };
+
+        send({ stage: 'complete', progress: 100, message: 'Analysis complete', data: result });
+      } catch (err) {
+        console.error('Unexpected error in /api/analyse:', err);
+        send({ stage: 'error', progress: 0, message: 'An unexpected error occurred. Please try again.' });
+      } finally {
+        controller.close();
+      }
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache, no-transform',
+      'Connection': 'keep-alive',
+      'X-Accel-Buffering': 'no',
+    },
+  });
 }

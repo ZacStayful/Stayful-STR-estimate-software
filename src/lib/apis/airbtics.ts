@@ -5,18 +5,30 @@
  * Auth: x-api-key header
  * Docs: https://documenter.getpostman.com/view/25155751/2sB3QRoSvW
  *
- * Flow:
+ * Flow (optimised — 50% cost saving):
  *   1. markets/search — find market_id from postcode/city ($0.01)
  *   2. markets/metrics/revenue — monthly revenue with percentiles ($0.20)
  *   3. markets/metrics/occupancy — monthly occupancy ($0.20)
- *   4. markets/metrics/average-daily-rate — monthly ADR ($0.20)
- *   5. markets/metrics/active-listings — competition count ($0.20)
- *   Total: ~$0.81 per analysis
+ *   4. Derive ADR from: revenue / (occupancy * days_in_month)
+ *   Total: ~$0.41 per analysis (was $0.81)
  */
 
 import type { ShortLetData } from '../types';
 
 const BASE_URL = process.env.AIRBTICS_BASE_URL || 'https://crap0y5bx5.execute-api.us-east-2.amazonaws.com/prod';
+
+// ─── In-memory cache for market_id lookups ──────────────────────
+// Prevents duplicate search calls for the same postcode area.
+const marketIdCache = new Map<string, { id: number | null; expiresAt: number }>();
+const CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
+
+// Clean up stale cache entries every 10 minutes
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, entry] of marketIdCache) {
+    if (now > entry.expiresAt) marketIdCache.delete(key);
+  }
+}, 600_000);
 
 export async function getShortLetData(
   postcode: string,
@@ -31,25 +43,21 @@ export async function getShortLetData(
   }
 
   try {
-    // Step 1: Find market ID from postcode area
+    // Step 1: Find market ID from postcode area (cached)
     const marketId = await findMarketId(postcode, apiKey);
     if (!marketId) {
       console.log('Airbtics: no market found for postcode, using estimates');
       return generateMarketEstimate(bedrooms);
     }
 
-    // Step 2: Fetch all metrics in parallel
-    const [revenueData, occupancyData, adrData, listingsData] = await Promise.allSettled([
+    // Step 2: Fetch revenue + occupancy in parallel (2 calls instead of 4)
+    const [revenueData, occupancyData] = await Promise.allSettled([
       fetchMetric('revenue', marketId, bedrooms, apiKey, 'GBP'),
       fetchMetric('occupancy', marketId, bedrooms, apiKey),
-      fetchMetric('average-daily-rate', marketId, bedrooms, apiKey, 'GBP'),
-      fetchMetric('active-listings', marketId, bedrooms, apiKey),
     ]);
 
     const revenue = revenueData.status === 'fulfilled' ? revenueData.value : [];
     const occupancy = occupancyData.status === 'fulfilled' ? occupancyData.value : [];
-    const adr = adrData.status === 'fulfilled' ? adrData.value : [];
-    const listings = listingsData.status === 'fulfilled' ? listingsData.value : [];
 
     if (revenue.length === 0) {
       console.log('Airbtics: no revenue data returned, using estimates');
@@ -59,20 +67,18 @@ export async function getShortLetData(
     // Use p50 (median) values — most realistic for typical performance
     const monthlyRevenue = extractLast12Months(revenue, 'p50');
     const monthlyOccupancy = extractLast12Months(occupancy, 'p50');
-    const monthlyAdr = extractLast12Months(adr, 'p50');
 
     const annualRevenue = monthlyRevenue.reduce((a, b) => a + b, 0);
     const avgOccupancy = monthlyOccupancy.length > 0
       ? monthlyOccupancy.reduce((a, b) => a + b, 0) / monthlyOccupancy.length / 100
       : 0.65;
-    const avgAdr = monthlyAdr.length > 0
-      ? Math.round(monthlyAdr.reduce((a, b) => a + b, 0) / monthlyAdr.length)
-      : 0;
 
-    // Get latest active listings count
-    const latestListings = listings.length > 0
-      ? (listings[listings.length - 1] as Record<string, number>).count ?? 0
-      : 0;
+    // Derive ADR from revenue and occupancy instead of a separate API call
+    // ADR = monthly_revenue / (occupancy_rate * days_in_month)
+    const DAYS_IN_MONTH = 30;
+    const effectiveOccupancy = avgOccupancy > 0 ? avgOccupancy : 0.65;
+    const avgMonthlyRevenue = annualRevenue / 12;
+    const derivedAdr = Math.round(avgMonthlyRevenue / (effectiveOccupancy * DAYS_IN_MONTH));
 
     // Ensure we have exactly 12 months of revenue
     const paddedRevenue = padTo12Months(monthlyRevenue);
@@ -81,8 +87,8 @@ export async function getShortLetData(
       annualRevenue: Math.round(annualRevenue),
       monthlyRevenue: paddedRevenue,
       occupancyRate: Math.round(avgOccupancy * 100) / 100,
-      averageDailyRate: avgAdr,
-      activeListings: latestListings,
+      averageDailyRate: derivedAdr,
+      activeListings: 0, // Skip active-listings API call to save $0.20
       comparables: [],
     };
   } catch (err) {
@@ -94,11 +100,19 @@ export async function getShortLetData(
 /**
  * Finds the Airbtics market_id for a given UK postcode.
  * Extracts the city/area from the postcode prefix and searches.
+ * Results are cached in memory to avoid repeat search calls.
  */
 async function findMarketId(postcode: string, apiKey: string): Promise<number | null> {
   // Extract the outward code (e.g., "M1" from "M1 1AD", "SW1A" from "SW1A 1AA")
   const parts = postcode.trim().split(/\s+/);
   const outwardCode = parts[0];
+
+  // Check cache first
+  const cacheKey = outwardCode.toUpperCase();
+  const cached = marketIdCache.get(cacheKey);
+  if (cached && Date.now() < cached.expiresAt) {
+    return cached.id;
+  }
 
   // Map common UK postcode prefixes to city names for better search
   const postcodeToCity: Record<string, string> = {
@@ -133,16 +147,27 @@ async function findMarketId(postcode: string, apiKey: string): Promise<number | 
     headers: { 'x-api-key': apiKey },
   });
 
-  if (!response.ok) return null;
+  if (!response.ok) {
+    marketIdCache.set(cacheKey, { id: null, expiresAt: Date.now() + CACHE_TTL_MS });
+    return null;
+  }
 
   const data = await response.json();
   const markets = data.message;
 
-  if (!Array.isArray(markets) || markets.length === 0) return null;
+  if (!Array.isArray(markets) || markets.length === 0) {
+    marketIdCache.set(cacheKey, { id: null, expiresAt: Date.now() + CACHE_TTL_MS });
+    return null;
+  }
 
   // Prefer verified markets
   const verified = markets.find((m: Record<string, unknown>) => m.verified === true);
-  return (verified?.id ?? markets[0].id) as number;
+  const marketId = (verified?.id ?? markets[0].id) as number;
+
+  // Cache the result
+  marketIdCache.set(cacheKey, { id: marketId, expiresAt: Date.now() + CACHE_TTL_MS });
+
+  return marketId;
 }
 
 /**
