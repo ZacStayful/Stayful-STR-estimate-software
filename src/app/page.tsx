@@ -38,6 +38,11 @@ import {
   ClipboardCheck,
   LineChart,
   BookOpen,
+  Layers,
+  RefreshCw,
+  Rocket,
+  ShieldCheck,
+  Eye,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -363,7 +368,7 @@ export default function HomePage() {
           </div>
         </header>
 
-        <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+        <div className="mx-auto max-w-7xl px-4 py-8 pb-28 sm:px-6 lg:px-8">
           {/* ── Section 1: Verdict Card ────────────────────────────── */}
           <section className="mb-10">
             <Card className={`border-l-4 ${fitBorder(v.fit)}`}>
@@ -915,6 +920,118 @@ export default function HomePage() {
             </div>
           </section>
 
+          {/* ── Section 5b: Direct Booking Funnel ─────────────────── */}
+          <section className="mb-10">
+            <SectionHeading
+              icon={Rocket}
+              title="Our Plan for Profitability"
+              subtitle="How Stayful builds a sustainable, profitable short-let operation for your property"
+            />
+
+            {/* Desktop: horizontal flow */}
+            <div className="hidden md:block">
+              <div className="flex items-start justify-between">
+                {[
+                  {
+                    icon: Rocket,
+                    title: "Momentum",
+                    desc: "Launch on Airbnb and Booking.com to build early demand, bookings and reviews",
+                  },
+                  {
+                    icon: BarChart3,
+                    title: "Data",
+                    desc: "Learn which guest types, lengths of stay and price points perform best",
+                  },
+                  {
+                    icon: RefreshCw,
+                    title: "Direct Bookings",
+                    desc: "Turn repeat guests into lower-cost direct customers",
+                  },
+                  {
+                    icon: TrendingUp,
+                    title: "Expand",
+                    desc: "Benefit from Stayful's wider guest network and more repeat opportunities",
+                  },
+                ].map((step, i, arr) => (
+                  <div key={step.title} className="flex flex-1 items-start">
+                    <Card className="flex-1">
+                      <CardContent className="flex flex-col items-center px-4 py-6 text-center">
+                        <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
+                          <step.icon className="h-6 w-6 text-primary" />
+                        </div>
+                        <p className="mt-3 text-sm font-bold text-foreground">
+                          {step.title}
+                        </p>
+                        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                          {step.desc}
+                        </p>
+                      </CardContent>
+                    </Card>
+                    {i < arr.length - 1 && (
+                      <div className="flex shrink-0 items-center self-center px-1 pt-2">
+                        <ChevronRight className="h-5 w-5 text-primary/50" />
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Mobile: vertical flow */}
+            <div className="space-y-3 md:hidden">
+              {[
+                {
+                  icon: Rocket,
+                  title: "Momentum",
+                  desc: "Launch on Airbnb and Booking.com to build early demand, bookings and reviews",
+                },
+                {
+                  icon: BarChart3,
+                  title: "Data",
+                  desc: "Learn which guest types, lengths of stay and price points perform best",
+                },
+                {
+                  icon: RefreshCw,
+                  title: "Direct Bookings",
+                  desc: "Turn repeat guests into lower-cost direct customers",
+                },
+                {
+                  icon: TrendingUp,
+                  title: "Expand",
+                  desc: "Benefit from Stayful's wider guest network and more repeat opportunities",
+                },
+              ].map((step) => (
+                <Card key={step.title}>
+                  <CardContent className="flex items-start gap-4 py-4">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10">
+                      <step.icon className="h-5 w-5 text-primary" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-bold text-foreground">
+                        {step.title}
+                      </p>
+                      <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
+                        {step.desc}
+                      </p>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+
+            {/* Result callout */}
+            <Card className="mt-4 border-l-4 border-l-primary">
+              <CardContent className="py-4">
+                <p className="text-sm font-semibold text-foreground">
+                  Result:{" "}
+                  <span className="font-normal text-muted-foreground">
+                    a higher share of profitable, repeat and lower-friction bookings.
+                  </span>
+                </p>
+              </CardContent>
+            </Card>
+          </section>
+
           {/* ── Section 6: Events & Entertainment ──────────────────── */}
           <section className="mb-10">
             <SectionHeading
@@ -1105,6 +1222,51 @@ export default function HomePage() {
             </div>
           </section>
 
+          {/* ── Section 7b: Guest Vetting & Property Protection ────── */}
+          <section className="mb-10">
+            <SectionHeading
+              icon={ShieldCheck}
+              title="How We Protect Your Property"
+              subtitle="Stayful's comprehensive guest vetting and property protection measures"
+            />
+
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+              {[
+                {
+                  icon: Shield,
+                  title: "\u00A3200 security deposit",
+                },
+                {
+                  icon: ClipboardCheck,
+                  title: "ID checks for every guest",
+                },
+                {
+                  icon: ShieldCheck,
+                  title: "Insurance up to \u00A3100,000 per stay",
+                },
+                {
+                  icon: Eye,
+                  title: "Quarterly property inspections",
+                },
+                {
+                  icon: Users,
+                  title: "30% direct bookings",
+                },
+              ].map((item) => (
+                <Card key={item.title} className="text-center">
+                  <CardContent className="flex flex-col items-center px-3 py-6">
+                    <div className="flex h-16 w-16 items-center justify-center rounded-full bg-primary text-primary-foreground" style={{ clipPath: "polygon(30% 0%, 70% 0%, 100% 30%, 100% 70%, 70% 100%, 30% 100%, 0% 70%, 0% 30%)" }}>
+                      <item.icon className="h-7 w-7" />
+                    </div>
+                    <p className="mt-3 text-xs font-semibold leading-tight text-foreground">
+                      {item.title}
+                    </p>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          </section>
+
           {/* ── Section 8: What Stayful Manages ────────────────────── */}
           <section className="mb-10">
             <SectionHeading
@@ -1113,7 +1275,8 @@ export default function HomePage() {
               subtitle="A clear breakdown of responsibilities between Stayful and you"
             />
 
-            <div className="grid gap-4 sm:grid-cols-2">
+            <div className="grid gap-4 lg:grid-cols-3">
+              {/* Left column: Stayful Handles */}
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2 text-base text-success">
@@ -1124,82 +1287,75 @@ export default function HomePage() {
                 <CardContent>
                   <ul className="space-y-3">
                     {[
-                      {
-                        icon: MessageSquare,
-                        text: "Guest communications & booking management",
-                      },
-                      {
-                        icon: LineChart,
-                        text: "Dynamic pricing optimisation",
-                      },
-                      {
-                        icon: Home,
-                        text: "Professional cleaning coordination",
-                      },
-                      {
-                        icon: Wrench,
-                        text: "Maintenance & repair coordination",
-                      },
-                      {
-                        icon: Zap,
-                        text: "Key management & guest access",
-                      },
-                      {
-                        icon: FileText,
-                        text: "Monthly owner statements & reporting",
-                      },
-                      {
-                        icon: BookOpen,
-                        text: "Direct booking strategy & channel management",
-                      },
-                      {
-                        icon: BarChart3,
-                        text: "Quarterly performance reviews",
-                      },
-                    ].map((item) => (
-                      <li key={item.text} className="flex items-start gap-3">
-                        <item.icon className="mt-0.5 h-4 w-4 shrink-0 text-success" />
-                        <span className="text-sm">{item.text}</span>
+                      "Cleaning & Laundry",
+                      "Maintenance",
+                      "Guest Communication",
+                      "Key Management",
+                      "Direct Bookings",
+                      "Dynamic Pricing",
+                    ].map((text) => (
+                      <li key={text} className="flex items-center gap-3">
+                        <CheckCircle2 className="h-4 w-4 shrink-0 text-success" />
+                        <span className="text-sm">{text}</span>
                       </li>
                     ))}
                   </ul>
                 </CardContent>
               </Card>
 
+              {/* Center column: What's Included */}
+              <Card className="bg-muted/40 ring-1 ring-primary/20">
+                <CardHeader>
+                  <div className="flex flex-col items-center gap-2">
+                    <Badge className="bg-primary text-primary-foreground text-xs">
+                      Included in your 15% + VAT
+                    </Badge>
+                    <CardTitle className="text-base text-center">
+                      What&apos;s Included
+                    </CardTitle>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-3">
+                    {[
+                      { icon: Layers, text: "Central Channel Manager" },
+                      { icon: MessageSquare, text: "Slack Messaging" },
+                      { icon: FileText, text: "Detailed Monthly Reports" },
+                      { icon: Phone, text: "Quarterly Performance Calls" },
+                      { icon: BookOpen, text: "Monthly Market Newsletter" },
+                    ].map((item) => (
+                      <div
+                        key={item.text}
+                        className="flex items-center gap-3 rounded-lg bg-card px-3 py-2.5 ring-1 ring-border"
+                      >
+                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary/10">
+                          <item.icon className="h-4 w-4 text-primary" />
+                        </div>
+                        <span className="text-sm font-medium">{item.text}</span>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Right column: Landlord Handles */}
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2 text-base text-muted-foreground">
                     <Home className="h-4 w-4" />
-                    Owner Handles
+                    Landlord Handles
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
                   <ul className="space-y-3">
                     {[
-                      {
-                        icon: DollarSign,
-                        text: "Mortgage & property finance",
-                      },
-                      {
-                        icon: Zap,
-                        text: "Utilities (gas, electric, water, broadband)",
-                      },
-                      {
-                        icon: FileText,
-                        text: "Council tax payments",
-                      },
-                      {
-                        icon: Building2,
-                        text: "Property purchase & ownership decisions",
-                      },
-                      {
-                        icon: ClipboardCheck,
-                        text: "Major renovation & capital improvement approvals",
-                      },
-                    ].map((item) => (
-                      <li key={item.text} className="flex items-start gap-3">
-                        <item.icon className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-                        <span className="text-sm">{item.text}</span>
+                      "Utilities (smart thermostat advised)",
+                      "Mortgage Payments",
+                      "WIFI & Council Tax (can be free)",
+                    ].map((text) => (
+                      <li key={text} className="flex items-center gap-3">
+                        <Home className="h-4 w-4 shrink-0 text-muted-foreground" />
+                        <span className="text-sm">{text}</span>
                       </li>
                     ))}
                   </ul>
@@ -1225,51 +1381,33 @@ export default function HomePage() {
                       {[
                         {
                           step: "1",
-                          title: "Sign Agreement",
-                          desc: "Review & sign management contract",
+                          title: "Contract Signed",
+                          desc: "Onboarding form filled, answer what you can, we'll work together on the rest",
                           icon: FileText,
                         },
                         {
                           step: "2",
-                          title: "Onboarding Call",
-                          desc: "Discuss goals & property details",
+                          title: "Kick Off Call",
+                          desc: "Discuss specific plans and create a Slack channel for communication",
                           icon: Phone,
                         },
                         {
                           step: "3",
-                          title: "Setup & Furnishing",
-                          desc: "Prepare property to STL standard",
-                          icon: Home,
-                        },
-                        {
-                          step: "4",
-                          title: "Photography",
-                          desc: "Professional photos & floor plan",
+                          title: "Furnishing & Photos",
+                          desc: "End-to-end service by Stayful, or DIY with our free setup guide",
                           icon: Camera,
                         },
                         {
-                          step: "5",
-                          title: "Inspection",
-                          desc: "Health & safety compliance check",
+                          step: "4",
+                          title: "Inspection & Snagging",
+                          desc: "Our team visits with a detailed snagging list before going live",
                           icon: ClipboardCheck,
                         },
                         {
-                          step: "6",
-                          title: "Listing Live",
-                          desc: "Published on Airbnb, Booking.com & more",
+                          step: "5",
+                          title: "Go Live",
+                          desc: "Listing setup on all platforms and you're live",
                           icon: Zap,
-                        },
-                        {
-                          step: "7",
-                          title: "Monthly Statements",
-                          desc: "Transparent income reporting",
-                          icon: LineChart,
-                        },
-                        {
-                          step: "8",
-                          title: "Quarterly Reviews",
-                          desc: "Performance analysis & strategy",
-                          icon: BarChart3,
                         },
                       ].map((item, i, arr) => (
                         <div
@@ -1285,7 +1423,7 @@ export default function HomePage() {
                           <p className="mt-2 text-xs font-semibold text-foreground">
                             {item.title}
                           </p>
-                          <p className="mt-0.5 max-w-[100px] text-[10px] leading-tight text-muted-foreground">
+                          <p className="mt-0.5 max-w-[140px] text-[10px] leading-tight text-muted-foreground">
                             {item.desc}
                           </p>
                         </div>
@@ -1298,51 +1436,33 @@ export default function HomePage() {
                     {[
                       {
                         step: "1",
-                        title: "Sign Agreement",
-                        desc: "Review & sign management contract",
+                        title: "Contract Signed",
+                        desc: "Onboarding form filled, answer what you can, we'll work together on the rest",
                         icon: FileText,
                       },
                       {
                         step: "2",
-                        title: "Onboarding Call",
-                        desc: "Discuss goals & property details",
+                        title: "Kick Off Call",
+                        desc: "Discuss specific plans and create a Slack channel for communication",
                         icon: Phone,
                       },
                       {
                         step: "3",
-                        title: "Setup & Furnishing",
-                        desc: "Prepare property to STL standard",
-                        icon: Home,
-                      },
-                      {
-                        step: "4",
-                        title: "Photography",
-                        desc: "Professional photos & floor plan",
+                        title: "Furnishing & Photos",
+                        desc: "End-to-end service by Stayful, or DIY with our free setup guide",
                         icon: Camera,
                       },
                       {
-                        step: "5",
-                        title: "Inspection",
-                        desc: "Health & safety compliance check",
+                        step: "4",
+                        title: "Inspection & Snagging",
+                        desc: "Our team visits with a detailed snagging list before going live",
                         icon: ClipboardCheck,
                       },
                       {
-                        step: "6",
-                        title: "Listing Live",
-                        desc: "Published on Airbnb, Booking.com & more",
+                        step: "5",
+                        title: "Go Live",
+                        desc: "Listing setup on all platforms and you're live",
                         icon: Zap,
-                      },
-                      {
-                        step: "7",
-                        title: "Monthly Statements",
-                        desc: "Transparent income reporting",
-                        icon: LineChart,
-                      },
-                      {
-                        step: "8",
-                        title: "Quarterly Reviews",
-                        desc: "Performance analysis & strategy",
-                        icon: BarChart3,
                       },
                     ].map((item) => (
                       <div key={item.step} className="flex items-start gap-3">
@@ -1361,6 +1481,13 @@ export default function HomePage() {
                     ))}
                   </div>
                 </div>
+
+                {/* Tagline */}
+                <div className="mt-6 text-center">
+                  <Badge className="bg-primary/10 text-primary text-sm font-semibold px-4 py-1.5">
+                    3 weeks from kick off to go live
+                  </Badge>
+                </div>
               </CardContent>
             </Card>
           </section>
@@ -1369,7 +1496,7 @@ export default function HomePage() {
           <section className="mb-10">
             <Card className="bg-primary text-primary-foreground">
               <CardContent className="flex flex-col items-center gap-4 py-10 text-center">
-                <h2 className="text-2xl font-bold">Ready to get started?</h2>
+                <h2 className="text-2xl font-bold">Ready to Get Started?</h2>
                 <p className="max-w-lg text-sm text-primary-foreground/80">
                   Let Stayful handle the hard work while you earn more from your
                   property. Our team will guide you through every step of the
@@ -1380,22 +1507,28 @@ export default function HomePage() {
                     variant="secondary"
                     size="lg"
                     onClick={() =>
-                      window.open("mailto:hello@stayful.co.uk", "_blank")
+                      window.open(
+                        "https://calendly.com/zac-stayful/call",
+                        "_blank"
+                      )
                     }
                   >
                     <Phone className="mr-2 h-4 w-4" />
-                    Contact Stayful
+                    Book a Call
                   </Button>
                   <Button
                     variant="outline"
                     size="lg"
                     className="border-primary-foreground/30 text-primary-foreground hover:bg-primary-foreground/10"
                     onClick={() =>
-                      window.open("#", "_blank")
+                      window.open(
+                        "/stayful-management-agreement.pdf",
+                        "_blank"
+                      )
                     }
                   >
                     <FileText className="mr-2 h-4 w-4" />
-                    View Agreement PDF
+                    View Management Agreement
                   </Button>
                 </div>
               </CardContent>
@@ -1404,7 +1537,7 @@ export default function HomePage() {
         </div>
 
         {/* Footer */}
-        <footer className="border-t border-border bg-muted/30 py-8">
+        <footer className="border-t border-border bg-muted/30 py-8 pb-24">
           <div className="mx-auto max-w-7xl px-4 text-center text-sm text-muted-foreground sm:px-6 lg:px-8">
             <Image
               alt="Stayful"
@@ -1423,6 +1556,30 @@ export default function HomePage() {
             </p>
           </div>
         </footer>
+
+        {/* ── Sticky Footer CTA Bar ──────────────────────────────── */}
+        <div className="fixed bottom-0 left-0 right-0 z-50 border-t border-border bg-card/90 backdrop-blur-md">
+          <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3 sm:px-6 lg:px-8">
+            <p className="hidden text-sm font-medium text-foreground sm:block">
+              Want an expert opinion on these results?
+            </p>
+            <p className="text-sm font-medium text-foreground sm:hidden">
+              Need expert advice?
+            </p>
+            <Button
+              size="sm"
+              onClick={() =>
+                window.open(
+                  "https://calendly.com/zac-stayful/call",
+                  "_blank"
+                )
+              }
+            >
+              <Calendar className="mr-1.5 h-4 w-4" />
+              Book Expert Risk Analysis
+            </Button>
+          </div>
+        </div>
       </main>
     );
   }
