@@ -107,7 +107,7 @@ export async function getNearbyAmenities(
     throw new Error('GOOGLE_PLACES_API_KEY is not set in environment variables.');
   }
 
-  const types = ['hospital', 'university', 'airport', 'train_station'] as const;
+  const types = ['hospital', 'university', 'airport', 'train_station', 'bus_station', 'subway_station'] as const;
 
   const results = await Promise.allSettled(
     types.map((type) => searchNearbyByType(lat, lng, type, apiKey)),
@@ -124,5 +124,7 @@ export async function getNearbyAmenities(
     universities: extract(results[1]),
     airports: extract(results[2]),
     trainStations: extract(results[3]),
+    busStations: extract(results[4]),
+    subwayStations: extract(results[5]),
   };
 }

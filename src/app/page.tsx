@@ -18,6 +18,8 @@ import {
   GraduationCap,
   Plane,
   TrainFront,
+  Bus,
+  TrainTrack,
   Calendar,
   Ticket,
   Heart,
@@ -319,6 +321,18 @@ export default function HomePage() {
         label: "Train Stations",
         icon: TrainFront,
         items: r.demandDrivers.trainStations,
+      },
+      {
+        key: "busStations" as const,
+        label: "Bus Stations",
+        icon: Bus,
+        items: r.demandDrivers.busStations,
+      },
+      {
+        key: "subwayStations" as const,
+        label: "Subway / Metro",
+        icon: TrainTrack,
+        items: r.demandDrivers.subwayStations,
       },
     ];
 

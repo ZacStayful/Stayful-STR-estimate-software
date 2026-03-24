@@ -68,6 +68,8 @@ export interface DemandDrivers {
   universities: NearbyAmenity[];
   airports: NearbyAmenity[];
   trainStations: NearbyAmenity[];
+  busStations: NearbyAmenity[];
+  subwayStations: NearbyAmenity[];
 }
 
 // ─── Risk Profile ────────────────────────────────────────────────

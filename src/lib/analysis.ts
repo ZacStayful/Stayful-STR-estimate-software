@@ -148,9 +148,13 @@ export function assessRisk(
     amenities.hospitals.length +
     amenities.universities.length +
     amenities.airports.length +
-    amenities.trainStations.length;
+    amenities.trainStations.length +
+    amenities.busStations.length +
+    amenities.subwayStations.length;
 
-  const hasGoodTransport = amenities.trainStations.length >= 2 || amenities.airports.length >= 1;
+  const hasGoodTransport =
+    amenities.trainStations.length + amenities.busStations.length + amenities.subwayStations.length >= 2 ||
+    amenities.airports.length >= 1;
   const hasDemandDrivers = amenities.hospitals.length >= 1 || amenities.universities.length >= 1;
   const hasEvents = events.totalEvents >= 10;
 

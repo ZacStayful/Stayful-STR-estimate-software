@@ -98,6 +98,8 @@ export async function POST(request: Request) {
           universities: [],
           airports: [],
           trainStations: [],
+          busStations: [],
+          subwayStations: [],
         };
 
     const nearbyEvents: { events: NearbyEvent[]; totalEvents: number } =
