@@ -16,7 +16,7 @@
 
 import type { ShortLetData } from '../types';
 
-const BASE_URL = 'https://crap0y5bx5.execute-api.us-east-2.amazonaws.com/prod';
+const BASE_URL = process.env.AIRBTICS_BASE_URL || 'https://crap0y5bx5.execute-api.us-east-2.amazonaws.com/prod';
 
 export async function getShortLetData(
   postcode: string,
