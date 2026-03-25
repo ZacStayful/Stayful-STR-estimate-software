@@ -78,6 +78,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import Presentation from "@/components/Presentation";
 import type { AnalysisResult, RiskLevel, VerdictFit } from "@/lib/types";
+import { DEMO_RESULT } from "@/lib/demo-data";
 import {
   BarChart,
   Bar,
@@ -352,6 +353,17 @@ export default function HomePage() {
     checkWidth();
     window.addEventListener("resize", checkWidth);
     return () => window.removeEventListener("resize", checkWidth);
+  }, []);
+
+  // Load demo data when ?demo=true is in the URL
+  useEffect(() => {
+    if (window.location.search.includes("demo=true")) {
+      setResult(DEMO_RESULT);
+      setAddress(DEMO_RESULT.property.address);
+      setPostcode(DEMO_RESULT.property.postcode);
+      setBedrooms(String(DEMO_RESULT.property.bedrooms));
+      setGuests(String(DEMO_RESULT.property.guests));
+    }
   }, []);
 
   const scrollToSection = (id: string) => {
