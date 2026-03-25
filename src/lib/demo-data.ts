@@ -71,11 +71,11 @@ export const DEMO_MANCHESTER: AnalysisResult = {
   },
   financials: {
     shortLetGrossAnnual: 41364,
-    shortLetNetAnnual: 21508,
+    shortLetNetAnnual: 21509, // 41364 * 0.52
     longLetGrossAnnual: 13836,
-    longLetNetAnnual: 12452,
+    longLetNetAnnual: 12452, // 13836 * 0.90
     monthlyDifference: 755,
-    annualDifference: 9056,
+    annualDifference: 9057,
     breakEvenOccupancy: 0.34,
   },
   risk: {
@@ -244,9 +244,9 @@ export const DEMO_RESULT: AnalysisResult = {
   },
   financials: {
     shortLetGrossAnnual: 19167,
-    shortLetNetAnnual: 9967,
+    shortLetNetAnnual: 9967, // 19167 * 0.52
     longLetGrossAnnual: 14280,
-    longLetNetAnnual: 12852,
+    longLetNetAnnual: 12852, // 14280 * 0.90
     monthlyDifference: -240,
     annualDifference: -2885,
     breakEvenOccupancy: 0.72,
