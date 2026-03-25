@@ -74,25 +74,19 @@ export async function getShortLetData(
       return generateMarketEstimate(bedrooms);
     }
 
-    // Step 2: Fetch market summary first ($0.25 — bedroom-specific, most reliable)
-    const summary = await fetchMarketSummary(marketId, bedrooms, apiKey);
+    // Step 2: Fetch ALL data in parallel for maximum accuracy ($0.70 total)
+    // summary ($0.25) + revenue ($0.20) + occupancy ($0.20) + listings ($0.05)
+    const [summaryData, revenueData, occupancyData, listingsData] = await Promise.allSettled([
+      fetchMarketSummary(marketId, bedrooms, apiKey),
+      fetchMetric('revenue', marketId, bedrooms, apiKey, 'GBP'),
+      fetchMetric('occupancy', marketId, bedrooms, apiKey),
+      fetchNearbyListings(lat, lng, apiKey),
+    ]);
 
-    // Step 3: Only attempt detailed endpoints if summary worked (credits available)
-    let revenue: Record<string, unknown>[] = [];
-    let occupancy: Record<string, unknown>[] = [];
-    let listingsResult: BoundsResponse | null = null;
-
-    if (summary) {
-      // Try monthly data + nearby listings in parallel ($0.40 + $0.05)
-      const [revenueData, occupancyData, listingsData] = await Promise.allSettled([
-        fetchMetric('revenue', marketId, bedrooms, apiKey, 'GBP'),
-        fetchMetric('occupancy', marketId, bedrooms, apiKey),
-        fetchNearbyListings(lat, lng, apiKey),
-      ]);
-      revenue = revenueData.status === 'fulfilled' ? revenueData.value : [];
-      occupancy = occupancyData.status === 'fulfilled' ? occupancyData.value : [];
-      listingsResult = listingsData.status === 'fulfilled' ? listingsData.value : null;
-    }
+    const summary = summaryData.status === 'fulfilled' ? summaryData.value : null;
+    const revenue = revenueData.status === 'fulfilled' ? revenueData.value : [];
+    const occupancy = occupancyData.status === 'fulfilled' ? occupancyData.value : [];
+    const listingsResult = listingsData.status === 'fulfilled' ? listingsData.value : null;
 
     // If no monthly data AND no summary, fall back to estimates
     if (revenue.length === 0 && !summary) {
