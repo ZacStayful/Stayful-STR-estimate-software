@@ -52,7 +52,9 @@ async function searchNearbyByType(
   includedType: string,
   apiKey: string,
 ): Promise<NearbyAmenity[]> {
-  const radius = includedType === 'airport' ? AIRPORT_SEARCH_RADIUS : SEARCH_RADIUS;
+  const radius = includedType === 'airport' ? AIRPORT_SEARCH_RADIUS
+    : includedType === 'hospital' ? 15_000  // 15km — major hospitals may be further
+    : SEARCH_RADIUS;
 
   // Fetch more for hospitals/universities so we can filter to quality results
   const isInstitution = includedType === 'hospital' || includedType === 'university';
@@ -112,31 +114,36 @@ async function searchNearbyByType(
     );
   }
 
-  // Filter hospitals: keep only major hospitals, not walk-in centres or GPs
+  // Filter hospitals: keep only MAJOR NHS/teaching hospitals
+  // Exclude private hospitals (Nuffield, Spire, BMI, Bupa), mental health, walk-in centres
   if (includedType === 'hospital') {
-    const majorHospitalPattern = /hospital|infirmary|medical centre/i;
-    const excludePattern = /walk-in|clinic|health centre|gp |surgery|pharmacy/i;
+    const excludePattern = /walk-in|clinic|health centre|gp |surgery|pharmacy|nuffield|spire|bmi |bupa|priory|private|mental|foss park|rehabilitation|care home|clifton park|outpatient/i;
+    const majorPattern = /hospital|infirmary/i;
     const filtered = amenities.filter(
-      (a) => majorHospitalPattern.test(a.name) && !excludePattern.test(a.name),
+      (a) => majorPattern.test(a.name) && !excludePattern.test(a.name),
     );
+    // If nothing passes the strict filter, relax to just "Hospital" keyword
+    if (filtered.length === 0) {
+      return amenities.filter((a) => majorPattern.test(a.name)).slice(0, 3);
+    }
     return filtered.slice(0, 3);
   }
 
-  // Filter universities: keep only actual universities, not colleges or schools
+  // Filter universities: keep only actual universities, deduplicate by institution
   if (includedType === 'university') {
-    const filtered = amenities.filter((a) => {
-      const name = a.name;
-      // Must contain "University"
-      if (!/university/i.test(name)) return false;
-      // Exclude if it's a college/school/academy that happens to have "university" in the address
-      // but only if the name itself doesn't start with or prominently feature "University"
-      return true;
-    });
-    // Deduplicate: multiple campuses of the same university
+    const filtered = amenities.filter((a) => /university/i.test(a.name));
+
+    // Deduplicate: extract the core university name
+    // "King's Manor - University of York" → "university of york"
+    // "University of York" → "university of york"
+    // "Manchester Metropolitan University" → "manchester metropolitan university"
     const seen = new Set<string>();
     const deduped = filtered.filter((a) => {
-      // Extract core university name (e.g. "University of York" from "University of York - Science Building")
-      const core = a.name.replace(/\s*[-–—:,].*/i, '').trim().toLowerCase();
+      const name = a.name.toLowerCase();
+      // Try to extract "University of X" or "X University" pattern
+      const uniOfMatch = name.match(/university\s+of\s+[\w\s]+/);
+      const xUniMatch = name.match(/[\w\s]+university/);
+      const core = (uniOfMatch?.[0] ?? xUniMatch?.[0] ?? name).trim();
       if (seen.has(core)) return false;
       seen.add(core);
       return true;

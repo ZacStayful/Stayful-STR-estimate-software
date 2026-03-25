@@ -622,9 +622,9 @@ export default function HomePage() {
     const stlMonthlyNet = r.shortLet.monthlyRevenue.map((rev) => Math.round(rev * 0.52));
     const ltlMonthlyNet = Math.round(ltlNetAnnual / 12);
 
-    // Peak months (STL net > LTL net)
-    const peakMonthCount = stlMonthlyNet.filter((net) => net > ltlMonthlyNet).length;
-    const belowLtlCount = 12 - peakMonthCount;
+    // Peak months = top 3 by STL revenue, Low = bottom 3, Below LTL = months where STL < LTL
+    const peakMonthCount = 3;
+    const belowLtlCount = stlMonthlyNet.filter((net) => net < ltlMonthlyNet).length;
 
     // Best/worst month
     const bestMonthIdx = stlMonthlyNet.indexOf(Math.max(...stlMonthlyNet));
@@ -637,13 +637,15 @@ export default function HomePage() {
     const sortedMonthIndices = [...Array(12).keys()].sort((a, b) => stlMonthlyNet[a] - stlMonthlyNet[b]);
     const bottom3Months = new Set(sortedMonthIndices.slice(0, 3));
 
-    // Badge logic helper: Peak if STL > LTL baseline, Below Average if bottom 3, else no badge
+    // Badge logic: based on STL's own seasonal variation (top 3 = Peak, bottom 3 = Low, rest = Average/no badge)
+    const top3Months = new Set([...Array(12).keys()].sort((a, b) => stlMonthlyNet[b] - stlMonthlyNet[a]).slice(0, 3));
+
     const getMonthBadge = (i: number): { label: string; className: string } | null => {
-      if (stlMonthlyNet[i] > ltlMonthlyBaseline) {
+      if (top3Months.has(i)) {
         return { label: "Peak", className: "bg-success/10 text-success" };
       }
       if (bottom3Months.has(i)) {
-        return { label: "Below Average", className: "bg-destructive/10 text-destructive" };
+        return { label: "Low", className: "bg-destructive/10 text-destructive" };
       }
       return null;
     };
