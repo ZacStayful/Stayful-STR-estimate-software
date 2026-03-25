@@ -13,46 +13,31 @@ import type {
   VerdictFit,
 } from './types';
 
-// ─── Default cost assumptions (annual, GBP) ─────────────────────
+// ─── Default cost assumptions ────────────────────────────────────
+// Short-let: 15% platform + 15% management + 18% cleaning = 48% total
+const SHORT_LET_PLATFORM_FEES_RATE = 0.15;
 const SHORT_LET_MANAGEMENT_FEE_RATE = 0.15;
-const LONG_LET_MANAGEMENT_FEE_RATE = 0.10;
-// When the user hasn't entered mortgage/bills, default to 0 for a gross-vs-gross comparison.
-// Net-vs-net comparison is shown only when the user provides their actual costs.
-const DEFAULT_ANNUAL_MORTGAGE = 0;
-const DEFAULT_ANNUAL_BILLS = 0;
-const SHORT_LET_FURNISHING_ANNUAL = 1_200; // amortised furniture replacement
-const SHORT_LET_CONSUMABLES_ANNUAL = 600; // linen, toiletries, cleaning supplies
-const SHORT_LET_PLATFORM_FEES_RATE = 0.03; // Airbnb host service fee ~3%
+const SHORT_LET_CLEANING_RATE = 0.18;
+// Long-let: 10% agent fees
+const LONG_LET_AGENT_FEE_RATE = 0.10;
 
 // ─── Financial Calculator ────────────────────────────────────────
 
 export function calculateFinancials(
   shortLet: ShortLetData,
   longLet: LongLetData,
-  mortgageCost?: number,
-  billsCost?: number,
 ): FinancialSummary {
-  const annualMortgage = mortgageCost ?? DEFAULT_ANNUAL_MORTGAGE;
-  const annualBills = billsCost ?? DEFAULT_ANNUAL_BILLS;
-
   // ── Short-let ──
+  // Total operating costs: 15% platform + 15% management + 18% cleaning = 48%
+  // Net = gross * 0.52
   const shortLetGrossAnnual = shortLet.annualRevenue;
-  const shortLetManagementFee = shortLetGrossAnnual * SHORT_LET_MANAGEMENT_FEE_RATE;
-  const shortLetPlatformFees = shortLetGrossAnnual * SHORT_LET_PLATFORM_FEES_RATE;
-  const shortLetNetAnnual =
-    shortLetGrossAnnual -
-    shortLetManagementFee -
-    shortLetPlatformFees -
-    annualMortgage -
-    annualBills -
-    SHORT_LET_FURNISHING_ANNUAL -
-    SHORT_LET_CONSUMABLES_ANNUAL;
+  const shortLetNetAnnual = shortLetGrossAnnual * 0.52;
 
   // ── Long-let ──
+  // Agent fees: 10% of gross
+  // Net = gross * 0.90
   const longLetGrossAnnual = longLet.monthlyRent * 12;
-  const longLetManagementFee = longLetGrossAnnual * LONG_LET_MANAGEMENT_FEE_RATE;
-  const longLetNetAnnual =
-    longLetGrossAnnual - longLetManagementFee - annualMortgage;
+  const longLetNetAnnual = longLetGrossAnnual * 0.90;
 
   // ── Differences ──
   const annualDifference = shortLetNetAnnual - longLetNetAnnual;
@@ -61,17 +46,14 @@ export function calculateFinancials(
   // ── Break-even occupancy ──
   // At what occupancy rate does the short-let net income equal the long-let net income?
   // Revenue at occupancy X = ADR * 365 * X
-  // Net short-let at X = ADR*365*X * (1 - mgmt - platform) - mortgage - bills - furnishing - consumables
+  // Net short-let at X = ADR * 365 * X * 0.52
   // Set equal to longLetNetAnnual and solve for X
   const adr = shortLet.averageDailyRate;
   let breakEvenOccupancy = 0;
 
   if (adr > 0) {
-    const revenueMultiplier = adr * 365 * (1 - SHORT_LET_MANAGEMENT_FEE_RATE - SHORT_LET_PLATFORM_FEES_RATE);
-    const fixedCosts = annualMortgage + annualBills + SHORT_LET_FURNISHING_ANNUAL + SHORT_LET_CONSUMABLES_ANNUAL;
-    const targetNet = longLetNetAnnual;
-
-    breakEvenOccupancy = (targetNet + fixedCosts) / revenueMultiplier;
+    const revenueMultiplier = adr * 365 * 0.52;
+    breakEvenOccupancy = longLetNetAnnual / revenueMultiplier;
     // Clamp between 0 and 1
     breakEvenOccupancy = Math.max(0, Math.min(1, breakEvenOccupancy));
     // Round to 2dp

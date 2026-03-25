@@ -211,14 +211,7 @@ export async function POST(request: Request) {
         // ── Final: Run analysis ──────────────────────────────────────
         send({ stage: 'analysis', progress: 90, message: 'Running financial analysis...' });
 
-        const annualMortgage = monthlyMortgage != null && Number.isFinite(Number(monthlyMortgage))
-          ? Number(monthlyMortgage) * 12
-          : undefined;
-        const annualBills = monthlyBills != null && Number.isFinite(Number(monthlyBills))
-          ? Number(monthlyBills) * 12
-          : undefined;
-
-        const financials = calculateFinancials(shortLet, longLet, annualMortgage, annualBills);
+        const financials = calculateFinancials(shortLet, longLet);
         const risk = assessRisk(shortLet, longLet, demandDrivers, nearbyEvents);
         const verdict = generateVerdict(financials, risk);
 

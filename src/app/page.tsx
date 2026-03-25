@@ -781,6 +781,7 @@ export default function HomePage() {
     const sidebarWidth = sidebarCollapsed ? 48 : 200;
 
     // Average rating and reviews from comparables
+    const hasComparables = r.shortLet.comparables.length > 0;
     const compRatings = r.shortLet.comparables.filter((c) => c.averageDailyRate > 0);
     const avgRating = compRatings.length > 0 ? 4.7 : 0;
     const avgReviews = compRatings.length > 0 ? 70 : 0;
@@ -815,7 +816,7 @@ export default function HomePage() {
         title: `${r.property.postcode.split(" ")[0]} Airbnb Market Data 2026`,
         source: "Airbtics",
         desc: "Local area Airbnb performance data including comparable properties.",
-        bullets: [`${r.shortLet.activeListings} active listings analysed`, "Nightly rate and occupancy data"],
+        bullets: [r.shortLet.activeListings > 0 ? `${r.shortLet.activeListings} active listings analysed` : "Market median data analysed", "Nightly rate and occupancy data"],
         updated: "March 2026",
         url: "#",
       },
@@ -1026,18 +1027,18 @@ export default function HomePage() {
           <section id="comparables" ref={setSectionRef("comparables")} className="mb-12">
             <SectionHeading
               icon={MapPin}
-              title={`${r.shortLet.comparables.length > 0 ? r.shortLet.comparables.length : "Market"} Comparable Properties Analysed`}
+              title={hasComparables ? `${r.shortLet.comparables.length} Comparable Properties Analysed` : "Market Analysis"}
               subtitle={`Similar ${r.property.bedrooms}-bedroom properties accommodating ${r.property.guests} guests within your area.`}
             />
 
-            {r.shortLet.comparables.length > 0 && (
+            {hasComparables && (
               <p className="mb-4 text-xs text-muted-foreground">
                 Note: {r.shortLet.comparables.length} comparable properties found in this market. Analysis is based on available data.
               </p>
             )}
 
-            {/* 6 stat cards in a row */}
-            <div className="mb-6 grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-6">
+            {/* Stat cards — always show core 3, conditionally show rating/reviews/age */}
+            <div className={`mb-6 grid gap-3 grid-cols-2 sm:grid-cols-3 ${hasComparables ? "lg:grid-cols-6" : "lg:grid-cols-3"}`}>
               <div className="rounded-lg bg-muted/50 p-3">
                 <p className="text-[11px] text-muted-foreground">Avg. Nightly Rate</p>
                 <p className="mt-1 text-xl font-bold text-foreground">{gbp(r.shortLet.averageDailyRate)}</p>
@@ -1050,18 +1051,22 @@ export default function HomePage() {
                 <p className="text-[11px] text-muted-foreground">Avg. Annual Revenue</p>
                 <p className="mt-1 text-xl font-bold text-foreground">{gbp(r.shortLet.annualRevenue)}</p>
               </div>
-              <div className="rounded-lg bg-muted/50 p-3">
-                <p className="text-[11px] text-muted-foreground">Avg. Rating</p>
-                <p className="mt-1 text-xl font-bold text-foreground">{avgRating} / 5</p>
-              </div>
-              <div className="rounded-lg bg-muted/50 p-3">
-                <p className="text-[11px] text-muted-foreground">Avg. Reviews</p>
-                <p className="mt-1 text-xl font-bold text-foreground">{avgReviews}</p>
-              </div>
-              <div className="rounded-lg bg-muted/50 p-3">
-                <p className="text-[11px] text-muted-foreground">Avg. Listing Age</p>
-                <p className="mt-1 text-xl font-bold text-foreground">1.9 yrs</p>
-              </div>
+              {hasComparables && (
+                <>
+                  <div className="rounded-lg bg-muted/50 p-3">
+                    <p className="text-[11px] text-muted-foreground">Avg. Rating</p>
+                    <p className="mt-1 text-xl font-bold text-foreground">{avgRating > 0 ? `${avgRating} / 5` : "N/A"}</p>
+                  </div>
+                  <div className="rounded-lg bg-muted/50 p-3">
+                    <p className="text-[11px] text-muted-foreground">Avg. Reviews</p>
+                    <p className="mt-1 text-xl font-bold text-foreground">{avgReviews > 0 ? avgReviews : "N/A"}</p>
+                  </div>
+                  <div className="rounded-lg bg-muted/50 p-3">
+                    <p className="text-[11px] text-muted-foreground">Avg. Listing Age</p>
+                    <p className="mt-1 text-xl font-bold text-foreground">1.9 yrs</p>
+                  </div>
+                </>
+              )}
             </div>
 
             {/* Property table */}
@@ -1149,14 +1154,31 @@ export default function HomePage() {
               <Card className="border-l-4 border-l-primary">
                 <CardContent className="py-6">
                   <div className="flex items-start gap-3">
-                    <Info className="h-5 w-5 shrink-0 text-primary mt-0.5" />
+                    <BarChart3 className="h-5 w-5 shrink-0 text-primary mt-0.5" />
                     <div>
                       <p className="text-sm font-semibold text-foreground">
-                        Market-Level Data Shown
+                        Market Data Summary
                       </p>
-                      <p className="mt-1 text-sm text-muted-foreground leading-relaxed">
-                        The market statistics above represent aggregate data for your area. For individual comparable listings with detailed performance metrics, contact Stayful for a comprehensive assessment.
+                      <p className="mt-1.5 text-sm text-muted-foreground leading-relaxed">
+                        Market-level analysis based on <span className="font-medium text-foreground">{r.property.postcode.split(" ")[0]}</span> short-term rental data.{" "}
+                        {r.shortLet.activeListings > 0
+                          ? <><span className="font-medium text-foreground">{r.shortLet.activeListings}</span> comparable properties in this market area.</>
+                          : <>Based on market median data.</>
+                        }
                       </p>
+                      <p className="mt-3 text-xs text-muted-foreground leading-relaxed">
+                        For individual comparable listings with direct Airbnb links, contact Stayful for a comprehensive property assessment.
+                      </p>
+                      <a
+                        href="https://calendly.com/stayful"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="mt-3 inline-flex items-center gap-1.5 text-xs font-semibold text-primary hover:underline"
+                      >
+                        <Phone className="h-3 w-3" />
+                        Book a Free Assessment
+                        <ExternalLink className="h-3 w-3" />
+                      </a>
                     </div>
                   </div>
                 </CardContent>
