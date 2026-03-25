@@ -78,7 +78,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import Presentation from "@/components/Presentation";
 import type { AnalysisResult, RiskLevel, VerdictFit } from "@/lib/types";
-import { DEMO_RESULT } from "@/lib/demo-data";
+import { DEMO_MAP } from "@/lib/demo-data";
 import {
   BarChart,
   Bar,
@@ -355,14 +355,18 @@ export default function HomePage() {
     return () => window.removeEventListener("resize", checkWidth);
   }, []);
 
-  // Load demo data when ?demo=true is in the URL
+  // Load demo data when ?demo=<key> is in the URL
+  // Supports: ?demo=true (Newcastle), ?demo=manchester, ?demo=newcastle
   useEffect(() => {
-    if (window.location.search.includes("demo=true")) {
-      setResult(DEMO_RESULT);
-      setAddress(DEMO_RESULT.property.address);
-      setPostcode(DEMO_RESULT.property.postcode);
-      setBedrooms(String(DEMO_RESULT.property.bedrooms));
-      setGuests(String(DEMO_RESULT.property.guests));
+    const params = new URLSearchParams(window.location.search);
+    const demoKey = params.get("demo");
+    if (demoKey && DEMO_MAP[demoKey]) {
+      const demoData = DEMO_MAP[demoKey];
+      setResult(demoData);
+      setAddress(demoData.property.address);
+      setPostcode(demoData.property.postcode);
+      setBedrooms(String(demoData.property.bedrooms));
+      setGuests(String(demoData.property.guests));
     }
   }, []);
 
