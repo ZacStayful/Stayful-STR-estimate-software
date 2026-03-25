@@ -6,7 +6,8 @@ import type { DemandDrivers, NearbyAmenity } from '../types';
 
 const SEARCH_RADIUS = 5000; // metres
 const AIRPORT_SEARCH_RADIUS = 50_000; // metres — real airports are further away
-const MAX_RESULTS = 5;
+const MAX_RESULTS_TRANSPORT = 5;
+const MAX_RESULTS_INSTITUTIONS = 10; // fetch more, then filter to quality results
 
 const FIELD_MASK = [
   'places.displayName',
@@ -53,9 +54,13 @@ async function searchNearbyByType(
 ): Promise<NearbyAmenity[]> {
   const radius = includedType === 'airport' ? AIRPORT_SEARCH_RADIUS : SEARCH_RADIUS;
 
+  // Fetch more for hospitals/universities so we can filter to quality results
+  const isInstitution = includedType === 'hospital' || includedType === 'university';
+  const maxResults = isInstitution ? MAX_RESULTS_INSTITUTIONS : MAX_RESULTS_TRANSPORT;
+
   const body = {
     includedTypes: [includedType],
-    maxResultCount: MAX_RESULTS,
+    maxResultCount: maxResults,
     locationRestriction: {
       circle: {
         center: { latitude: lat, longitude: lng },
@@ -105,6 +110,38 @@ async function searchNearbyByType(
     return amenities.filter(
       (a) => !/helipad|heliport/i.test(a.name),
     );
+  }
+
+  // Filter hospitals: keep only major hospitals, not walk-in centres or GPs
+  if (includedType === 'hospital') {
+    const majorHospitalPattern = /hospital|infirmary|medical centre/i;
+    const excludePattern = /walk-in|clinic|health centre|gp |surgery|pharmacy/i;
+    const filtered = amenities.filter(
+      (a) => majorHospitalPattern.test(a.name) && !excludePattern.test(a.name),
+    );
+    return filtered.slice(0, 3);
+  }
+
+  // Filter universities: keep only actual universities, not colleges or schools
+  if (includedType === 'university') {
+    const filtered = amenities.filter((a) => {
+      const name = a.name;
+      // Must contain "University"
+      if (!/university/i.test(name)) return false;
+      // Exclude if it's a college/school/academy that happens to have "university" in the address
+      // but only if the name itself doesn't start with or prominently feature "University"
+      return true;
+    });
+    // Deduplicate: multiple campuses of the same university
+    const seen = new Set<string>();
+    const deduped = filtered.filter((a) => {
+      // Extract core university name (e.g. "University of York" from "University of York - Science Building")
+      const core = a.name.replace(/\s*[-–—:,].*/i, '').trim().toLowerCase();
+      if (seen.has(core)) return false;
+      seen.add(core);
+      return true;
+    });
+    return deduped.slice(0, 3);
   }
 
   return amenities;

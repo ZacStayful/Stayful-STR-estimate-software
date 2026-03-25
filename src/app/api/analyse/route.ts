@@ -125,10 +125,9 @@ export async function POST(request: Request) {
         send({ stage: 'geocoding', progress: 10, message: 'Locating property...' });
 
         const geocodePromise = geocodePostcode(property.postcode);
-        const shortLetPromise = getShortLetData(property.postcode, property.bedrooms, property.guests);
         const longLetPromise = getLongLetData(property.postcode, property.bedrooms, { propertyType: mappedPropertyType });
 
-        // Wait for geocoding
+        // Wait for geocoding first — short-let now needs coordinates for nearby listings
         let coordinates: { lat: number; lng: number };
         try {
           coordinates = await geocodePromise;
@@ -141,7 +140,8 @@ export async function POST(request: Request) {
 
         send({ stage: 'geocoding', progress: 20, message: 'Property located' });
 
-        // Wait for short-let + long-let (already running in parallel)
+        // Now fetch short-let (needs coords) + long-let (already running) in parallel
+        const shortLetPromise = getShortLetData(property.postcode, property.bedrooms, property.guests, coordinates.lat, coordinates.lng);
         const [shortLetResult, longLetResult] = await Promise.allSettled([shortLetPromise, longLetPromise]);
 
         const shortLet: ShortLetData = shortLetResult.status === 'fulfilled'

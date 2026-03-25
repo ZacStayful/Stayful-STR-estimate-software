@@ -90,6 +90,8 @@ import {
   ReferenceLine,
   AreaChart,
   Area,
+  LineChart as RechartsLineChart,
+  Line,
 } from "recharts";
 
 // ─── Helpers ──────────────────────────────────────────────────────
@@ -628,6 +630,24 @@ export default function HomePage() {
     const bestMonthIdx = stlMonthlyNet.indexOf(Math.max(...stlMonthlyNet));
     const worstMonthIdx = stlMonthlyNet.indexOf(Math.min(...stlMonthlyNet));
 
+    // Long-let monthly net baseline for badge logic
+    const ltlMonthlyBaseline = Math.round((f.longLetGrossAnnual / 12) * 0.90);
+
+    // Bottom 3 months by STL revenue (for "Below Average" badge)
+    const sortedMonthIndices = [...Array(12).keys()].sort((a, b) => stlMonthlyNet[a] - stlMonthlyNet[b]);
+    const bottom3Months = new Set(sortedMonthIndices.slice(0, 3));
+
+    // Badge logic helper: Peak if STL > LTL baseline, Below Average if bottom 3, else no badge
+    const getMonthBadge = (i: number): { label: string; className: string } | null => {
+      if (stlMonthlyNet[i] > ltlMonthlyBaseline) {
+        return { label: "Peak", className: "bg-success/10 text-success" };
+      }
+      if (bottom3Months.has(i)) {
+        return { label: "Below Average", className: "bg-destructive/10 text-destructive" };
+      }
+      return null;
+    };
+
     // Demand scoring helper
     function demandLevel(count: number): {
       label: string;
@@ -782,9 +802,18 @@ export default function HomePage() {
 
     // Average rating and reviews from comparables
     const hasComparables = r.shortLet.comparables.length > 0;
-    const compRatings = r.shortLet.comparables.filter((c) => c.averageDailyRate > 0);
-    const avgRating = compRatings.length > 0 ? 4.7 : 0;
-    const avgReviews = compRatings.length > 0 ? 70 : 0;
+    const comps = r.shortLet.comparables;
+
+    // Calculate averages from real listing data
+    const compAvgNightlyRate = hasComparables ? Math.round(comps.reduce((s, c) => s + c.averageDailyRate, 0) / comps.length) : r.shortLet.averageDailyRate;
+    const compAvgOccupancy = hasComparables ? comps.reduce((s, c) => s + c.occupancyRate, 0) / comps.length : r.shortLet.occupancyRate;
+    const compAvgRevenue = hasComparables ? Math.round(comps.reduce((s, c) => s + c.annualRevenue, 0) / comps.length) : r.shortLet.annualRevenue;
+    const compsWithRating = comps.filter((c) => c.rating > 0);
+    const avgRating = compsWithRating.length > 0 ? Math.round(compsWithRating.reduce((s, c) => s + c.rating, 0) / compsWithRating.length * 10) / 10 : 0;
+    const compsWithReviews = comps.filter((c) => c.reviewCount > 0);
+    const avgReviews = compsWithReviews.length > 0 ? Math.round(compsWithReviews.reduce((s, c) => s + c.reviewCount, 0) / compsWithReviews.length) : 0;
+    const compsWithAge = comps.filter((c) => c.listingAge > 0);
+    const avgListingAge = compsWithAge.length > 0 ? Math.round(compsWithAge.reduce((s, c) => s + c.listingAge, 0) / compsWithAge.length * 10) / 10 : 0;
 
     // 36-month growth chart data
     const growthData = Array.from({ length: 36 }, (_, i) => {
@@ -1041,21 +1070,23 @@ export default function HomePage() {
             <div className={`mb-6 grid gap-3 grid-cols-2 sm:grid-cols-3 ${hasComparables ? "lg:grid-cols-6" : "lg:grid-cols-3"}`}>
               <div className="rounded-lg bg-muted/50 p-3">
                 <p className="text-[11px] text-muted-foreground">Avg. Nightly Rate</p>
-                <p className="mt-1 text-xl font-bold text-foreground">{gbp(r.shortLet.averageDailyRate)}</p>
+                <p className="mt-1 text-xl font-bold text-foreground">{gbp(compAvgNightlyRate)}</p>
               </div>
               <div className="rounded-lg bg-muted/50 p-3">
                 <p className="text-[11px] text-muted-foreground">Avg. Occupancy</p>
-                <p className="mt-1 text-xl font-bold text-foreground">{pct(r.shortLet.occupancyRate)}</p>
+                <p className="mt-1 text-xl font-bold text-foreground">{pct(compAvgOccupancy)}</p>
               </div>
               <div className="rounded-lg bg-muted/50 p-3">
                 <p className="text-[11px] text-muted-foreground">Avg. Annual Revenue</p>
-                <p className="mt-1 text-xl font-bold text-foreground">{gbp(r.shortLet.annualRevenue)}</p>
+                <p className="mt-1 text-xl font-bold text-foreground">{gbp(compAvgRevenue)}</p>
               </div>
               {hasComparables && (
                 <>
                   <div className="rounded-lg bg-muted/50 p-3">
                     <p className="text-[11px] text-muted-foreground">Avg. Rating</p>
-                    <p className="mt-1 text-xl font-bold text-foreground">{avgRating > 0 ? `${avgRating} / 5` : "N/A"}</p>
+                    <p className="mt-1 text-xl font-bold text-foreground flex items-center gap-1">
+                      {avgRating > 0 ? <><Star className="h-4 w-4 text-warning fill-warning" />{avgRating} / 5</> : "N/A"}
+                    </p>
                   </div>
                   <div className="rounded-lg bg-muted/50 p-3">
                     <p className="text-[11px] text-muted-foreground">Avg. Reviews</p>
@@ -1063,7 +1094,7 @@ export default function HomePage() {
                   </div>
                   <div className="rounded-lg bg-muted/50 p-3">
                     <p className="text-[11px] text-muted-foreground">Avg. Listing Age</p>
-                    <p className="mt-1 text-xl font-bold text-foreground">1.9 yrs</p>
+                    <p className="mt-1 text-xl font-bold text-foreground">{avgListingAge > 0 ? `${avgListingAge} yrs` : "N/A"}</p>
                   </div>
                 </>
               )}
@@ -1117,17 +1148,23 @@ export default function HomePage() {
                             </td>
                             <td className="py-2.5 pr-4">{pct(comp.occupancyRate)}</td>
                             <td className="py-2.5 pr-4 text-muted-foreground">
-                              {Math.round(comp.occupancyRate * 365)}
+                              {comp.daysAvailable > 0 ? comp.daysAvailable : Math.round(comp.occupancyRate * 365)}
                             </td>
                             <td className="py-2.5 pr-4 font-semibold">
                               {gbp(comp.annualRevenue)}
                             </td>
                             <td className="py-2.5 pr-4">
-                              <div className="flex items-center gap-1">
-                                <Star className="h-3 w-3 text-warning fill-warning" />
-                                <span className="text-sm">4.7</span>
-                                <span className="text-[11px] text-muted-foreground">(70)</span>
-                              </div>
+                              {comp.rating > 0 ? (
+                                <div className="flex items-center gap-1">
+                                  <Star className="h-3 w-3 text-warning fill-warning" />
+                                  <span className="text-sm">{comp.rating.toFixed(1)}</span>
+                                  {comp.reviewCount > 0 && (
+                                    <span className="text-[11px] text-muted-foreground">({comp.reviewCount})</span>
+                                  )}
+                                </div>
+                              ) : (
+                                <span className="text-xs text-muted-foreground">N/A</span>
+                              )}
                             </td>
                             <td className="py-2.5">
                               {comp.url ? (
@@ -1331,19 +1368,31 @@ export default function HomePage() {
                     </div>
                     <div className="flex items-center justify-between rounded-lg bg-muted/50 px-4 py-2.5">
                       <span className="text-sm text-muted-foreground">Platform Fees (15%)</span>
-                      <span className="text-sm font-medium text-destructive">-{gbp(platformFees)}</span>
+                      <div className="text-right">
+                        <span className="text-sm font-medium text-destructive">-{gbp(platformFees)}</span>
+                        <span className="ml-1 text-xs text-muted-foreground">(-{gbp(Math.round(platformFees / 12))}/mo)</span>
+                      </div>
                     </div>
                     <div className="flex items-center justify-between rounded-lg bg-muted/50 px-4 py-2.5">
                       <span className="text-sm text-muted-foreground">Management Fees (15%)</span>
-                      <span className="text-sm font-medium text-destructive">-{gbp(managementFees)}</span>
+                      <div className="text-right">
+                        <span className="text-sm font-medium text-destructive">-{gbp(managementFees)}</span>
+                        <span className="ml-1 text-xs text-muted-foreground">(-{gbp(Math.round(managementFees / 12))}/mo)</span>
+                      </div>
                     </div>
                     <div className="flex items-center justify-between rounded-lg bg-muted/50 px-4 py-2.5">
                       <span className="text-sm text-muted-foreground">Cleaning &amp; Laundry (18%)</span>
-                      <span className="text-sm font-medium text-destructive">-{gbp(cleaningLaundry)}</span>
+                      <div className="text-right">
+                        <span className="text-sm font-medium text-destructive">-{gbp(cleaningLaundry)}</span>
+                        <span className="ml-1 text-xs text-muted-foreground">(-{gbp(Math.round(cleaningLaundry / 12))}/mo)</span>
+                      </div>
                     </div>
                     <div className="flex items-center justify-between rounded-lg bg-destructive/5 px-4 py-3">
                       <span className="text-sm font-medium">Total Operating Costs (48%)</span>
-                      <span className="text-sm font-bold text-destructive">-{gbp(totalOperatingCosts)}</span>
+                      <div className="text-right">
+                        <span className="text-sm font-bold text-destructive">-{gbp(totalOperatingCosts)}</span>
+                        <span className="ml-1 text-xs text-muted-foreground">(-{gbp(Math.round(totalOperatingCosts / 12))}/mo)</span>
+                      </div>
                     </div>
                     <div className="flex items-center justify-between rounded-lg bg-success/10 px-4 py-3">
                       <span className="text-sm font-bold text-foreground">Net Annual Revenue</span>
@@ -1375,7 +1424,10 @@ export default function HomePage() {
                     </div>
                     <div className="flex items-center justify-between rounded-lg bg-muted/50 px-4 py-2.5">
                       <span className="text-sm text-muted-foreground">Letting Agent Fees (10%)</span>
-                      <span className="text-sm font-medium text-destructive">-{gbp(ltlAgentFees)}</span>
+                      <div className="text-right">
+                        <span className="text-sm font-medium text-destructive">-{gbp(ltlAgentFees)}</span>
+                        <span className="ml-1 text-xs text-muted-foreground">(-{gbp(Math.round(ltlAgentFees / 12))}/mo)</span>
+                      </div>
                     </div>
                     <div className="flex items-center justify-between rounded-lg bg-muted/50 px-4 py-3">
                       <span className="text-sm font-bold text-foreground">Net Annual Revenue</span>
@@ -1398,7 +1450,7 @@ export default function HomePage() {
                   </p>
                   <p className={`text-3xl font-bold ${revDifference >= 0 ? "text-success" : "text-destructive"}`}>
                     {revDifference >= 0 ? "+" : ""}{gbp(revDifference)}
-                    <span className="text-base font-normal text-muted-foreground">/year</span>
+                    <span className="text-base font-normal text-muted-foreground">/year ({revDifference >= 0 ? "+" : ""}{gbp(revDifferenceMonthly)}/mo)</span>
                   </p>
                 </div>
                 <div className="hidden h-12 w-px bg-border sm:block" />
@@ -1478,24 +1530,30 @@ export default function HomePage() {
                   <div className="space-y-2">
                     <div className="flex justify-between px-2 py-1.5">
                       <span className="text-sm">Net Revenue</span>
-                      <span className="text-sm font-semibold">{gbp(stlNetAnnual)}</span>
+                      <div className="text-right">
+                        <span className="text-sm font-semibold">{gbp(stlNetAnnual)}</span>
+                        <span className="ml-1 text-xs text-muted-foreground">({gbp(Math.round(stlNetAnnual / 12))}/mo)</span>
+                      </div>
                     </div>
                     <div className="flex justify-between px-2 py-1.5">
                       <span className="text-sm text-muted-foreground">- Mortgage</span>
-                      <span className="text-sm text-destructive">-{gbp(calcMortgage * 12)}</span>
+                      <div className="text-right">
+                        <span className="text-sm text-destructive">-{gbp(calcMortgage * 12)}</span>
+                        <span className="ml-1 text-xs text-muted-foreground">(-{gbp(calcMortgage)}/mo)</span>
+                      </div>
                     </div>
                     <div className="flex justify-between px-2 py-1.5">
                       <span className="text-sm text-muted-foreground">- Bills</span>
-                      <span className="text-sm text-destructive">-{gbp(calcBills * 12)}</span>
+                      <div className="text-right">
+                        <span className="text-sm text-destructive">-{gbp(calcBills * 12)}</span>
+                        <span className="ml-1 text-xs text-muted-foreground">(-{gbp(calcBills)}/mo)</span>
+                      </div>
                     </div>
                     <div className="border-t border-border" />
                     <div className="rounded-lg bg-success/10 px-3 py-3 text-center">
                       <p className="text-sm font-bold text-foreground">True Annual Profit</p>
                       <p className={`text-2xl font-bold ${stlTrueAnnualProfit >= 0 ? "text-success" : "text-destructive"}`}>
-                        {gbp(stlTrueAnnualProfit)}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {gbp(Math.round(stlTrueAnnualProfit / 12))}/month
+                        {gbp(stlTrueAnnualProfit)} <span className="text-base font-normal text-muted-foreground">({gbp(Math.round(stlTrueAnnualProfit / 12))}/mo)</span>
                       </p>
                     </div>
                   </div>
@@ -1511,11 +1569,17 @@ export default function HomePage() {
                   <div className="space-y-2">
                     <div className="flex justify-between px-2 py-1.5">
                       <span className="text-sm">Net Revenue</span>
-                      <span className="text-sm font-semibold">{gbp(ltlNetAnnual)}</span>
+                      <div className="text-right">
+                        <span className="text-sm font-semibold">{gbp(ltlNetAnnual)}</span>
+                        <span className="ml-1 text-xs text-muted-foreground">({gbp(Math.round(ltlNetAnnual / 12))}/mo)</span>
+                      </div>
                     </div>
                     <div className="flex justify-between px-2 py-1.5">
                       <span className="text-sm text-muted-foreground">- Mortgage</span>
-                      <span className="text-sm text-destructive">-{gbp(calcMortgage * 12)}</span>
+                      <div className="text-right">
+                        <span className="text-sm text-destructive">-{gbp(calcMortgage * 12)}</span>
+                        <span className="ml-1 text-xs text-muted-foreground">(-{gbp(calcMortgage)}/mo)</span>
+                      </div>
                     </div>
                     <div className="flex justify-between px-2 py-1.5">
                       <span className="text-sm text-muted-foreground">- Bills</span>
@@ -1525,10 +1589,7 @@ export default function HomePage() {
                     <div className="rounded-lg bg-muted/50 px-3 py-3 text-center">
                       <p className="text-sm font-bold text-foreground">True Annual Profit</p>
                       <p className={`text-2xl font-bold ${ltlTrueAnnualProfit >= 0 ? "text-foreground" : "text-destructive"}`}>
-                        {gbp(ltlTrueAnnualProfit)}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {gbp(Math.round(ltlTrueAnnualProfit / 12))}/month
+                        {gbp(ltlTrueAnnualProfit)} <span className="text-base font-normal text-muted-foreground">({gbp(Math.round(ltlTrueAnnualProfit / 12))}/mo)</span>
                       </p>
                     </div>
                   </div>
@@ -1612,7 +1673,7 @@ export default function HomePage() {
               <CardContent className="pt-4">
                 <div className="h-72 w-full">
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={chartData} barCategoryGap="15%">
+                    <RechartsLineChart data={chartData}>
                       <XAxis
                         dataKey="month"
                         tick={{ fontSize: 12, fill: "#6e9164" }}
@@ -1639,17 +1700,23 @@ export default function HomePage() {
                         wrapperStyle={{ fontSize: "12px", paddingTop: "8px" }}
                       />
                       <ReferenceLine y={0} stroke="#aab99b" />
-                      <Bar
+                      <Line
+                        type="monotone"
                         dataKey="Short Let"
-                        fill="#5d8156"
-                        radius={[4, 4, 0, 0]}
+                        stroke="#5d8156"
+                        strokeWidth={2.5}
+                        dot={{ r: 4, fill: "#5d8156", stroke: "#5d8156" }}
+                        activeDot={{ r: 6 }}
                       />
-                      <Bar
+                      <Line
+                        type="linear"
                         dataKey="Long Let"
-                        fill="#c3cdaf"
-                        radius={[4, 4, 0, 0]}
+                        stroke="#c3cdaf"
+                        strokeWidth={2}
+                        strokeDasharray="6 4"
+                        dot={{ r: 3, fill: "#c3cdaf", stroke: "#c3cdaf" }}
                       />
-                    </BarChart>
+                    </RechartsLineChart>
                   </ResponsiveContainer>
                 </div>
               </CardContent>
@@ -1676,17 +1743,17 @@ export default function HomePage() {
                       {MONTHS.map((month, i) => {
                         const stlNet = stlMonthlyNet[i];
                         const diff = stlNet - ltlMonthlyNet;
-                        const isPeak = stlNet > ltlMonthlyNet;
+                        const badge = getMonthBadge(i);
                         return (
                           <tr
                             key={month}
-                            className={`border-b border-border/50 last:border-0 ${isPeak ? "bg-success/5" : ""}`}
+                            className={`border-b border-border/50 last:border-0 ${badge?.label === "Peak" ? "bg-success/5" : badge?.label === "Below Average" ? "bg-destructive/5" : ""}`}
                           >
                             <td className="py-2 pr-4 font-medium">
                               <span className="flex items-center gap-2">
                                 {MONTH_NAMES[i]}
-                                {isPeak && (
-                                  <Badge className="bg-success/10 text-success">Peak</Badge>
+                                {badge && (
+                                  <Badge className={badge.className}>{badge.label}</Badge>
                                 )}
                               </span>
                             </td>
@@ -2041,30 +2108,89 @@ export default function HomePage() {
             </div>
 
             {/* The Direct Booking Funnel */}
-            <Card className="mb-6">
+            <Card className="mb-6 overflow-hidden">
               <CardHeader>
                 <CardTitle className="text-base">The Direct Booking Funnel</CardTitle>
+                <CardDescription>How we convert platform guests into profitable direct bookings</CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="flex flex-col sm:flex-row items-center justify-between gap-4 py-4">
-                  <div className="flex items-center gap-2 text-sm font-medium">
-                    <div className="rounded-lg bg-[#FF5A5F]/10 px-3 py-1.5 text-[#FF5A5F] font-bold">Airbnb</div>
-                    <span className="text-muted-foreground">+</span>
-                    <div className="rounded-lg bg-[#003580]/10 px-3 py-1.5 text-[#003580] font-bold">Booking.com</div>
+                <div className="flex flex-col items-center gap-0 py-2">
+                  {/* Row 1: Platform Sources */}
+                  <div className="flex items-center gap-3">
+                    <div className="rounded-full bg-[#FF5A5F] px-5 py-2 text-sm font-bold text-white shadow-md">
+                      Airbnb
+                    </div>
+                    <span className="text-lg font-bold text-muted-foreground">+</span>
+                    <div className="rounded-full bg-[#003580] px-5 py-2 text-sm font-bold text-white shadow-md">
+                      Booking.com
+                    </div>
                   </div>
-                  <ChevronRight className="h-5 w-5 text-muted-foreground hidden sm:block" />
-                  <ChevronDown className="h-5 w-5 text-muted-foreground sm:hidden" />
-                  <div className="rounded-lg bg-primary/10 px-4 py-2 text-sm font-semibold text-primary">Your Listing</div>
-                  <ChevronRight className="h-5 w-5 text-muted-foreground hidden sm:block" />
-                  <ChevronDown className="h-5 w-5 text-muted-foreground sm:hidden" />
-                  <div className="flex items-center gap-2 text-sm font-medium">
-                    <div className="rounded-lg bg-warning/10 px-3 py-1.5 text-warning font-bold">monday.com</div>
-                    <span className="text-muted-foreground">+</span>
-                    <div className="rounded-lg bg-primary/10 px-3 py-1.5 text-primary font-bold">Stayful</div>
+                  <div className="text-xs font-medium text-muted-foreground mt-1">Platform Bookings</div>
+
+                  {/* Arrow down */}
+                  <div className="flex flex-col items-center my-2">
+                    <div className="h-6 w-0.5 bg-border" />
+                    <ChevronDown className="h-5 w-5 text-primary -mt-1" />
                   </div>
-                  <ChevronRight className="h-5 w-5 text-muted-foreground hidden sm:block" />
-                  <ChevronDown className="h-5 w-5 text-muted-foreground sm:hidden" />
-                  <div className="rounded-lg bg-success/10 px-4 py-2 text-sm font-semibold text-success">Direct / Repeat</div>
+
+                  {/* Row 2: Your Listing */}
+                  <div className="w-full max-w-xs rounded-xl border-2 border-primary bg-primary/5 px-6 py-4 text-center shadow-sm">
+                    <p className="text-sm font-bold text-primary">Your Listing</p>
+                    <div className="mt-1 flex items-center justify-center gap-0.5">
+                      {[1, 2, 3, 4, 5].map((s) => (
+                        <Star key={s} className="h-3.5 w-3.5 text-warning fill-warning" />
+                      ))}
+                    </div>
+                    <p className="text-[10px] text-muted-foreground mt-0.5">5-star guest reviews</p>
+                  </div>
+
+                  {/* Arrow down */}
+                  <div className="flex flex-col items-center my-2">
+                    <div className="h-6 w-0.5 bg-border" />
+                    <ChevronDown className="h-5 w-5 text-primary -mt-1" />
+                  </div>
+
+                  {/* Row 3: Data Collection via monday.com */}
+                  <div className="rounded-xl border border-warning/30 bg-warning/5 px-6 py-3 text-center">
+                    <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">Data Collection via</p>
+                    <p className="text-base font-bold text-warning">monday.com</p>
+                    <p className="text-[10px] text-muted-foreground mt-0.5">Guest data, preferences, booking patterns</p>
+                  </div>
+
+                  {/* Arrow splits */}
+                  <div className="flex flex-col items-center my-2">
+                    <div className="h-6 w-0.5 bg-border" />
+                    <ChevronDown className="h-5 w-5 text-primary -mt-1" />
+                  </div>
+
+                  {/* Row 4: Stayful → Direct Bookings + Repeat Guests */}
+                  <div className="flex items-center gap-4">
+                    <div className="rounded-xl border-2 border-success bg-success/5 px-5 py-3 text-center shadow-sm">
+                      <Image
+                        alt="Stayful"
+                        width={70}
+                        height={24}
+                        className="mx-auto h-5 w-auto mb-1"
+                        src="/images/stayful-logo.png"
+                      />
+                      <p className="text-xs font-semibold text-success">Direct Bookings</p>
+                    </div>
+                    <span className="text-lg font-bold text-muted-foreground">+</span>
+                    <div className="rounded-xl border-2 border-success bg-success/5 px-5 py-3 text-center shadow-sm">
+                      <RefreshCw className="mx-auto h-5 w-5 text-success mb-1" />
+                      <p className="text-xs font-semibold text-success">Repeat Guests</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Callout */}
+                <div className="mt-6 rounded-lg bg-success/10 border border-success/20 px-4 py-3 text-center">
+                  <p className="text-sm font-bold text-success">
+                    &ldquo;30% of our bookings are now direct customers&rdquo;
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Average across Stayful managed properties by Year 2
+                  </p>
                 </div>
               </CardContent>
             </Card>

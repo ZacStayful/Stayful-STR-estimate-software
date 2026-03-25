@@ -16,6 +16,10 @@ export interface ShortLetComparable {
   occupancyRate: number;
   annualRevenue: number;
   distance?: number;
+  rating: number;          // 0-5 scale (converted from 0-100)
+  reviewCount: number;
+  listingAge: number;      // years, calculated from added_on
+  daysAvailable: number;
 }
 
 export interface ShortLetData {
