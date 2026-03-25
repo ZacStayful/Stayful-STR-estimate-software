@@ -5,12 +5,13 @@
  * Auth: x-api-key header
  * Docs: https://documenter.getpostman.com/view/25155751/2sB3QRoSvW
  *
- * Flow (optimised — 50% cost saving):
+ * Flow:
  *   1. markets/search — find market_id from postcode/city ($0.01)
  *   2. markets/metrics/revenue — monthly revenue with percentiles ($0.20)
  *   3. markets/metrics/occupancy — monthly occupancy ($0.20)
- *   4. Derive ADR from: revenue / (occupancy * days_in_month)
- *   Total: ~$0.41 per analysis (was $0.81)
+ *   4. markets/metrics/active-listings — competition count ($0.20)
+ *   5. Derive ADR from: revenue / (occupancy * days_in_month)
+ *   Total: ~$0.61 per analysis
  */
 
 import type { ShortLetData } from '../types';
@@ -50,14 +51,16 @@ export async function getShortLetData(
       return generateMarketEstimate(bedrooms);
     }
 
-    // Step 2: Fetch revenue + occupancy in parallel (2 calls instead of 4)
-    const [revenueData, occupancyData] = await Promise.allSettled([
+    // Step 2: Fetch revenue + occupancy + active listings in parallel
+    const [revenueData, occupancyData, listingsData] = await Promise.allSettled([
       fetchMetric('revenue', marketId, bedrooms, apiKey, 'GBP'),
       fetchMetric('occupancy', marketId, bedrooms, apiKey),
+      fetchMetric('active-listings', marketId, bedrooms, apiKey),
     ]);
 
     const revenue = revenueData.status === 'fulfilled' ? revenueData.value : [];
     const occupancy = occupancyData.status === 'fulfilled' ? occupancyData.value : [];
+    const listings = listingsData.status === 'fulfilled' ? listingsData.value : [];
 
     if (revenue.length === 0) {
       console.log('Airbtics: no revenue data returned, using estimates');
@@ -80,6 +83,11 @@ export async function getShortLetData(
     const avgMonthlyRevenue = annualRevenue / 12;
     const derivedAdr = Math.round(avgMonthlyRevenue / (effectiveOccupancy * DAYS_IN_MONTH));
 
+    // Get latest active listings count
+    const latestListings = listings.length > 0
+      ? Number((listings[listings.length - 1] as Record<string, number>).count ?? 0)
+      : 0;
+
     // Ensure we have exactly 12 months of revenue
     const paddedRevenue = padTo12Months(monthlyRevenue);
 
@@ -88,7 +96,7 @@ export async function getShortLetData(
       monthlyRevenue: paddedRevenue,
       occupancyRate: Math.round(avgOccupancy * 100) / 100,
       averageDailyRate: derivedAdr,
-      activeListings: 0, // Skip active-listings API call to save $0.20
+      activeListings: latestListings,
       comparables: [],
     };
   } catch (err) {
