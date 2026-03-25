@@ -74,37 +74,51 @@ export async function getShortLetData(
       return generateMarketEstimate(bedrooms);
     }
 
-    // Step 2: Fetch revenue + occupancy + nearby listings in parallel
-    const [revenueData, occupancyData, listingsData] = await Promise.allSettled([
+    // Step 2: Fetch monthly data + nearby listings + market summary in parallel
+    const [revenueData, occupancyData, listingsData, summaryData] = await Promise.allSettled([
       fetchMetric('revenue', marketId, bedrooms, apiKey, 'GBP'),
       fetchMetric('occupancy', marketId, bedrooms, apiKey),
       fetchNearbyListings(lat, lng, apiKey),
+      fetchMarketSummary(marketId, bedrooms, apiKey),
     ]);
 
     const revenue = revenueData.status === 'fulfilled' ? revenueData.value : [];
     const occupancy = occupancyData.status === 'fulfilled' ? occupancyData.value : [];
     const listingsResult = listingsData.status === 'fulfilled' ? listingsData.value : null;
+    const summary = summaryData.status === 'fulfilled' ? summaryData.value : null;
 
-    if (revenue.length === 0) {
-      console.log('Airbtics: no revenue data returned, using estimates');
+    // If no monthly data AND no summary, fall back to estimates
+    if (revenue.length === 0 && !summary) {
+      console.log('Airbtics: no data available, using market estimates');
       return generateMarketEstimate(bedrooms);
     }
 
-    // Use p50 (median) values — most realistic for typical performance
-    const monthlyRevenue = extractLast12Months(revenue, 'p50');
-    const monthlyOccupancy = extractLast12Months(occupancy, 'p50');
+    // Use summary as primary source (bedroom-specific, always accurate)
+    // Monthly metrics as secondary for seasonal breakdown
+    const summaryRevenue = summary?.revenue ?? 0;
+    const summaryOccupancy = summary?.occupancy ? summary.occupancy / 100 : 0;
+    const summaryAdr = summary?.average_daily_rate ?? 0;
 
-    const annualRevenue = monthlyRevenue.reduce((a, b) => a + b, 0);
-    const avgOccupancy = monthlyOccupancy.length > 0
-      ? monthlyOccupancy.reduce((a, b) => a + b, 0) / monthlyOccupancy.length / 100
-      : 0.65;
+    // Monthly breakdown from metrics (if available), otherwise distribute summary evenly with seasonal weighting
+    let monthlyRevenue: number[];
+    let avgOccupancy: number;
 
-    // Derive ADR from revenue and occupancy instead of a separate API call
-    // ADR = monthly_revenue / (occupancy_rate * days_in_month)
-    const DAYS_IN_MONTH = 30;
-    const effectiveOccupancy = avgOccupancy > 0 ? avgOccupancy : 0.65;
-    const avgMonthlyRevenue = annualRevenue / 12;
-    const derivedAdr = Math.round(avgMonthlyRevenue / (effectiveOccupancy * DAYS_IN_MONTH));
+    if (revenue.length > 0) {
+      monthlyRevenue = extractLast12Months(revenue, 'p50');
+      const monthlyOccupancy = extractLast12Months(occupancy, 'p50');
+      avgOccupancy = monthlyOccupancy.length > 0
+        ? monthlyOccupancy.reduce((a, b) => a + b, 0) / monthlyOccupancy.length / 100
+        : summaryOccupancy || 0.65;
+    } else {
+      // Use summary annual revenue distributed with seasonal weighting
+      const base = (summaryRevenue || generateMarketEstimate(bedrooms).annualRevenue) / 12;
+      const seasonalMultipliers = [0.82, 0.85, 0.95, 1.00, 1.08, 1.18, 1.25, 1.22, 1.10, 0.98, 0.88, 0.80];
+      monthlyRevenue = seasonalMultipliers.map(m => Math.round(base * m));
+      avgOccupancy = summaryOccupancy || 0.65;
+    }
+
+    const annualRevenue = summaryRevenue || monthlyRevenue.reduce((a, b) => a + b, 0);
+    const derivedAdr = summaryAdr || Math.round(annualRevenue / 12 / ((avgOccupancy || 0.65) * 30));
 
     // Process nearby listings into comparables
     let comparables: ShortLetComparable[] = [];
@@ -148,6 +162,11 @@ export async function getShortLetData(
           daysAvailable: l.active_days_count_ltm ?? 0,
         };
       });
+    }
+
+    // Use summary active_listings_count as fallback (bedroom-specific market count)
+    if (activeListings === 0 && summary?.active_listings_count) {
+      activeListings = summary.active_listings_count;
     }
 
     // Ensure we have exactly 12 months of revenue
@@ -256,6 +275,43 @@ async function fetchNearbyListings(
   return { totalCount, listings };
 }
 
+interface MarketSummary {
+  occupancy: number;
+  average_daily_rate: number;
+  revenue: number;
+  active_listings_count: number;
+  market_grade: string;
+  regulations: string;
+}
+
+/**
+ * Fetches bedroom-specific market summary. Cost: $0.25/call.
+ * Returns ADR, occupancy, revenue, and active listings count for the specific bedroom count.
+ */
+async function fetchMarketSummary(
+  marketId: number,
+  bedrooms: number,
+  apiKey: string,
+): Promise<MarketSummary | null> {
+  const url = new URL(`${BASE_URL}/markets/summary`);
+  url.searchParams.set('market_id', String(marketId));
+  url.searchParams.set('bedrooms', String(bedrooms));
+  url.searchParams.set('currency', 'GBP');
+
+  const response = await fetch(url.toString(), {
+    headers: { 'x-api-key': apiKey },
+  });
+
+  if (!response.ok) return null;
+
+  const data = await response.json();
+  if (data.message === 'insufficient_credits' || typeof data.message !== 'object') {
+    return null;
+  }
+
+  return data.message as MarketSummary;
+}
+
 /**
  * Finds the Airbtics market_id for a given UK postcode.
  * Extracts the city/area from the postcode prefix and searches.
@@ -273,7 +329,21 @@ async function findMarketId(postcode: string, apiKey: string): Promise<number | 
     return cached.id;
   }
 
-  // Map common UK postcode prefixes to city names for better search
+  // Hardcoded market IDs for common UK cities — saves $0.01/call and avoids
+  // "insufficient_credits" failures on the search endpoint
+  const KNOWN_MARKETS: Record<string, number> = {
+    'Manchester': 144265, 'London': 142929, 'Birmingham': 142853,
+    'Bristol': 142858, 'Leeds': 142907, 'Sheffield': 142969,
+    'Liverpool': 142912, 'Edinburgh': 142876, 'Glasgow': 142890,
+    'Cardiff': 142863, 'Newcastle': 142928, 'Nottingham': 142941,
+    'Leicester': 142910, 'Brighton': 142857, 'Oxford': 142946,
+    'Cambridge': 142862, 'Bath': 142848, 'York': 143002,
+    'Portsmouth': 142953, 'Southampton': 142973, 'Coventry': 142870,
+    'Derby': 142873, 'Exeter': 142880, 'Plymouth': 142951,
+    'Belfast': 142850, 'Aberdeen': 142838,
+  };
+
+  // Map postcode prefix to city name
   const postcodeToCity: Record<string, string> = {
     'M': 'Manchester', 'SW': 'London', 'SE': 'London', 'N': 'London', 'E': 'London',
     'W': 'London', 'EC': 'London', 'WC': 'London', 'NW': 'London',
@@ -285,8 +355,7 @@ async function findMarketId(postcode: string, apiKey: string): Promise<number | 
     'EX': 'Exeter', 'PL': 'Plymouth', 'BT': 'Belfast', 'AB': 'Aberdeen',
   };
 
-  // Find the best city name match — sort by prefix length (longest first)
-  // so "NE" matches Newcastle before "N" matches London
+  // Find city name — sort by prefix length (longest first)
   let searchQuery = outwardCode;
   const sortedPrefixes = Object.entries(postcodeToCity).sort(
     ([a], [b]) => b.length - a.length,
@@ -298,6 +367,14 @@ async function findMarketId(postcode: string, apiKey: string): Promise<number | 
     }
   }
 
+  // Try hardcoded market ID first (free, no API call)
+  if (KNOWN_MARKETS[searchQuery]) {
+    const marketId = KNOWN_MARKETS[searchQuery];
+    marketIdCache.set(cacheKey, { id: marketId, expiresAt: Date.now() + CACHE_TTL_MS });
+    return marketId;
+  }
+
+  // Fall back to API search for unknown cities
   const url = new URL(`${BASE_URL}/markets/search`);
   url.searchParams.set('query', searchQuery);
   url.searchParams.set('country_code', 'GB');
@@ -314,7 +391,7 @@ async function findMarketId(postcode: string, apiKey: string): Promise<number | 
   const data = await response.json();
   const markets = data.message;
 
-  if (!Array.isArray(markets) || markets.length === 0) {
+  if (!Array.isArray(markets) || markets.length === 0 || data.message === 'insufficient_credits') {
     marketIdCache.set(cacheKey, { id: null, expiresAt: Date.now() + CACHE_TTL_MS });
     return null;
   }
