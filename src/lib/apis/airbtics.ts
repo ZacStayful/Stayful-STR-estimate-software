@@ -127,8 +127,8 @@ export async function getShortLetData(
       avgOccupancy = summaryOccupancy || 0.65;
     }
 
-    const annualRevenue = summaryRevenue || monthlyRevenue.reduce((a, b) => a + b, 0);
-    const derivedAdr = summaryAdr || Math.round(annualRevenue / 12 / ((avgOccupancy || 0.65) * 30));
+    let annualRevenue = summaryRevenue || monthlyRevenue.reduce((a, b) => a + b, 0);
+    let derivedAdr = summaryAdr || Math.round(annualRevenue / 12 / ((avgOccupancy || 0.65) * 30));
 
     // ── Rule of 12: Try to find 12 comparables, broadening search if needed ──
     let comparables: ShortLetComparable[] = [];
@@ -169,6 +169,28 @@ export async function getShortLetData(
     // Use summary active_listings_count as fallback
     if (activeListings === 0 && summary?.active_listings_count) {
       activeListings = summary.active_listings_count;
+    }
+
+    // ── Top-5 performer override ──
+    // When we have 5+ comparables, use the top 5 by annual revenue
+    // as the primary revenue/ADR/occupancy figures. This reflects what
+    // good operators (like Stayful) actually achieve, rather than the
+    // market average which is dragged down by poor performers.
+    if (comparables.length >= 5) {
+      const sorted = [...comparables].sort((a, b) => b.annualRevenue - a.annualRevenue);
+      const top5 = sorted.slice(0, 5);
+      const top5Revenue = Math.round(top5.reduce((s, c) => s + c.annualRevenue, 0) / 5);
+      const top5Adr = Math.round(top5.reduce((s, c) => s + c.averageDailyRate, 0) / 5);
+      const top5Occupancy = top5.reduce((s, c) => s + c.occupancyRate, 0) / 5;
+
+      // Scale monthly revenue proportionally to the top-5 annual figure
+      const ratio = top5Revenue / (annualRevenue || 1);
+      monthlyRevenue = monthlyRevenue.map((m) => Math.round(m * ratio));
+
+      // Override headline figures
+      annualRevenue = top5Revenue;
+      avgOccupancy = top5Occupancy;
+      derivedAdr = top5Adr;
     }
 
     // ── Build data quality assessment ──
@@ -253,7 +275,9 @@ function extractComparables(
   lng: number,
 ): { comparables: ShortLetComparable[]; totalMatches: number } {
   const bedroomMatches = result.listings.filter(
-    (l: AirbticsListing) => l.bedrooms === bedrooms,
+    (l: AirbticsListing) =>
+      l.bedrooms === bedrooms &&
+      l.accommodates >= bedrooms * 2, // Filter out bad operators (e.g. 3-bed listing only accommodating 3 guests)
   );
 
   const withDistance = bedroomMatches.map((l: AirbticsListing) => ({

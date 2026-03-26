@@ -282,7 +282,7 @@ export default function HomePage() {
   const [address, setAddress] = useState("");
   const [postcode, setPostcode] = useState("");
   const [bedrooms, setBedrooms] = useState("2");
-  const [guests, setGuests] = useState("4");
+  const [guests, setGuests] = useState("6"); // Auto-calculated: (2 × 2) + 2
   const [propertyType, setPropertyType] = useState("Flat");
   const [monthlyMortgage, setMonthlyMortgage] = useState("");
   const [monthlyBills, setMonthlyBills] = useState("");
@@ -806,10 +806,18 @@ export default function HomePage() {
     const hasComparables = r.shortLet.comparables.length > 0;
     const comps = r.shortLet.comparables;
 
-    // Calculate averages from real listing data
-    const compAvgNightlyRate = hasComparables ? Math.round(comps.reduce((s, c) => s + c.averageDailyRate, 0) / comps.length) : r.shortLet.averageDailyRate;
-    const compAvgOccupancy = hasComparables ? comps.reduce((s, c) => s + c.occupancyRate, 0) / comps.length : r.shortLet.occupancyRate;
-    const compAvgRevenue = hasComparables ? Math.round(comps.reduce((s, c) => s + c.annualRevenue, 0) / comps.length) : r.shortLet.annualRevenue;
+    // Sort comparables by annual revenue descending (highest first)
+    const compsSortedByRevenue = [...comps].sort((a, b) => b.annualRevenue - a.annualRevenue);
+    // Top 5 performers for projection averages
+    const top5Comps = compsSortedByRevenue.slice(0, 5);
+    const top5Set = new Set(top5Comps);
+    const hasTop5 = top5Comps.length >= 5;
+
+    // Calculate averages from top 5 performers (or all if < 5)
+    const avgSource = hasTop5 ? top5Comps : comps;
+    const compAvgNightlyRate = hasComparables ? Math.round(avgSource.reduce((s, c) => s + c.averageDailyRate, 0) / avgSource.length) : r.shortLet.averageDailyRate;
+    const compAvgOccupancy = hasComparables ? avgSource.reduce((s, c) => s + c.occupancyRate, 0) / avgSource.length : r.shortLet.occupancyRate;
+    const compAvgRevenue = hasComparables ? Math.round(avgSource.reduce((s, c) => s + c.annualRevenue, 0) / avgSource.length) : r.shortLet.annualRevenue;
     const compsWithRating = comps.filter((c) => c.rating > 0);
     const avgRating = compsWithRating.length > 0 ? Math.round(compsWithRating.reduce((s, c) => s + c.rating, 0) / compsWithRating.length * 10) / 10 : 0;
     const compsWithReviews = comps.filter((c) => c.reviewCount > 0);
@@ -1059,7 +1067,7 @@ export default function HomePage() {
             <SectionHeading
               icon={MapPin}
               title={`${r.dataQuality?.comparablesFound ?? (hasComparables ? r.shortLet.comparables.length : 8)} Comparable Properties Analysed`}
-              subtitle={`Similar ${r.property.bedrooms}-bedroom properties accommodating ${r.property.guests} guests within your area.${r.dataQuality?.searchBroadened ? ` Search broadened to ${r.dataQuality.searchRadiusKm}km.` : ""}`}
+              subtitle={`Similar ${r.property.bedrooms}-bedroom properties accommodating ${r.property.guests} guests within your area.${r.dataQuality?.searchBroadened ? ` Search broadened to ${r.dataQuality.searchRadiusKm}km.` : ""}${hasTop5 ? " Revenue projections based on top-performing comparable properties." : ""}`}
             />
 
             {r.dataQuality?.disclaimer && (
@@ -1090,15 +1098,15 @@ export default function HomePage() {
             {/* Stat cards — always show core 3, conditionally show rating/reviews/age */}
             <div className={`mb-6 grid gap-3 grid-cols-2 sm:grid-cols-3 ${hasComparables ? "lg:grid-cols-6" : "lg:grid-cols-3"}`}>
               <div className="rounded-lg bg-muted/50 p-3">
-                <p className="text-[11px] text-muted-foreground">Avg. Nightly Rate</p>
+                <p className="text-[11px] text-muted-foreground">{hasTop5 ? "Top 5 Avg. Nightly Rate" : "Avg. Nightly Rate"}</p>
                 <p className="mt-1 text-xl font-bold text-foreground">{gbp(compAvgNightlyRate)}</p>
               </div>
               <div className="rounded-lg bg-muted/50 p-3">
-                <p className="text-[11px] text-muted-foreground">Avg. Occupancy</p>
+                <p className="text-[11px] text-muted-foreground">{hasTop5 ? "Top 5 Avg. Occupancy" : "Avg. Occupancy"}</p>
                 <p className="mt-1 text-xl font-bold text-foreground">{pct(compAvgOccupancy)}</p>
               </div>
               <div className="rounded-lg bg-muted/50 p-3">
-                <p className="text-[11px] text-muted-foreground">Avg. Annual Revenue</p>
+                <p className="text-[11px] text-muted-foreground">{hasTop5 ? "Top 5 Avg. Revenue" : "Avg. Annual Revenue"}</p>
                 <p className="mt-1 text-xl font-bold text-foreground">{gbp(compAvgRevenue)}</p>
               </div>
               {hasComparables && (
@@ -1141,15 +1149,22 @@ export default function HomePage() {
                         </tr>
                       </thead>
                       <tbody>
-                        {r.shortLet.comparables.map((comp, i) => (
+                        {r.shortLet.comparables.map((comp, i) => {
+                          const isTopPerformer = hasTop5 && top5Set.has(comp);
+                          return (
                           <tr
                             key={i}
-                            className={`border-b border-border/50 last:border-0 ${i % 2 === 1 ? "bg-muted/20" : ""}`}
+                            className={`border-b border-border/50 last:border-0 ${isTopPerformer ? "border-l-2 border-l-success bg-success/5" : i % 2 === 1 ? "bg-muted/20" : ""}`}
                           >
                             <td className="py-2.5 pr-4">
-                              <p className="font-medium truncate max-w-[180px]">
-                                {comp.title || `Listing ${i + 1}`}
-                              </p>
+                              <div className="flex items-center gap-2">
+                                <p className="font-medium truncate max-w-[180px]">
+                                  {comp.title || `Listing ${i + 1}`}
+                                </p>
+                                {isTopPerformer && (
+                                  <span className="inline-flex items-center rounded-full bg-success/15 px-1.5 py-0.5 text-[10px] font-semibold text-success whitespace-nowrap">Top performer</span>
+                                )}
+                              </div>
                               <p className="text-[11px] text-muted-foreground">
                                 {comp.distance != null ? `${comp.distance} km away` : ""}
                               </p>
@@ -1202,7 +1217,8 @@ export default function HomePage() {
                               )}
                             </td>
                           </tr>
-                        ))}
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
@@ -2513,7 +2529,15 @@ export default function HomePage() {
                       max={10}
                       required
                       value={bedrooms}
-                      onChange={(e) => setBedrooms(e.target.value)}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setBedrooms(val);
+                        // Auto-calculate guests: (bedrooms × 2) + 2
+                        const numBeds = Number(val);
+                        if (!isNaN(numBeds) && numBeds > 0) {
+                          setGuests(String(numBeds * 2 + 2));
+                        }
+                      }}
                     />
                   </div>
 
@@ -2534,6 +2558,7 @@ export default function HomePage() {
                       value={guests}
                       onChange={(e) => setGuests(e.target.value)}
                     />
+                    <p className="text-[11px] text-muted-foreground">Auto-calculated: 2 per bedroom + 2 (sofa bed)</p>
                   </div>
                 </div>
 
