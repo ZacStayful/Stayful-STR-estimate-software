@@ -1058,13 +1058,34 @@ export default function HomePage() {
           <section id="comparables" ref={setSectionRef("comparables")} className="mb-12">
             <SectionHeading
               icon={MapPin}
-              title={hasComparables ? `${r.shortLet.comparables.length} Comparable Properties Analysed` : `${Math.min(r.shortLet.activeListings || 8, 8)} Comparable Properties Analysed`}
-              subtitle={`Similar ${r.property.bedrooms}-bedroom properties accommodating ${r.property.guests} guests within your area.`}
+              title={`${r.dataQuality?.comparablesFound ?? (hasComparables ? r.shortLet.comparables.length : 8)} Comparable Properties Analysed`}
+              subtitle={`Similar ${r.property.bedrooms}-bedroom properties accommodating ${r.property.guests} guests within your area.${r.dataQuality?.searchBroadened ? ` Search broadened to ${r.dataQuality.searchRadiusKm}km.` : ""}`}
             />
 
-            <p className="mb-4 text-xs text-muted-foreground">
-              Note: {hasComparables ? r.shortLet.comparables.length : Math.min(r.shortLet.activeListings || 8, 8)} comparable properties found in this market. Analysis is based on available data.
-            </p>
+            {r.dataQuality?.disclaimer && (
+              <div className={`mb-4 rounded-lg border p-3 text-sm ${
+                r.dataQuality.level === "low"
+                  ? "border-warning/50 bg-warning/10 text-warning-foreground"
+                  : "border-primary/30 bg-primary/5 text-foreground"
+              }`}>
+                <p className="font-medium mb-1">
+                  {r.dataQuality.level === "low" ? "Limited Data Available" : "Data Note"}
+                </p>
+                <p className="text-xs">{r.dataQuality.disclaimer}</p>
+                {r.dataQuality.level === "low" && (
+                  <a href="https://calendly.com/zac-stayful/call" target="_blank" rel="noopener noreferrer"
+                    className="mt-2 inline-block text-xs font-medium text-primary underline">
+                    Book a Free Assessment with Stayful
+                  </a>
+                )}
+              </div>
+            )}
+
+            {!r.dataQuality?.disclaimer && (
+              <p className="mb-4 text-xs text-muted-foreground">
+                Note: {r.dataQuality?.comparablesFound ?? (hasComparables ? r.shortLet.comparables.length : 8)} comparable properties found in this market. Analysis is based on available data.
+              </p>
+            )}
 
             {/* Stat cards — always show core 3, conditionally show rating/reviews/age */}
             <div className={`mb-6 grid gap-3 grid-cols-2 sm:grid-cols-3 ${hasComparables ? "lg:grid-cols-6" : "lg:grid-cols-3"}`}>

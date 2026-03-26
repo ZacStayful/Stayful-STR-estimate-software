@@ -1,4 +1,4 @@
-import type { PropertyInput, AnalysisResult, ShortLetData, LongLetData, DemandDrivers, NearbyEvent } from '@/lib/types';
+import type { PropertyInput, AnalysisResult, ShortLetData, LongLetData, DemandDrivers, NearbyEvent, DataQuality } from '@/lib/types';
 import { geocodePostcode } from '@/lib/apis/geocode';
 import { getShortLetData } from '@/lib/apis/airbtics';
 import { getLongLetData } from '@/lib/apis/propertydata';
@@ -144,16 +144,25 @@ export async function POST(request: Request) {
         const shortLetPromise = getShortLetData(property.postcode, property.bedrooms, property.guests, coordinates.lat, coordinates.lng);
         const [shortLetResult, longLetResult] = await Promise.allSettled([shortLetPromise, longLetPromise]);
 
-        const shortLet: ShortLetData = shortLetResult.status === 'fulfilled'
+        const shortLetRaw = shortLetResult.status === 'fulfilled'
           ? shortLetResult.value
           : {
-              annualRevenue: 0,
-              monthlyRevenue: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-              occupancyRate: 0,
-              averageDailyRate: 0,
-              activeListings: 0,
-              comparables: [],
+              data: {
+                annualRevenue: 0,
+                monthlyRevenue: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] as ShortLetData['monthlyRevenue'],
+                occupancyRate: 0,
+                averageDailyRate: 0,
+                activeListings: 0,
+                comparables: [],
+              },
+              quality: {
+                comparablesFound: 0, comparablesTarget: 12,
+                searchRadiusKm: 0, searchBroadened: false, level: 'low' as const,
+                disclaimer: 'Unable to fetch short-term rental data. Book a web meeting with Stayful for a personalised assessment.',
+              },
             };
+        const shortLet: ShortLetData = shortLetRaw.data;
+        const dataQuality: DataQuality = shortLetRaw.quality;
 
         const longLet: LongLetData = longLetResult.status === 'fulfilled'
           ? longLetResult.value
@@ -225,6 +234,7 @@ export async function POST(request: Request) {
           demandDrivers,
           nearbyEvents,
           financials,
+          dataQuality,
           risk,
           verdict,
           createdAt: now,

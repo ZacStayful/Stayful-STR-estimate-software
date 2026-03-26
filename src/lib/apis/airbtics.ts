@@ -14,9 +14,12 @@
  *   Total: ~$0.46 per analysis
  */
 
-import type { ShortLetData, ShortLetComparable } from '../types';
+import type { ShortLetData, ShortLetComparable, DataQuality } from '../types';
 
 const BASE_URL = process.env.AIRBTICS_BASE_URL || 'https://crap0y5bx5.execute-api.us-east-2.amazonaws.com/prod';
+
+const TARGET_COMPARABLES = 12;
+const SEARCH_RADII_KM = [1.5, 3, 5, 10]; // Progressively broaden
 
 // ─── In-memory cache for market_id lookups ──────────────────────
 // Prevents duplicate search calls for the same postcode area.
@@ -58,12 +61,18 @@ export async function getShortLetData(
   _guests: number,
   lat: number,
   lng: number,
-): Promise<ShortLetData> {
+): Promise<{ data: ShortLetData; quality: DataQuality }> {
   const apiKey = process.env.AIRBTICS_API_KEY;
+
+  const lowQuality: DataQuality = {
+    comparablesFound: 0, comparablesTarget: TARGET_COMPARABLES,
+    searchRadiusKm: 0, searchBroadened: false, level: 'low',
+    disclaimer: 'Limited data available for this area. This property may be in a unique or rural location, which can be advantageous for short-term letting. Book a web meeting with Stayful for a more detailed, personalised assessment.',
+  };
 
   if (!apiKey) {
     console.log('AIRBTICS_API_KEY not set, using market estimates');
-    return generateMarketEstimate(bedrooms);
+    return { data: generateMarketEstimate(bedrooms), quality: lowQuality };
   }
 
   try {
@@ -71,7 +80,7 @@ export async function getShortLetData(
     const marketId = await findMarketId(postcode, apiKey);
     if (!marketId) {
       console.log('Airbtics: no market found for postcode, using estimates');
-      return generateMarketEstimate(bedrooms);
+      return { data: generateMarketEstimate(bedrooms), quality: lowQuality };
     }
 
     // Step 2: Fetch ALL data in parallel for maximum accuracy ($0.70 total)
@@ -91,7 +100,7 @@ export async function getShortLetData(
     // If no monthly data AND no summary, fall back to estimates
     if (revenue.length === 0 && !summary) {
       console.log('Airbtics: no data available, using market estimates');
-      return generateMarketEstimate(bedrooms);
+      return { data: generateMarketEstimate(bedrooms), quality: lowQuality };
     }
 
     // Use summary as primary source (bedroom-specific, always accurate)
@@ -121,69 +130,90 @@ export async function getShortLetData(
     const annualRevenue = summaryRevenue || monthlyRevenue.reduce((a, b) => a + b, 0);
     const derivedAdr = summaryAdr || Math.round(annualRevenue / 12 / ((avgOccupancy || 0.65) * 30));
 
-    // Process nearby listings into comparables
+    // ── Rule of 12: Try to find 12 comparables, broadening search if needed ──
     let comparables: ShortLetComparable[] = [];
     let activeListings = 0;
+    let searchRadiusKm = SEARCH_RADII_KM[0];
+    let searchBroadened = false;
 
+    // First attempt uses the initial bounds result
     if (listingsResult) {
-      // Filter by exact bedroom match for comparables
-      const bedroomMatches = listingsResult.listings.filter(
-        (l: AirbticsListing) => l.bedrooms === bedrooms,
-      );
-
-      // activeListings = count of bedroom-matched listings in the area
-      activeListings = bedroomMatches.length;
-
-      // Sort by distance from property coordinates
-      const withDistance = bedroomMatches.map((l: AirbticsListing) => ({
-        ...l,
-        distance: haversineKm(lat, lng, l.latitude, l.longitude),
-      }));
-      withDistance.sort((a, b) => a.distance - b.distance);
-
-      // Take top 10 closest matching listings
-      comparables = withDistance.slice(0, 10).map((l): ShortLetComparable => {
-        const addedOn = l.added_on ? new Date(l.added_on) : null;
-        const ageYears = addedOn
-          ? Math.max(0, Math.round((Date.now() - addedOn.getTime()) / (365.25 * 24 * 60 * 60 * 1000) * 10) / 10)
-          : 0;
-
-        return {
-          title: l.name || 'Airbnb Listing',
-          url: `https://www.airbnb.co.uk/rooms/${l.listingID}`,
-          bedrooms: l.bedrooms ?? 0,
-          accommodates: l.accommodates ?? 0,
-          averageDailyRate: Math.round(l.avg_booked_daily_rate_ltm ?? 0),
-          occupancyRate: Math.round(l.avg_occupancy_rate_ltm ?? 0) / 100,
-          annualRevenue: Math.round(l.annual_revenue_ltm ?? 0),
-          distance: l.distance,
-          rating: Math.round(((l.reveiw_scores_rating ?? 0) / 20) * 10) / 10, // 0-100 → 0-5
-          reviewCount: l.visible_review_count ?? 0,
-          listingAge: ageYears,
-          daysAvailable: l.active_days_count_ltm ?? 0,
-        };
-      });
+      const result = extractComparables(listingsResult, bedrooms, lat, lng);
+      comparables = result.comparables;
+      activeListings = result.totalMatches;
     }
 
-    // Use summary active_listings_count as fallback (bedroom-specific market count)
+    // If we have fewer than 12, try broader radii
+    if (comparables.length < TARGET_COMPARABLES) {
+      for (let i = 1; i < SEARCH_RADII_KM.length; i++) {
+        const radiusKm = SEARCH_RADII_KM[i];
+        console.log(`Airbtics: only ${comparables.length}/${TARGET_COMPARABLES} comparables, broadening to ${radiusKm}km`);
+        searchBroadened = true;
+        searchRadiusKm = radiusKm;
+
+        const broaderResult = await fetchNearbyListings(lat, lng, apiKey, radiusKm);
+        if (broaderResult) {
+          const result = extractComparables(broaderResult, bedrooms, lat, lng);
+          comparables = result.comparables;
+          activeListings = result.totalMatches;
+          if (comparables.length >= TARGET_COMPARABLES) break;
+        }
+      }
+    } else {
+      searchRadiusKm = SEARCH_RADII_KM[0];
+    }
+
+    // Cap at 12 comparables
+    comparables = comparables.slice(0, TARGET_COMPARABLES);
+
+    // Use summary active_listings_count as fallback
     if (activeListings === 0 && summary?.active_listings_count) {
       activeListings = summary.active_listings_count;
     }
+
+    // ── Build data quality assessment ──
+    const comparablesFound = comparables.length;
+    let qualityLevel: DataQuality['level'];
+    let disclaimer: string | null = null;
+
+    if (comparablesFound >= TARGET_COMPARABLES) {
+      qualityLevel = 'high';
+    } else if (comparablesFound >= 6) {
+      qualityLevel = 'moderate';
+      disclaimer = `Only ${comparablesFound} comparable ${bedrooms}-bedroom properties were found within ${searchRadiusKm}km. Data accuracy may be slightly reduced. This could indicate a unique property type for the area — uniqueness is often advantageous for short-term letting.`;
+    } else {
+      qualityLevel = 'low';
+      disclaimer = comparablesFound > 0
+        ? `Only ${comparablesFound} comparable ${bedrooms}-bedroom properties were found even after broadening the search to ${searchRadiusKm}km. This area may be rural or the property type may be unique — both can be highly advantageous for short-term letting as competition is low. We recommend booking a web meeting with Stayful for a more detailed, personalised assessment.`
+        : `No comparable ${bedrooms}-bedroom properties were found nearby. This is a strong indicator of either a rural location or a highly unique property — both can perform exceptionally well for short-term letting due to low competition. Market-level estimates have been used. Book a web meeting with Stayful for accurate, personalised revenue projections.`;
+    }
+
+    const quality: DataQuality = {
+      comparablesFound,
+      comparablesTarget: TARGET_COMPARABLES,
+      searchRadiusKm,
+      searchBroadened,
+      level: qualityLevel,
+      disclaimer,
+    };
 
     // Ensure we have exactly 12 months of revenue
     const paddedRevenue = padTo12Months(monthlyRevenue);
 
     return {
-      annualRevenue: Math.round(annualRevenue),
-      monthlyRevenue: paddedRevenue,
-      occupancyRate: Math.round(avgOccupancy * 100) / 100,
-      averageDailyRate: derivedAdr,
-      activeListings,
-      comparables,
+      data: {
+        annualRevenue: Math.round(annualRevenue),
+        monthlyRevenue: paddedRevenue,
+        occupancyRate: Math.round(avgOccupancy * 100) / 100,
+        averageDailyRate: derivedAdr,
+        activeListings,
+        comparables,
+      },
+      quality,
     };
   } catch (err) {
     console.log('Airbtics API error, using market estimates:', err);
-    return generateMarketEstimate(bedrooms);
+    return { data: generateMarketEstimate(bedrooms), quality: lowQuality };
   }
 }
 
@@ -214,18 +244,62 @@ interface BoundsResponse {
 }
 
 /**
- * Fetches nearby listings within ~1.5km bounding box using the bounds endpoint.
+ * Extracts and sorts comparables from a bounds search result.
+ */
+function extractComparables(
+  result: BoundsResponse,
+  bedrooms: number,
+  lat: number,
+  lng: number,
+): { comparables: ShortLetComparable[]; totalMatches: number } {
+  const bedroomMatches = result.listings.filter(
+    (l: AirbticsListing) => l.bedrooms === bedrooms,
+  );
+
+  const withDistance = bedroomMatches.map((l: AirbticsListing) => ({
+    ...l,
+    distance: haversineKm(lat, lng, l.latitude, l.longitude),
+  }));
+  withDistance.sort((a, b) => a.distance - b.distance);
+
+  const comparables = withDistance.slice(0, TARGET_COMPARABLES).map((l): ShortLetComparable => {
+    const addedOn = l.added_on ? new Date(l.added_on) : null;
+    const ageYears = addedOn
+      ? Math.max(0, Math.round((Date.now() - addedOn.getTime()) / (365.25 * 24 * 60 * 60 * 1000) * 10) / 10)
+      : 0;
+
+    return {
+      title: l.name || 'Airbnb Listing',
+      url: `https://www.airbnb.co.uk/rooms/${l.listingID}`,
+      bedrooms: l.bedrooms ?? 0,
+      accommodates: l.accommodates ?? 0,
+      averageDailyRate: Math.round(l.avg_booked_daily_rate_ltm ?? 0),
+      occupancyRate: Math.round(l.avg_occupancy_rate_ltm ?? 0) / 100,
+      annualRevenue: Math.round(l.annual_revenue_ltm ?? 0),
+      distance: l.distance,
+      rating: Math.round(((l.reveiw_scores_rating ?? 0) / 20) * 10) / 10,
+      reviewCount: l.visible_review_count ?? 0,
+      listingAge: ageYears,
+      daysAvailable: l.active_days_count_ltm ?? 0,
+    };
+  });
+
+  return { comparables, totalMatches: bedroomMatches.length };
+}
+
+/**
+ * Fetches nearby listings within a bounding box using the bounds endpoint.
  * Cost: $0.05/call
  */
 async function fetchNearbyListings(
   lat: number,
   lng: number,
   apiKey: string,
+  radiusKm: number = 1.5,
 ): Promise<BoundsResponse | null> {
-  // Create a bounding box ~1.5km around the property
   // At UK latitudes (~52-55°N), 1° lat ≈ 111km, 1° lng ≈ 65km
-  const latOffset = 1.5 / 111;    // ~0.0135°
-  const lngOffset = 1.5 / 65;     // ~0.0231°
+  const latOffset = radiusKm / 111;
+  const lngOffset = radiusKm / 65;
 
   const body = {
     bounds: {

@@ -113,6 +113,16 @@ export interface PropertyVerdict {
   recommendation: string;
 }
 
+// ─── Data Quality ────────────────────────────────────────────────
+export interface DataQuality {
+  comparablesFound: number;
+  comparablesTarget: number; // 12
+  searchRadiusKm: number;
+  searchBroadened: boolean;
+  level: 'high' | 'moderate' | 'low';
+  disclaimer: string | null;
+}
+
 // ─── Full Analysis Result ────────────────────────────────────────
 export interface AnalysisResult {
   property: PropertyInput;
@@ -122,6 +132,7 @@ export interface AnalysisResult {
   demandDrivers: DemandDrivers;
   nearbyEvents: { events: NearbyEvent[]; totalEvents: number };
   financials: FinancialSummary;
+  dataQuality: DataQuality;
   risk: RiskProfile;
   verdict: PropertyVerdict;
   createdAt: string;

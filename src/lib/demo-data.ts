@@ -96,6 +96,14 @@ export const DEMO_MANCHESTER: AnalysisResult = {
     ownerInvolvement: "low",
     recommendation: "This property is a strong candidate for short-term letting. It could generate approximately £9,056 more per year (£755/month) compared to a traditional long-let. The break-even occupancy is 34%, which is comfortably achievable given Manchester's strong demand drivers. Risk profile is low, making this a favourable opportunity with manageable downside.",
   },
+  dataQuality: {
+    comparablesFound: 12,
+    comparablesTarget: 12,
+    searchRadiusKm: 1.5,
+    searchBroadened: false,
+    level: "high" as const,
+    disclaimer: null,
+  },
   createdAt: new Date().toISOString(),
   updatedAt: new Date().toISOString(),
 };
@@ -197,6 +205,14 @@ export const DEMO_RESULT: AnalysisResult = {
     ownerInvolvement: "moderate",
     recommendation:
       "This property shows moderate potential for short-term letting. While the gross revenue is attractive, after accounting for operating costs (cleaning, supplies, platform fees, utilities), the net income is lower than a traditional long-term let. Consider this route if you value flexibility and are willing to actively manage the property or hire a management company.",
+  },
+  dataQuality: {
+    comparablesFound: 8,
+    comparablesTarget: 12,
+    searchRadiusKm: 3,
+    searchBroadened: true,
+    level: "moderate" as const,
+    disclaimer: "Only 8 comparable 2-bedroom properties were found within 3km. Data accuracy may be slightly reduced. This could indicate a unique property type for the area — uniqueness is often advantageous for short-term letting.",
   },
   createdAt: new Date().toISOString(),
   updatedAt: new Date().toISOString(),
