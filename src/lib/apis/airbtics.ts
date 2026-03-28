@@ -5,13 +5,16 @@
  * Auth: x-api-key header
  * Docs: https://documenter.getpostman.com/view/25155751/2sB3QRoSvW
  *
- * Flow:
+ * PRIMARY flow (report/all — $0.50, highest accuracy):
+ *   1. POST report/all with lat/lng/bedrooms → returns report_id
+ *   2. GET report?id=<id> → poll until comps_status === "success"
+ *   3. Parse ~40 comparables with full LTM data (revenue, ADR, occupancy, monthly)
+ *
+ * FALLBACK flow (markets + bounds — ~$0.46):
  *   1. markets/search — find market_id from postcode/city ($0.01)
- *   2. markets/metrics/revenue — monthly revenue with percentiles ($0.20)
- *   3. markets/metrics/occupancy — monthly occupancy ($0.20)
- *   4. listings/search/bounds — real nearby comparable listings ($0.05)
- *   5. Derive ADR from: revenue / (occupancy * days_in_month)
- *   Total: ~$0.46 per analysis
+ *   2. markets/summary — bedroom-specific summary ($0.25)
+ *   3. markets/metrics/revenue + occupancy ($0.40)
+ *   4. listings/search/bounds — nearby comparables ($0.05)
  */
 
 import type { ShortLetData, ShortLetComparable, DataQuality } from '../types';
@@ -20,6 +23,8 @@ const BASE_URL = process.env.AIRBTICS_BASE_URL || 'https://crap0y5bx5.execute-ap
 
 const TARGET_COMPARABLES = 12;
 const SEARCH_RADII_KM = [1.5, 3, 5, 10]; // Progressively broaden
+const REPORT_POLL_INTERVAL_MS = 2000;
+const REPORT_POLL_MAX_MS = 15000;
 
 // ─── In-memory cache for market_id lookups ──────────────────────
 // Prevents duplicate search calls for the same postcode area.
@@ -75,168 +80,456 @@ export async function getShortLetData(
     return { data: generateMarketEstimate(bedrooms), quality: lowQuality };
   }
 
+  // ── PRIMARY: Try report/all ($0.50, highest accuracy with real comps) ──
   try {
-    // Step 1: Find market ID from postcode area (cached)
-    const marketId = await findMarketId(postcode, apiKey);
-    if (!marketId) {
-      console.log('Airbtics: no market found for postcode, using estimates');
-      return { data: generateMarketEstimate(bedrooms), quality: lowQuality };
+    const reportResult = await fetchReportAll(lat, lng, bedrooms, apiKey);
+    if (reportResult) {
+      console.log(`Airbtics report/all: ${reportResult.comps.length} raw comps returned`);
+      return buildDataFromReportComps(reportResult, bedrooms, lat, lng);
+    }
+    console.log('Airbtics report/all: no data, falling back to markets flow');
+  } catch (err) {
+    console.log('Airbtics report/all failed, falling back to markets flow:', err);
+  }
+
+  // ── FALLBACK: markets/summary + metrics + bounds (~$0.46) ──
+  try {
+    return await getShortLetDataFromMarkets(postcode, bedrooms, lat, lng, apiKey);
+  } catch (err) {
+    console.log('Airbtics markets fallback also failed, using estimates:', err);
+    return { data: generateMarketEstimate(bedrooms), quality: lowQuality };
+  }
+}
+
+// ─── report/all comp shape ─────────────────────────────────────
+interface ReportComp {
+  listingID: string;
+  name: string;
+  bedrooms: string | number; // API returns string
+  bathrooms: number;
+  accommodates: number;
+  latitude: number;
+  longitude: number;
+  host_name: string;
+  room_type: string;
+  minimum_nights: number;
+  visible_review_count: number;
+  reveiw_scores_rating: number; // API typo, 0-5 scale
+  amenities: Record<string, boolean>;
+  annual_revenue_ltm: number;
+  avg_occupancy_rate_ltm: number; // 0-100
+  avg_booked_daily_rate_ltm: number;
+  active_days_count_ltm: number;
+  no_of_bookings_ltm: number;
+  revenue_ltm_monthly: Record<string, number>; // "YYYY-MM" → revenue
+  booked_daily_rate_ltm_monthly: Record<string, number>;
+  occupancy_rate_ltm_monthly: Record<string, number>;
+}
+
+interface ReportAllResult {
+  id: string;
+  latitude: number;
+  longitude: number;
+  bedrooms: number;
+  bathrooms: number;
+  accommodates: number;
+  radius: number;
+  comps_status: string;
+  comps: ReportComp[];
+}
+
+/**
+ * Two-step report/all flow:
+ * 1. POST to create report → report_id
+ * 2. Poll GET until comps_status === "success"
+ * Cost: $0.50 for POST, GET is free.
+ */
+async function fetchReportAll(
+  lat: number,
+  lng: number,
+  bedrooms: number,
+  apiKey: string,
+): Promise<ReportAllResult | null> {
+  const accommodates = (bedrooms * 2) + 2;
+  const bathrooms = Math.max(1, Math.ceil(bedrooms * 0.75));
+
+  // Step 1: Create report
+  const createRes = await fetch(`${BASE_URL}/report/all`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': apiKey,
+    },
+    body: JSON.stringify({
+      latitude: lat,
+      longitude: lng,
+      bedrooms,
+      bathrooms,
+      accommodates,
+      currency: 'GBP',
+      country_code: 'GB',
+    }),
+  });
+
+  if (!createRes.ok) {
+    console.error(`Airbtics report/all POST returned HTTP ${createRes.status}`);
+    return null;
+  }
+
+  const createData = await createRes.json();
+  if (createData.message === 'insufficient_credits') {
+    console.log('Airbtics: insufficient credits for report/all');
+    return null;
+  }
+
+  const reportId = createData?.message?.report_id;
+  if (!reportId) {
+    console.error('Airbtics report/all: no report_id in response', createData);
+    return null;
+  }
+
+  console.log(`Airbtics report/all: created report ${reportId}, polling...`);
+
+  // Step 2: Poll for completion
+  const startTime = Date.now();
+  while (Date.now() - startTime < REPORT_POLL_MAX_MS) {
+    await new Promise((r) => setTimeout(r, REPORT_POLL_INTERVAL_MS));
+
+    const readRes = await fetch(`${BASE_URL}/report?id=${reportId}`, {
+      headers: { 'x-api-key': apiKey },
+    });
+
+    if (!readRes.ok) {
+      console.error(`Airbtics report GET returned HTTP ${readRes.status}`);
+      continue;
     }
 
-    // Step 2: Fetch ALL data in parallel for maximum accuracy ($0.70 total)
-    // summary ($0.25) + revenue ($0.20) + occupancy ($0.20) + listings ($0.05)
-    const [summaryData, revenueData, occupancyData, listingsData] = await Promise.allSettled([
-      fetchMarketSummary(marketId, bedrooms, apiKey),
-      fetchMetric('revenue', marketId, bedrooms, apiKey, 'GBP'),
-      fetchMetric('occupancy', marketId, bedrooms, apiKey),
-      fetchNearbyListings(lat, lng, apiKey),
-    ]);
+    const readData = await readRes.json();
+    const report = readData?.message ?? readData;
 
-    const summary = summaryData.status === 'fulfilled' ? summaryData.value : null;
-    const revenue = revenueData.status === 'fulfilled' ? revenueData.value : [];
-    const occupancy = occupancyData.status === 'fulfilled' ? occupancyData.value : [];
-    const listingsResult = listingsData.status === 'fulfilled' ? listingsData.value : null;
-
-    // If no monthly data AND no summary, fall back to estimates
-    if (revenue.length === 0 && !summary) {
-      console.log('Airbtics: no data available, using market estimates');
-      return { data: generateMarketEstimate(bedrooms), quality: lowQuality };
+    if (report?.comps_status === 'success' && Array.isArray(report.comps)) {
+      return report as ReportAllResult;
     }
 
-    // Use summary as primary source (bedroom-specific, always accurate)
-    // Monthly metrics as secondary for seasonal breakdown
-    const summaryRevenue = summary?.revenue ?? 0;
-    const summaryOccupancy = summary?.occupancy ? summary.occupancy / 100 : 0;
-    const summaryAdr = summary?.average_daily_rate ?? 0;
+    console.log(`Airbtics report/all: comps_status="${report?.comps_status}", retrying...`);
+  }
 
-    // Monthly breakdown from metrics (if available), otherwise distribute summary evenly with seasonal weighting
-    let monthlyRevenue: number[];
-    let avgOccupancy: number;
+  console.error('Airbtics report/all: timed out waiting for comps_status=success');
+  return null;
+}
 
-    if (revenue.length > 0) {
-      monthlyRevenue = extractLast12Months(revenue, 'p50');
-      const monthlyOccupancy = extractLast12Months(occupancy, 'p50');
-      avgOccupancy = monthlyOccupancy.length > 0
-        ? monthlyOccupancy.reduce((a, b) => a + b, 0) / monthlyOccupancy.length / 100
-        : summaryOccupancy || 0.65;
-    } else {
-      // Use summary annual revenue distributed with seasonal weighting
-      const base = (summaryRevenue || generateMarketEstimate(bedrooms).annualRevenue) / 12;
-      const seasonalMultipliers = [0.82, 0.85, 0.95, 1.00, 1.08, 1.18, 1.25, 1.22, 1.10, 0.98, 0.88, 0.80];
-      monthlyRevenue = seasonalMultipliers.map(m => Math.round(base * m));
-      avgOccupancy = summaryOccupancy || 0.65;
-    }
+/**
+ * Builds ShortLetData + DataQuality from report/all comps.
+ * Filters by accommodates >= bedrooms * 2, takes top 12 by revenue,
+ * uses top 5 performers for headline stats, and extracts real monthly data.
+ */
+function buildDataFromReportComps(
+  report: ReportAllResult,
+  bedrooms: number,
+  lat: number,
+  lng: number,
+): { data: ShortLetData; quality: DataQuality } {
+  // Filter comps: match bedroom count and filter bad operators
+  const filtered = report.comps.filter((c) => {
+    const compBedrooms = typeof c.bedrooms === 'string' ? parseInt(c.bedrooms, 10) : c.bedrooms;
+    return compBedrooms === bedrooms && c.accommodates >= bedrooms * 2;
+  });
 
-    let annualRevenue = summaryRevenue || monthlyRevenue.reduce((a, b) => a + b, 0);
-    let derivedAdr = summaryAdr || Math.round(annualRevenue / 12 / ((avgOccupancy || 0.65) * 30));
+  // Sort by annual revenue descending, take top 12
+  filtered.sort((a, b) => (b.annual_revenue_ltm ?? 0) - (a.annual_revenue_ltm ?? 0));
+  const top12 = filtered.slice(0, TARGET_COMPARABLES);
 
-    // ── Rule of 12: Try to find 12 comparables, broadening search if needed ──
-    let comparables: ShortLetComparable[] = [];
-    let activeListings = 0;
-    let searchRadiusKm = SEARCH_RADII_KM[0];
-    let searchBroadened = false;
+  // Convert to ShortLetComparable[]
+  const comparables: ShortLetComparable[] = top12.map((c): ShortLetComparable => {
+    const distance = haversineKm(lat, lng, c.latitude, c.longitude);
+    return {
+      title: c.name || 'Airbnb Listing',
+      url: `https://www.airbnb.co.uk/rooms/${c.listingID}`,
+      bedrooms: typeof c.bedrooms === 'string' ? parseInt(c.bedrooms, 10) : (c.bedrooms ?? 0),
+      accommodates: c.accommodates ?? 0,
+      averageDailyRate: Math.round(c.avg_booked_daily_rate_ltm ?? 0),
+      occupancyRate: Math.round(c.avg_occupancy_rate_ltm ?? 0) / 100,
+      annualRevenue: Math.round(c.annual_revenue_ltm ?? 0),
+      distance,
+      rating: Math.round((c.reveiw_scores_rating ?? 0) * 10) / 10, // Already 0-5 scale
+      reviewCount: c.visible_review_count ?? 0,
+      listingAge: 0, // report/all doesn't include added_on
+      daysAvailable: c.active_days_count_ltm ?? 0,
+    };
+  });
 
-    // First attempt uses the initial bounds result
-    if (listingsResult) {
-      const result = extractComparables(listingsResult, bedrooms, lat, lng);
-      comparables = result.comparables;
-      activeListings = result.totalMatches;
-    }
+  // ── Top-5 performer headline stats ──
+  const top5 = top12.slice(0, 5);
+  let annualRevenue: number;
+  let avgOccupancy: number;
+  let derivedAdr: number;
+  let monthlyRevenue: number[];
 
-    // If we have fewer than 12, try broader radii
-    if (comparables.length < TARGET_COMPARABLES) {
-      for (let i = 1; i < SEARCH_RADII_KM.length; i++) {
-        const radiusKm = SEARCH_RADII_KM[i];
-        console.log(`Airbtics: only ${comparables.length}/${TARGET_COMPARABLES} comparables, broadening to ${radiusKm}km`);
-        searchBroadened = true;
-        searchRadiusKm = radiusKm;
+  if (top5.length >= 5) {
+    annualRevenue = Math.round(top5.reduce((s, c) => s + (c.annual_revenue_ltm ?? 0), 0) / 5);
+    derivedAdr = Math.round(top5.reduce((s, c) => s + (c.avg_booked_daily_rate_ltm ?? 0), 0) / 5);
+    avgOccupancy = top5.reduce((s, c) => s + (c.avg_occupancy_rate_ltm ?? 0), 0) / 5 / 100;
 
-        const broaderResult = await fetchNearbyListings(lat, lng, apiKey, radiusKm);
-        if (broaderResult) {
-          const result = extractComparables(broaderResult, bedrooms, lat, lng);
-          comparables = result.comparables;
-          activeListings = result.totalMatches;
-          if (comparables.length >= TARGET_COMPARABLES) break;
-        }
-      }
-    } else {
-      searchRadiusKm = SEARCH_RADII_KM[0];
-    }
+    // Extract REAL monthly revenue from top 5 comps' revenue_ltm_monthly
+    monthlyRevenue = extractMonthlyFromComps(top5);
+  } else if (top5.length > 0) {
+    annualRevenue = Math.round(top5.reduce((s, c) => s + (c.annual_revenue_ltm ?? 0), 0) / top5.length);
+    derivedAdr = Math.round(top5.reduce((s, c) => s + (c.avg_booked_daily_rate_ltm ?? 0), 0) / top5.length);
+    avgOccupancy = top5.reduce((s, c) => s + (c.avg_occupancy_rate_ltm ?? 0), 0) / top5.length / 100;
+    monthlyRevenue = extractMonthlyFromComps(top5);
+  } else {
+    // No comps matched filters — use estimate
+    const estimate = generateMarketEstimate(bedrooms);
+    return {
+      data: estimate,
+      quality: {
+        comparablesFound: 0,
+        comparablesTarget: TARGET_COMPARABLES,
+        searchRadiusKm: report.radius ? report.radius / 1000 : 0,
+        searchBroadened: false,
+        level: 'low',
+        disclaimer: `No comparable ${bedrooms}-bedroom properties were found in the report. Market-level estimates have been used. Book a web meeting with Stayful for accurate, personalised revenue projections.`,
+      },
+    };
+  }
 
-    // Cap at 12 comparables
-    comparables = comparables.slice(0, TARGET_COMPARABLES);
+  const activeListings = filtered.length;
+  const searchRadiusKm = report.radius ? Math.round(report.radius / 1000 * 100) / 100 : 0;
 
-    // Use summary active_listings_count as fallback
-    if (activeListings === 0 && summary?.active_listings_count) {
-      activeListings = summary.active_listings_count;
-    }
+  // ── Data quality ──
+  const comparablesFound = comparables.length;
+  let qualityLevel: DataQuality['level'];
+  let disclaimer: string | null = null;
 
-    // ── Top-5 performer override ──
-    // When we have 5+ comparables, use the top 5 by annual revenue
-    // as the primary revenue/ADR/occupancy figures. This reflects what
-    // good operators (like Stayful) actually achieve, rather than the
-    // market average which is dragged down by poor performers.
-    if (comparables.length >= 5) {
-      const sorted = [...comparables].sort((a, b) => b.annualRevenue - a.annualRevenue);
-      const top5 = sorted.slice(0, 5);
-      const top5Revenue = Math.round(top5.reduce((s, c) => s + c.annualRevenue, 0) / 5);
-      const top5Adr = Math.round(top5.reduce((s, c) => s + c.averageDailyRate, 0) / 5);
-      const top5Occupancy = top5.reduce((s, c) => s + c.occupancyRate, 0) / 5;
+  if (comparablesFound >= TARGET_COMPARABLES) {
+    qualityLevel = 'high';
+  } else if (comparablesFound >= 6) {
+    qualityLevel = 'moderate';
+    disclaimer = `${comparablesFound} comparable ${bedrooms}-bedroom properties were found within ${searchRadiusKm}km. Data accuracy may be slightly reduced. This could indicate a unique property type for the area — uniqueness is often advantageous for short-term letting.`;
+  } else {
+    qualityLevel = 'low';
+    disclaimer = comparablesFound > 0
+      ? `Only ${comparablesFound} comparable ${bedrooms}-bedroom properties were found within ${searchRadiusKm}km. This area may be rural or the property type may be unique — both can be highly advantageous for short-term letting as competition is low. We recommend booking a web meeting with Stayful for a more detailed, personalised assessment.`
+      : `No comparable ${bedrooms}-bedroom properties were found. Market-level estimates have been used. Book a web meeting with Stayful for accurate, personalised revenue projections.`;
+  }
 
-      // Scale monthly revenue proportionally to the top-5 annual figure
-      const ratio = top5Revenue / (annualRevenue || 1);
-      monthlyRevenue = monthlyRevenue.map((m) => Math.round(m * ratio));
-
-      // Override headline figures
-      annualRevenue = top5Revenue;
-      avgOccupancy = top5Occupancy;
-      derivedAdr = top5Adr;
-    }
-
-    // ── Build data quality assessment ──
-    const comparablesFound = comparables.length;
-    let qualityLevel: DataQuality['level'];
-    let disclaimer: string | null = null;
-
-    if (comparablesFound >= TARGET_COMPARABLES) {
-      qualityLevel = 'high';
-    } else if (comparablesFound >= 6) {
-      qualityLevel = 'moderate';
-      disclaimer = `Only ${comparablesFound} comparable ${bedrooms}-bedroom properties were found within ${searchRadiusKm}km. Data accuracy may be slightly reduced. This could indicate a unique property type for the area — uniqueness is often advantageous for short-term letting.`;
-    } else {
-      qualityLevel = 'low';
-      disclaimer = comparablesFound > 0
-        ? `Only ${comparablesFound} comparable ${bedrooms}-bedroom properties were found even after broadening the search to ${searchRadiusKm}km. This area may be rural or the property type may be unique — both can be highly advantageous for short-term letting as competition is low. We recommend booking a web meeting with Stayful for a more detailed, personalised assessment.`
-        : `No comparable ${bedrooms}-bedroom properties were found nearby. This is a strong indicator of either a rural location or a highly unique property — both can perform exceptionally well for short-term letting due to low competition. Market-level estimates have been used. Book a web meeting with Stayful for accurate, personalised revenue projections.`;
-    }
-
-    const quality: DataQuality = {
+  return {
+    data: {
+      annualRevenue: Math.round(annualRevenue),
+      monthlyRevenue: padTo12Months(monthlyRevenue),
+      occupancyRate: Math.round(avgOccupancy * 100) / 100,
+      averageDailyRate: derivedAdr,
+      activeListings,
+      comparables,
+    },
+    quality: {
       comparablesFound,
       comparablesTarget: TARGET_COMPARABLES,
       searchRadiusKm,
-      searchBroadened,
+      searchBroadened: false,
       level: qualityLevel,
       disclaimer,
-    };
+    },
+  };
+}
 
-    // Ensure we have exactly 12 months of revenue
-    const paddedRevenue = padTo12Months(monthlyRevenue);
+/**
+ * Extracts real monthly revenue from comps' revenue_ltm_monthly fields.
+ * Averages across comps, maps "YYYY-MM" keys to calendar months (Jan=0..Dec=11).
+ * Returns exactly 12 values in Jan..Dec order.
+ */
+function extractMonthlyFromComps(comps: ReportComp[]): number[] {
+  // Collect all monthly data per calendar month (0=Jan .. 11=Dec)
+  const monthTotals: number[] = new Array(12).fill(0);
+  const monthCounts: number[] = new Array(12).fill(0);
 
-    return {
-      data: {
-        annualRevenue: Math.round(annualRevenue),
-        monthlyRevenue: paddedRevenue,
-        occupancyRate: Math.round(avgOccupancy * 100) / 100,
-        averageDailyRate: derivedAdr,
-        activeListings,
-        comparables,
-      },
-      quality,
-    };
-  } catch (err) {
-    console.log('Airbtics API error, using market estimates:', err);
+  for (const comp of comps) {
+    if (!comp.revenue_ltm_monthly) continue;
+    for (const [key, value] of Object.entries(comp.revenue_ltm_monthly)) {
+      // key is "YYYY-MM"
+      const monthPart = key.split('-')[1];
+      if (!monthPart) continue;
+      const monthIndex = parseInt(monthPart, 10) - 1; // "01" → 0 (Jan)
+      if (monthIndex >= 0 && monthIndex < 12 && typeof value === 'number') {
+        monthTotals[monthIndex] += value;
+        monthCounts[monthIndex]++;
+      }
+    }
+  }
+
+  // Average each month
+  return monthTotals.map((total, i) =>
+    monthCounts[i] > 0 ? Math.round(total / monthCounts[i]) : 0,
+  );
+}
+
+/**
+ * FALLBACK: Original markets/summary + metrics + bounds flow.
+ * Used when report/all fails or returns no data.
+ */
+async function getShortLetDataFromMarkets(
+  postcode: string,
+  bedrooms: number,
+  lat: number,
+  lng: number,
+  apiKey: string,
+): Promise<{ data: ShortLetData; quality: DataQuality }> {
+  const lowQuality: DataQuality = {
+    comparablesFound: 0, comparablesTarget: TARGET_COMPARABLES,
+    searchRadiusKm: 0, searchBroadened: false, level: 'low',
+    disclaimer: 'Limited data available for this area. This property may be in a unique or rural location, which can be advantageous for short-term letting. Book a web meeting with Stayful for a more detailed, personalised assessment.',
+  };
+
+  // Step 1: Find market ID from postcode area (cached)
+  const marketId = await findMarketId(postcode, apiKey);
+  if (!marketId) {
+    console.log('Airbtics: no market found for postcode, using estimates');
     return { data: generateMarketEstimate(bedrooms), quality: lowQuality };
   }
+
+  // Step 2: Fetch ALL data in parallel for maximum accuracy ($0.70 total)
+  // summary ($0.25) + revenue ($0.20) + occupancy ($0.20) + listings ($0.05)
+  const [summaryData, revenueData, occupancyData, listingsData] = await Promise.allSettled([
+    fetchMarketSummary(marketId, bedrooms, apiKey),
+    fetchMetric('revenue', marketId, bedrooms, apiKey, 'GBP'),
+    fetchMetric('occupancy', marketId, bedrooms, apiKey),
+    fetchNearbyListings(lat, lng, apiKey),
+  ]);
+
+  const summary = summaryData.status === 'fulfilled' ? summaryData.value : null;
+  const revenue = revenueData.status === 'fulfilled' ? revenueData.value : [];
+  const occupancy = occupancyData.status === 'fulfilled' ? occupancyData.value : [];
+  const listingsResult = listingsData.status === 'fulfilled' ? listingsData.value : null;
+
+  // If no monthly data AND no summary, fall back to estimates
+  if (revenue.length === 0 && !summary) {
+    console.log('Airbtics: no data available, using market estimates');
+    return { data: generateMarketEstimate(bedrooms), quality: lowQuality };
+  }
+
+  // Use summary as primary source (bedroom-specific, always accurate)
+  // Monthly metrics as secondary for seasonal breakdown
+  const summaryRevenue = summary?.revenue ?? 0;
+  const summaryOccupancy = summary?.occupancy ? summary.occupancy / 100 : 0;
+  const summaryAdr = summary?.average_daily_rate ?? 0;
+
+  // Monthly breakdown from metrics (if available), otherwise distribute summary evenly with seasonal weighting
+  let monthlyRevenue: number[];
+  let avgOccupancy: number;
+
+  if (revenue.length > 0) {
+    monthlyRevenue = extractLast12Months(revenue, 'p50');
+    const monthlyOccupancy = extractLast12Months(occupancy, 'p50');
+    avgOccupancy = monthlyOccupancy.length > 0
+      ? monthlyOccupancy.reduce((a, b) => a + b, 0) / monthlyOccupancy.length / 100
+      : summaryOccupancy || 0.65;
+  } else {
+    // Use summary annual revenue distributed with seasonal weighting
+    const base = (summaryRevenue || generateMarketEstimate(bedrooms).annualRevenue) / 12;
+    const seasonalMultipliers = [0.82, 0.85, 0.95, 1.00, 1.08, 1.18, 1.25, 1.22, 1.10, 0.98, 0.88, 0.80];
+    monthlyRevenue = seasonalMultipliers.map(m => Math.round(base * m));
+    avgOccupancy = summaryOccupancy || 0.65;
+  }
+
+  let annualRevenue = summaryRevenue || monthlyRevenue.reduce((a, b) => a + b, 0);
+  let derivedAdr = summaryAdr || Math.round(annualRevenue / 12 / ((avgOccupancy || 0.65) * 30));
+
+  // ── Rule of 12: Try to find 12 comparables, broadening search if needed ──
+  let comparables: ShortLetComparable[] = [];
+  let activeListings = 0;
+  let searchRadiusKm = SEARCH_RADII_KM[0];
+  let searchBroadened = false;
+
+  // First attempt uses the initial bounds result
+  if (listingsResult) {
+    const result = extractComparables(listingsResult, bedrooms, lat, lng);
+    comparables = result.comparables;
+    activeListings = result.totalMatches;
+  }
+
+  // If we have fewer than 12, try broader radii
+  if (comparables.length < TARGET_COMPARABLES) {
+    for (let i = 1; i < SEARCH_RADII_KM.length; i++) {
+      const radiusKm = SEARCH_RADII_KM[i];
+      console.log(`Airbtics: only ${comparables.length}/${TARGET_COMPARABLES} comparables, broadening to ${radiusKm}km`);
+      searchBroadened = true;
+      searchRadiusKm = radiusKm;
+
+      const broaderResult = await fetchNearbyListings(lat, lng, apiKey, radiusKm);
+      if (broaderResult) {
+        const result = extractComparables(broaderResult, bedrooms, lat, lng);
+        comparables = result.comparables;
+        activeListings = result.totalMatches;
+        if (comparables.length >= TARGET_COMPARABLES) break;
+      }
+    }
+  } else {
+    searchRadiusKm = SEARCH_RADII_KM[0];
+  }
+
+  // Cap at 12 comparables
+  comparables = comparables.slice(0, TARGET_COMPARABLES);
+
+  // Use summary active_listings_count as fallback
+  if (activeListings === 0 && summary?.active_listings_count) {
+    activeListings = summary.active_listings_count;
+  }
+
+  // ── Top-5 performer override ──
+  if (comparables.length >= 5) {
+    const sorted = [...comparables].sort((a, b) => b.annualRevenue - a.annualRevenue);
+    const top5 = sorted.slice(0, 5);
+    const top5Revenue = Math.round(top5.reduce((s, c) => s + c.annualRevenue, 0) / 5);
+    const top5Adr = Math.round(top5.reduce((s, c) => s + c.averageDailyRate, 0) / 5);
+    const top5Occupancy = top5.reduce((s, c) => s + c.occupancyRate, 0) / 5;
+
+    const ratio = top5Revenue / (annualRevenue || 1);
+    monthlyRevenue = monthlyRevenue.map((m) => Math.round(m * ratio));
+
+    annualRevenue = top5Revenue;
+    avgOccupancy = top5Occupancy;
+    derivedAdr = top5Adr;
+  }
+
+  // ── Build data quality assessment ──
+  const comparablesFound = comparables.length;
+  let qualityLevel: DataQuality['level'];
+  let disclaimer: string | null = null;
+
+  if (comparablesFound >= TARGET_COMPARABLES) {
+    qualityLevel = 'high';
+  } else if (comparablesFound >= 6) {
+    qualityLevel = 'moderate';
+    disclaimer = `Only ${comparablesFound} comparable ${bedrooms}-bedroom properties were found within ${searchRadiusKm}km. Data accuracy may be slightly reduced. This could indicate a unique property type for the area — uniqueness is often advantageous for short-term letting.`;
+  } else {
+    qualityLevel = 'low';
+    disclaimer = comparablesFound > 0
+      ? `Only ${comparablesFound} comparable ${bedrooms}-bedroom properties were found even after broadening the search to ${searchRadiusKm}km. This area may be rural or the property type may be unique — both can be highly advantageous for short-term letting as competition is low. We recommend booking a web meeting with Stayful for a more detailed, personalised assessment.`
+      : `No comparable ${bedrooms}-bedroom properties were found nearby. This is a strong indicator of either a rural location or a highly unique property — both can perform exceptionally well for short-term letting due to low competition. Market-level estimates have been used. Book a web meeting with Stayful for accurate, personalised revenue projections.`;
+  }
+
+  const quality: DataQuality = {
+    comparablesFound,
+    comparablesTarget: TARGET_COMPARABLES,
+    searchRadiusKm,
+    searchBroadened,
+    level: qualityLevel,
+    disclaimer,
+  };
+
+  const paddedRevenue = padTo12Months(monthlyRevenue);
+
+  return {
+    data: {
+      annualRevenue: Math.round(annualRevenue),
+      monthlyRevenue: paddedRevenue,
+      occupancyRate: Math.round(avgOccupancy * 100) / 100,
+      averageDailyRate: derivedAdr,
+      activeListings,
+      comparables,
+    },
+    quality,
+  };
 }
 
 // ─── Airbtics listing shape from bounds endpoint ────────────────
