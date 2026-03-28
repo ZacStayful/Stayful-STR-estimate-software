@@ -24,10 +24,19 @@ const BASE_URL = process.env.AIRBTICS_BASE_URL || 'https://crap0y5bx5.execute-ap
 const TARGET_COMPARABLES = 12;
 const SEARCH_RADII_KM = [1.5, 3, 5, 10]; // Progressively broaden
 const REPORT_POLL_INTERVAL_MS = 2000;
-const REPORT_POLL_MAX_MS = 15000;
+const REPORT_POLL_MAX_MS = 25000; // 25 seconds (up from 15)
+
+// "Good operator" uplift applied to market fallback data.
+// Based on observed difference: report/all p60 is ~25% above market median.
+const GOOD_OPERATOR_UPLIFT = 1.25;
+
+// ─── In-memory cache for report IDs ─────────────────────────────
+// Reading existing reports is FREE. Cache report_id by postcode+bedrooms
+// so the same property only costs $0.50 once.
+const reportCache = new Map<string, { reportId: string; expiresAt: number }>();
+const REPORT_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours (reports don't change that fast)
 
 // ─── In-memory cache for market_id lookups ──────────────────────
-// Prevents duplicate search calls for the same postcode area.
 const marketIdCache = new Map<string, { id: number | null; expiresAt: number }>();
 const CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
 
@@ -82,7 +91,7 @@ export async function getShortLetData(
 
   // ── PRIMARY: Try report/all ($0.50, highest accuracy with real comps) ──
   try {
-    const reportResult = await fetchReportAll(lat, lng, bedrooms, apiKey);
+    const reportResult = await fetchReportAll(lat, lng, bedrooms, apiKey, postcode);
     if (reportResult) {
       console.log(`Airbtics report/all: ${reportResult.comps.length} raw comps returned`);
       return buildDataFromReportComps(reportResult, bedrooms, lat, lng);
@@ -149,11 +158,22 @@ async function fetchReportAll(
   lng: number,
   bedrooms: number,
   apiKey: string,
+  postcode: string,
 ): Promise<ReportAllResult | null> {
   const accommodates = (bedrooms * 2) + 2;
   const bathrooms = Math.max(1, Math.ceil(bedrooms * 0.75));
 
-  // Step 1: Create report
+  // Check cache first — reading existing reports is FREE
+  const cacheKey = `${postcode.replace(/\s+/g, '').toUpperCase()}_${bedrooms}bed`;
+  const cached = reportCache.get(cacheKey);
+  if (cached && Date.now() < cached.expiresAt) {
+    console.log(`Airbtics report/all: using cached report ${cached.reportId} (FREE)`);
+    const cachedResult = await readReport(cached.reportId, apiKey);
+    if (cachedResult) return cachedResult;
+    // Cache miss (report deleted?) — fall through to create new one
+  }
+
+  // Step 1: Create report ($0.50)
   const createRes = await fetch(`${BASE_URL}/report/all`, {
     method: 'POST',
     headers: {
@@ -190,6 +210,9 @@ async function fetchReportAll(
 
   console.log(`Airbtics report/all: created report ${reportId}, polling...`);
 
+  // Cache the report ID for 24h — future reads are FREE
+  reportCache.set(cacheKey, { reportId, expiresAt: Date.now() + REPORT_CACHE_TTL_MS });
+
   // Step 2: Poll for completion
   const startTime = Date.now();
   while (Date.now() - startTime < REPORT_POLL_MAX_MS) {
@@ -215,6 +238,22 @@ async function fetchReportAll(
   }
 
   console.error('Airbtics report/all: timed out waiting for comps_status=success');
+  return null;
+}
+
+/**
+ * Reads an existing report by ID (FREE — no credit cost).
+ */
+async function readReport(reportId: string, apiKey: string): Promise<ReportAllResult | null> {
+  const res = await fetch(`${BASE_URL}/report?id=${reportId}`, {
+    headers: { 'x-api-key': apiKey },
+  });
+  if (!res.ok) return null;
+  const data = await res.json();
+  const report = data?.message ?? data;
+  if (report?.comps_status === 'success' && Array.isArray(report.comps)) {
+    return report as ReportAllResult;
+  }
   return null;
 }
 
@@ -437,8 +476,14 @@ async function getShortLetDataFromMarkets(
     avgOccupancy = summaryOccupancy || 0.65;
   }
 
-  let annualRevenue = summaryRevenue || monthlyRevenue.reduce((a, b) => a + b, 0);
-  let derivedAdr = summaryAdr || Math.round(annualRevenue / 12 / ((avgOccupancy || 0.65) * 30));
+  // Apply "good operator" uplift — market data represents median (p50) which includes
+  // bad operators. Stayful consistently performs at p60-p65, roughly 25% above median.
+  const rawRevenue = summaryRevenue || monthlyRevenue.reduce((a, b) => a + b, 0);
+  let annualRevenue = Math.round(rawRevenue * GOOD_OPERATOR_UPLIFT);
+  let derivedAdr = Math.round((summaryAdr || Math.round(rawRevenue / 12 / ((avgOccupancy || 0.65) * 30))) * GOOD_OPERATOR_UPLIFT);
+
+  // Also uplift monthly figures
+  monthlyRevenue = monthlyRevenue.map(m => Math.round(m * GOOD_OPERATOR_UPLIFT));
 
   // ── Rule of 12: Try to find 12 comparables, broadening search if needed ──
   let comparables: ShortLetComparable[] = [];
