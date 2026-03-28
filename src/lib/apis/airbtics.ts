@@ -229,10 +229,12 @@ function buildDataFromReportComps(
   lat: number,
   lng: number,
 ): { data: ShortLetData; quality: DataQuality } {
-  // Filter comps: match bedroom count and filter bad operators
+  // Filter comps: report/all already matches bedrooms in the request, so just
+  // filter out bad operators with very low guest capacity and zero-revenue listings
   const filtered = report.comps.filter((c) => {
-    const compBedrooms = typeof c.bedrooms === 'string' ? parseInt(c.bedrooms, 10) : c.bedrooms;
-    return compBedrooms === bedrooms && c.accommodates >= bedrooms * 2;
+    const hasRevenue = (c.annual_revenue_ltm ?? 0) > 0;
+    const hasReasonableCapacity = c.accommodates >= Math.max(bedrooms, 2);
+    return hasRevenue && hasReasonableCapacity;
   });
 
   // Sort by annual revenue descending, take top 12
@@ -258,25 +260,29 @@ function buildDataFromReportComps(
     };
   });
 
-  // ── Top-5 performer headline stats ──
-  const top5 = top12.slice(0, 5);
+  // ── Headline stats: use upper-median performers (p60) ──
+  // filtered is sorted descending by revenue. Take the upper 40%
+  // This represents solid operators like Stayful — above median but not luxury outliers
+  const upperCount = Math.max(3, Math.ceil(filtered.length * 0.4));
+  const upperQuartile = filtered.slice(0, upperCount);
+
   let annualRevenue: number;
   let avgOccupancy: number;
   let derivedAdr: number;
   let monthlyRevenue: number[];
 
-  if (top5.length >= 5) {
-    annualRevenue = Math.round(top5.reduce((s, c) => s + (c.annual_revenue_ltm ?? 0), 0) / 5);
-    derivedAdr = Math.round(top5.reduce((s, c) => s + (c.avg_booked_daily_rate_ltm ?? 0), 0) / 5);
-    avgOccupancy = top5.reduce((s, c) => s + (c.avg_occupancy_rate_ltm ?? 0), 0) / 5 / 100;
-
-    // Extract REAL monthly revenue from top 5 comps' revenue_ltm_monthly
-    monthlyRevenue = extractMonthlyFromComps(top5);
-  } else if (top5.length > 0) {
-    annualRevenue = Math.round(top5.reduce((s, c) => s + (c.annual_revenue_ltm ?? 0), 0) / top5.length);
-    derivedAdr = Math.round(top5.reduce((s, c) => s + (c.avg_booked_daily_rate_ltm ?? 0), 0) / top5.length);
-    avgOccupancy = top5.reduce((s, c) => s + (c.avg_occupancy_rate_ltm ?? 0), 0) / top5.length / 100;
-    monthlyRevenue = extractMonthlyFromComps(top5);
+  if (upperQuartile.length > 0) {
+    const n = upperQuartile.length;
+    annualRevenue = Math.round(upperQuartile.reduce((s, c) => s + (c.annual_revenue_ltm ?? 0), 0) / n);
+    derivedAdr = Math.round(upperQuartile.reduce((s, c) => s + (c.avg_booked_daily_rate_ltm ?? 0), 0) / n);
+    avgOccupancy = upperQuartile.reduce((s, c) => s + (c.avg_occupancy_rate_ltm ?? 0), 0) / n / 100;
+    monthlyRevenue = extractMonthlyFromComps(upperQuartile);
+  } else if (filtered.length > 0) {
+    const n = filtered.length;
+    annualRevenue = Math.round(filtered.reduce((s, c) => s + (c.annual_revenue_ltm ?? 0), 0) / n);
+    derivedAdr = Math.round(filtered.reduce((s, c) => s + (c.avg_booked_daily_rate_ltm ?? 0), 0) / n);
+    avgOccupancy = filtered.reduce((s, c) => s + (c.avg_occupancy_rate_ltm ?? 0), 0) / n / 100;
+    monthlyRevenue = extractMonthlyFromComps(filtered);
   } else {
     // No comps matched filters — use estimate
     const estimate = generateMarketEstimate(bedrooms);
