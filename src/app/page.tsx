@@ -282,7 +282,10 @@ export default function HomePage() {
   const [address, setAddress] = useState("");
   const [postcode, setPostcode] = useState("");
   const [bedrooms, setBedrooms] = useState("2");
-  const [guests, setGuests] = useState("6"); // Auto-calculated: (2 × 2) + 2
+  const [guests, setGuests] = useState("6"); // Auto-calculated: (bedrooms × 2) + livingAreaBonus
+  const [bathrooms, setBathrooms] = useState("1");
+  const [livingArea, setLivingArea] = useState<"average" | "large" | "compact">("average");
+  const [hasParking, setHasParking] = useState(false);
   const [propertyType, setPropertyType] = useState("Flat");
   const [monthlyMortgage, setMonthlyMortgage] = useState("");
   const [monthlyBills, setMonthlyBills] = useState("");
@@ -344,6 +347,19 @@ export default function HomePage() {
       observer.disconnect();
     };
   }, [result]);
+
+  // Auto-recalculate guests and bathrooms when bedrooms or livingArea changes
+  useEffect(() => {
+    const numBeds = Number(bedrooms);
+    if (!isNaN(numBeds) && numBeds > 0) {
+      const livingAreaBonus = livingArea === "large" ? 4 : livingArea === "compact" ? 0 : 2;
+      setGuests(String(numBeds * 2 + livingAreaBonus));
+      // Auto-calculate bathrooms: 1-bed=1, 2-bed=1, 3-bed=2, 4-bed=3, 5-bed=3
+      const bathroomDefaults: Record<number, number> = { 1: 1, 2: 1, 3: 2, 4: 3, 5: 3 };
+      const clamped = Math.max(1, Math.min(numBeds, 5));
+      setBathrooms(String(bathroomDefaults[clamped] ?? 1));
+    }
+  }, [bedrooms, livingArea]);
 
   // Auto-collapse sidebar on mobile
   useEffect(() => {
@@ -407,6 +423,9 @@ export default function HomePage() {
           postcode,
           bedrooms: Number(bedrooms),
           guests: Number(guests),
+          bathrooms: Number(bathrooms),
+          livingArea,
+          hasParking,
           propertyType,
           ...(monthlyMortgage !== "" && { monthlyMortgage: Number(monthlyMortgage) }),
           ...(monthlyBills !== "" && { monthlyBills: Number(monthlyBills) }),
@@ -2513,7 +2532,7 @@ export default function HomePage() {
                   />
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-3 gap-4">
                   <div className="space-y-2">
                     <Label
                       htmlFor="bedrooms"
@@ -2529,15 +2548,26 @@ export default function HomePage() {
                       max={10}
                       required
                       value={bedrooms}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        setBedrooms(val);
-                        // Auto-calculate guests: (bedrooms × 2) + 2
-                        const numBeds = Number(val);
-                        if (!isNaN(numBeds) && numBeds > 0) {
-                          setGuests(String(numBeds * 2 + 2));
-                        }
-                      }}
+                      onChange={(e) => setBedrooms(e.target.value)}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label
+                      htmlFor="bathrooms"
+                      className="flex items-center gap-2"
+                    >
+                      <Droplets className="h-4 w-4" aria-hidden="true" />
+                      Bathrooms
+                    </Label>
+                    <Input
+                      type="number"
+                      id="bathrooms"
+                      min={1}
+                      max={10}
+                      required
+                      value={bathrooms}
+                      onChange={(e) => setBathrooms(e.target.value)}
                     />
                   </div>
 
@@ -2558,7 +2588,7 @@ export default function HomePage() {
                       value={guests}
                       onChange={(e) => setGuests(e.target.value)}
                     />
-                    <p className="text-[11px] text-muted-foreground">Auto-calculated: 2 per bedroom + 2 (sofa bed)</p>
+                    <p className="text-[11px] text-muted-foreground">Auto-calculated from bedrooms + living area</p>
                   </div>
                 </div>
 
@@ -2594,6 +2624,40 @@ export default function HomePage() {
                           <option value="Semi-Detached House">Semi-Detached House</option>
                           <option value="Detached House">Detached House</option>
                         </select>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label htmlFor="livingArea" className="flex items-center gap-2">
+                          <Layers className="h-4 w-4" aria-hidden="true" />
+                          Living Area Size
+                        </Label>
+                        <select
+                          id="livingArea"
+                          value={livingArea}
+                          onChange={(e) => setLivingArea(e.target.value as "average" | "large" | "compact")}
+                          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                        >
+                          <option value="average">Average</option>
+                          <option value="large">Large</option>
+                          <option value="compact">Compact</option>
+                        </select>
+                        <p className="text-[11px] text-muted-foreground">
+                          Affects guest capacity — larger living areas can accommodate more guests on sofa beds
+                        </p>
+                      </div>
+
+                      <div className="flex items-center gap-3 pt-1">
+                        <input
+                          type="checkbox"
+                          id="hasParking"
+                          checked={hasParking}
+                          onChange={(e) => setHasParking(e.target.checked)}
+                          className="h-4 w-4 rounded border-input text-primary focus:ring-2 focus:ring-ring"
+                        />
+                        <Label htmlFor="hasParking" className="flex items-center gap-2 cursor-pointer">
+                          <Car className="h-4 w-4" aria-hidden="true" />
+                          Free Parking
+                        </Label>
                       </div>
 
                       <div className="grid grid-cols-2 gap-4">

@@ -62,10 +62,18 @@ export async function POST(request: Request) {
   }
 
   // Validate input
-  const { address, postcode, bedrooms, guests, propertyType, monthlyMortgage, monthlyBills } = body as {
+  const { address, postcode, bedrooms, guests, bathrooms, livingArea, hasParking, propertyType, monthlyMortgage, monthlyBills } = body as {
     address: unknown; postcode: unknown; bedrooms: unknown; guests: unknown;
+    bathrooms: unknown; livingArea: unknown; hasParking: unknown;
     propertyType: unknown; monthlyMortgage: unknown; monthlyBills: unknown;
   };
+
+  const bathroomCount = Number(bathrooms);
+  const validBathrooms = Number.isFinite(bathroomCount) && bathroomCount >= 1 ? bathroomCount : undefined;
+  const validLivingArea = typeof livingArea === 'string' && ['compact', 'average', 'large'].includes(livingArea)
+    ? livingArea as 'compact' | 'average' | 'large'
+    : undefined;
+  const validHasParking = typeof hasParking === 'boolean' ? hasParking : false;
 
   if (!address || typeof address !== 'string' || (address as string).trim().length === 0) {
     return Response.json(
@@ -125,7 +133,7 @@ export async function POST(request: Request) {
         send({ stage: 'geocoding', progress: 10, message: 'Locating property...' });
 
         const geocodePromise = geocodePostcode(property.postcode);
-        const longLetPromise = getLongLetData(property.postcode, property.bedrooms, { propertyType: mappedPropertyType });
+        const longLetPromise = getLongLetData(property.postcode, property.bedrooms, { propertyType: mappedPropertyType, ...(validBathrooms && { bathrooms: validBathrooms }) });
 
         // Wait for geocoding first — short-let now needs coordinates for nearby listings
         let coordinates: { lat: number; lng: number };
@@ -141,7 +149,7 @@ export async function POST(request: Request) {
         send({ stage: 'geocoding', progress: 20, message: 'Property located' });
 
         // Now fetch short-let (needs coords) + long-let (already running) in parallel
-        const shortLetPromise = getShortLetData(property.postcode, property.bedrooms, property.guests, coordinates.lat, coordinates.lng);
+        const shortLetPromise = getShortLetData(property.postcode, property.bedrooms, property.guests, coordinates.lat, coordinates.lng, { bathrooms: validBathrooms, hasParking: validHasParking });
         const [shortLetResult, longLetResult] = await Promise.allSettled([shortLetPromise, longLetPromise]);
 
         const shortLetRaw = shortLetResult.status === 'fulfilled'

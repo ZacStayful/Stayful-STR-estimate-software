@@ -75,6 +75,7 @@ export async function getShortLetData(
   _guests: number,
   lat: number,
   lng: number,
+  options?: { bathrooms?: number; hasParking?: boolean },
 ): Promise<{ data: ShortLetData; quality: DataQuality }> {
   const apiKey = process.env.AIRBTICS_API_KEY;
 
@@ -91,10 +92,10 @@ export async function getShortLetData(
 
   // ── PRIMARY: Try report/all ($0.50, highest accuracy with real comps) ──
   try {
-    const reportResult = await fetchReportAll(lat, lng, bedrooms, apiKey, postcode);
+    const reportResult = await fetchReportAll(lat, lng, bedrooms, apiKey, postcode, options?.bathrooms);
     if (reportResult) {
       console.log(`Airbtics report/all: ${reportResult.comps.length} raw comps returned`);
-      return buildDataFromReportComps(reportResult, bedrooms, lat, lng);
+      return buildDataFromReportComps(reportResult, bedrooms, lat, lng, options?.hasParking);
     }
     console.log('Airbtics report/all: no data, falling back to markets flow');
   } catch (err) {
@@ -159,9 +160,10 @@ async function fetchReportAll(
   bedrooms: number,
   apiKey: string,
   postcode: string,
+  formBathrooms?: number,
 ): Promise<ReportAllResult | null> {
   const accommodates = (bedrooms * 2) + 2;
-  const bathrooms = Math.max(1, Math.ceil(bedrooms * 0.75));
+  const bathrooms = formBathrooms ?? Math.max(1, Math.ceil(bedrooms * 0.75));
 
   // Check cache first — reading existing reports is FREE
   const cacheKey = `${postcode.replace(/\s+/g, '').toUpperCase()}_${bedrooms}bed`;
@@ -267,6 +269,7 @@ function buildDataFromReportComps(
   bedrooms: number,
   lat: number,
   lng: number,
+  hasParking?: boolean,
 ): { data: ShortLetData; quality: DataQuality } {
   // Filter comps: report/all already matches bedrooms in the request, so just
   // filter out bad operators with very low guest capacity and zero-revenue listings
@@ -276,8 +279,23 @@ function buildDataFromReportComps(
     return hasRevenue && hasReasonableCapacity;
   });
 
-  // Sort by annual revenue descending, take top 12
+  // Sort by annual revenue descending
   filtered.sort((a, b) => (b.annual_revenue_ltm ?? 0) - (a.annual_revenue_ltm ?? 0));
+
+  // When hasParking is true, prefer comps with parking — sort parking comps first
+  // within the same revenue tier. Use a stable sort: parking comps first, then non-parking.
+  if (hasParking) {
+    const compHasParking = (c: ReportComp): boolean => {
+      if (!c.amenities) return false;
+      return !!(c.amenities.parking || c.amenities.free_parking || c.amenities['Free parking on premises'] || c.amenities['free_parking_on_premises']);
+    };
+    filtered.sort((a, b) => {
+      const aParking = compHasParking(a) ? 1 : 0;
+      const bParking = compHasParking(b) ? 1 : 0;
+      if (bParking !== aParking) return bParking - aParking;
+      return (b.annual_revenue_ltm ?? 0) - (a.annual_revenue_ltm ?? 0);
+    });
+  }
   const top12 = filtered.slice(0, TARGET_COMPARABLES);
 
   // Convert to ShortLetComparable[]
