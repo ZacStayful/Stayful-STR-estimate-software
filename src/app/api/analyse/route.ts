@@ -1,7 +1,7 @@
 import type { PropertyInput, AnalysisResult, ShortLetData, LongLetData, DemandDrivers, NearbyEvent, DataQuality } from '@/lib/types';
 import { geocodePostcode } from '@/lib/apis/geocode';
 import { getShortLetData } from '@/lib/apis/airbtics';
-import { getLongLetData } from '@/lib/apis/propertydata';
+import { getLongLetData, getFloorArea } from '@/lib/apis/propertydata';
 import { getNearbyAmenities } from '@/lib/apis/google-places';
 import { getNearbyEvents } from '@/lib/apis/ticketmaster';
 import { calculateFinancials, assessRisk, generateVerdict } from '@/lib/analysis';
@@ -62,18 +62,45 @@ export async function POST(request: Request) {
   }
 
   // Validate input
-  const { address, postcode, bedrooms, guests, bathrooms, livingArea, hasParking, propertyType, monthlyMortgage, monthlyBills } = body as {
+  const { address, postcode, bedrooms, guests, bathrooms, parking, outdoorSpace, finishQuality, propertyType, monthlyMortgage, monthlyBills } = body as {
     address: unknown; postcode: unknown; bedrooms: unknown; guests: unknown;
-    bathrooms: unknown; livingArea: unknown; hasParking: unknown;
-    propertyType: unknown; monthlyMortgage: unknown; monthlyBills: unknown;
+    bathrooms: unknown; parking: unknown; outdoorSpace: unknown;
+    finishQuality: unknown; propertyType: unknown;
+    monthlyMortgage: unknown; monthlyBills: unknown;
   };
 
   const bathroomCount = Number(bathrooms);
   const validBathrooms = Number.isFinite(bathroomCount) && bathroomCount >= 1 ? bathroomCount : undefined;
-  const validLivingArea = typeof livingArea === 'string' && ['compact', 'average', 'large'].includes(livingArea)
-    ? livingArea as 'compact' | 'average' | 'large'
-    : undefined;
-  const validHasParking = typeof hasParking === 'boolean' ? hasParking : false;
+
+  // Parking: map user selection to API numeric value
+  const parkingMap: Record<string, number> = {
+    'no_parking': 0,
+    'on_street': 0,
+    'allocated': 1,
+    'garage': 1,
+    'driveway_1': 1,
+    'driveway_2': 2,
+  };
+  const validParking = typeof parking === 'string' && parking in parkingMap ? parking : 'no_parking';
+  const parkingValue = parkingMap[validParking] ?? 0;
+  const validHasParking = validParking !== 'no_parking' && validParking !== 'on_street';
+
+  // Outdoor space: map to PropertyData format
+  const outdoorMap: Record<string, string> = {
+    'none': 'none',
+    'balcony': 'balcony_terrace',
+    'garden': 'garden',
+    'roof_terrace': 'balcony_terrace',
+  };
+  const validOutdoorSpace = typeof outdoorSpace === 'string' && outdoorSpace in outdoorMap
+    ? outdoorMap[outdoorSpace]
+    : 'none';
+
+  // Finish quality: validate
+  const validFinishQualities = ['below_average', 'average', 'above_average', 'high'];
+  const validFinishQuality = typeof finishQuality === 'string' && validFinishQualities.includes(finishQuality)
+    ? finishQuality
+    : 'average';
 
   if (!address || typeof address !== 'string' || (address as string).trim().length === 0) {
     return Response.json(
@@ -115,6 +142,10 @@ export async function POST(request: Request) {
   // Map property type to PropertyData format
   const propertyTypeMap: Record<string, string> = {
     'Flat': 'flat',
+    'Terraced': 'terraced_house',
+    'Semi-detached': 'semi-detached_house',
+    'Detached': 'detached_house',
+    // Legacy values (backwards compat)
     'Terraced House': 'terraced_house',
     'Semi-Detached House': 'semi-detached_house',
     'Detached House': 'detached_house',
@@ -133,7 +164,8 @@ export async function POST(request: Request) {
         send({ stage: 'geocoding', progress: 10, message: 'Locating property...' });
 
         const geocodePromise = geocodePostcode(property.postcode);
-        const longLetPromise = getLongLetData(property.postcode, property.bedrooms, { propertyType: mappedPropertyType, ...(validBathrooms && { bathrooms: validBathrooms }) });
+        // Get floor area + build year from /floor-areas before calling valuation
+        const floorAreaPromise = getFloorArea(property.postcode, property.address, property.bedrooms);
 
         // Wait for geocoding first — short-let now needs coordinates for nearby listings
         let coordinates: { lat: number; lng: number };
@@ -148,7 +180,20 @@ export async function POST(request: Request) {
 
         send({ stage: 'geocoding', progress: 20, message: 'Property located' });
 
-        // Now fetch short-let (needs coords) + long-let (already running) in parallel
+        // Wait for floor area data before starting long-let call
+        const floorArea = await floorAreaPromise;
+
+        const longLetPromise = getLongLetData(property.postcode, property.bedrooms, {
+          propertyType: mappedPropertyType,
+          constructionDate: floorArea.constructionDate,
+          internalArea: floorArea.squareFeet,
+          ...(validBathrooms && { bathrooms: validBathrooms }),
+          finishQuality: validFinishQuality,
+          outdoorSpace: validOutdoorSpace,
+          offStreetParking: parkingValue,
+        });
+
+        // Now fetch short-let (needs coords) + long-let in parallel
         const shortLetPromise = getShortLetData(property.postcode, property.bedrooms, property.guests, coordinates.lat, coordinates.lng, { bathrooms: validBathrooms, hasParking: validHasParking });
         const [shortLetResult, longLetResult] = await Promise.allSettled([shortLetPromise, longLetPromise]);
 

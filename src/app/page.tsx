@@ -42,7 +42,6 @@ import {
   ClipboardCheck,
   LineChart,
   BookOpen,
-  Layers,
   RefreshCw,
   Rocket,
   ShieldCheck,
@@ -282,14 +281,14 @@ export default function HomePage() {
   const [address, setAddress] = useState("");
   const [postcode, setPostcode] = useState("");
   const [bedrooms, setBedrooms] = useState("2");
-  const [guests, setGuests] = useState("6"); // Auto-calculated: (bedrooms × 2) + livingAreaBonus
+  const [guests, setGuests] = useState("6"); // Auto-calculated: (bedrooms × 2) + 2
   const [bathrooms, setBathrooms] = useState("1");
-  const [livingArea, setLivingArea] = useState<"average" | "large" | "compact">("average");
-  const [hasParking, setHasParking] = useState(false);
   const [propertyType, setPropertyType] = useState("Flat");
+  const [parking, setParking] = useState("no_parking");
+  const [outdoorSpace, setOutdoorSpace] = useState("none");
+  const [finishQuality, setFinishQuality] = useState("average");
   const [monthlyMortgage, setMonthlyMortgage] = useState("");
   const [monthlyBills, setMonthlyBills] = useState("");
-  const [showAdvanced, setShowAdvanced] = useState(false);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -348,18 +347,13 @@ export default function HomePage() {
     };
   }, [result]);
 
-  // Auto-recalculate guests and bathrooms when bedrooms or livingArea changes
+  // Auto-recalculate guests when bedrooms changes: (beds * 2) + 2
   useEffect(() => {
     const numBeds = Number(bedrooms);
     if (!isNaN(numBeds) && numBeds > 0) {
-      const livingAreaBonus = livingArea === "large" ? 4 : livingArea === "compact" ? 0 : 2;
-      setGuests(String(numBeds * 2 + livingAreaBonus));
-      // Auto-calculate bathrooms: 1-bed=1, 2-bed=1, 3-bed=2, 4-bed=3, 5-bed=3
-      const bathroomDefaults: Record<number, number> = { 1: 1, 2: 1, 3: 2, 4: 3, 5: 3 };
-      const clamped = Math.max(1, Math.min(numBeds, 5));
-      setBathrooms(String(bathroomDefaults[clamped] ?? 1));
+      setGuests(String(numBeds * 2 + 2));
     }
-  }, [bedrooms, livingArea]);
+  }, [bedrooms]);
 
   // Auto-collapse sidebar on mobile
   useEffect(() => {
@@ -424,8 +418,9 @@ export default function HomePage() {
           bedrooms: Number(bedrooms),
           guests: Number(guests),
           bathrooms: Number(bathrooms),
-          livingArea,
-          hasParking,
+          parking,
+          outdoorSpace,
+          finishQuality,
           propertyType,
           ...(monthlyMortgage !== "" && { monthlyMortgage: Number(monthlyMortgage) }),
           ...(monthlyBills !== "" && { monthlyBills: Number(monthlyBills) }),
@@ -2504,10 +2499,11 @@ export default function HomePage() {
             </CardHeader>
             <CardContent>
               <form onSubmit={handleSubmit} className="space-y-6">
+                {/* Row 1: Address (full width) */}
                 <div className="space-y-2">
                   <Label htmlFor="address" className="flex items-center gap-2">
                     <MapPin className="h-4 w-4" aria-hidden="true" />
-                    Property Address
+                    Full Property Address
                   </Label>
                   <Input
                     id="address"
@@ -2518,34 +2514,53 @@ export default function HomePage() {
                   />
                 </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="postcode" className="flex items-center gap-2">
-                    <MapPin className="h-4 w-4" aria-hidden="true" />
-                    Postcode
-                  </Label>
-                  <Input
-                    id="postcode"
-                    placeholder="e.g. M4 7FE"
-                    required
-                    value={postcode}
-                    onChange={(e) => setPostcode(e.target.value)}
-                  />
+                {/* Row 2: Postcode | Property Type */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="postcode" className="flex items-center gap-2">
+                      <MapPin className="h-4 w-4" aria-hidden="true" />
+                      Postcode
+                    </Label>
+                    <Input
+                      id="postcode"
+                      placeholder="e.g. M4 7FE"
+                      required
+                      value={postcode}
+                      onChange={(e) => setPostcode(e.target.value)}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="propertyType" className="flex items-center gap-2">
+                      <Home className="h-4 w-4" aria-hidden="true" />
+                      Property Type
+                    </Label>
+                    <select
+                      id="propertyType"
+                      value={propertyType}
+                      onChange={(e) => setPropertyType(e.target.value)}
+                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                    >
+                      <option value="Flat">Flat</option>
+                      <option value="Terraced">Terraced</option>
+                      <option value="Semi-detached">Semi-detached</option>
+                      <option value="Detached">Detached</option>
+                    </select>
+                  </div>
                 </div>
 
+                {/* Row 3: Bedrooms | Bathrooms | Max Guests (auto) */}
                 <div className="grid grid-cols-3 gap-4">
                   <div className="space-y-2">
-                    <Label
-                      htmlFor="bedrooms"
-                      className="flex items-center gap-2"
-                    >
+                    <Label htmlFor="bedrooms" className="flex items-center gap-2">
                       <BedDouble className="h-4 w-4" aria-hidden="true" />
                       Bedrooms
                     </Label>
                     <Input
                       type="number"
                       id="bedrooms"
-                      min={1}
-                      max={10}
+                      min={0}
+                      max={5}
                       required
                       value={bedrooms}
                       onChange={(e) => setBedrooms(e.target.value)}
@@ -2553,18 +2568,15 @@ export default function HomePage() {
                   </div>
 
                   <div className="space-y-2">
-                    <Label
-                      htmlFor="bathrooms"
-                      className="flex items-center gap-2"
-                    >
+                    <Label htmlFor="bathrooms" className="flex items-center gap-2">
                       <Droplets className="h-4 w-4" aria-hidden="true" />
                       Bathrooms
                     </Label>
                     <Input
                       type="number"
                       id="bathrooms"
-                      min={1}
-                      max={10}
+                      min={0}
+                      max={5}
                       required
                       value={bathrooms}
                       onChange={(e) => setBathrooms(e.target.value)}
@@ -2572,10 +2584,7 @@ export default function HomePage() {
                   </div>
 
                   <div className="space-y-2">
-                    <Label
-                      htmlFor="guests"
-                      className="flex items-center gap-2"
-                    >
+                    <Label htmlFor="guests" className="flex items-center gap-2">
                       <Users className="h-4 w-4" aria-hidden="true" />
                       Max Guests
                     </Label>
@@ -2588,109 +2597,80 @@ export default function HomePage() {
                       value={guests}
                       onChange={(e) => setGuests(e.target.value)}
                     />
-                    <p className="text-[11px] text-muted-foreground">Auto-calculated from bedrooms + living area</p>
+                    <p className="text-[11px] text-muted-foreground">Auto-calculated from bedrooms</p>
                   </div>
                 </div>
 
-                {/* Advanced Options */}
-                <div className="space-y-4">
-                  <button
-                    type="button"
-                    className="flex w-full items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
-                    onClick={() => setShowAdvanced(!showAdvanced)}
-                  >
-                    <ChevronDown
-                      className={`h-4 w-4 transition-transform ${showAdvanced ? "" : "-rotate-90"}`}
-                      aria-hidden="true"
-                    />
-                    Advanced Options
-                  </button>
+                {/* Row 4: Parking | Outdoor Space */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="parking" className="flex items-center gap-2">
+                      <Car className="h-4 w-4" aria-hidden="true" />
+                      Parking
+                    </Label>
+                    <select
+                      id="parking"
+                      value={parking}
+                      onChange={(e) => setParking(e.target.value)}
+                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                    >
+                      <option value="no_parking">No parking available</option>
+                      <option value="on_street">Free on-street only</option>
+                      <option value="allocated">Allocated space (flat/apartment bay)</option>
+                      <option value="garage">Single garage</option>
+                      <option value="driveway_1">Driveway — 1 car</option>
+                      <option value="driveway_2">Driveway — 2 or more cars</option>
+                    </select>
+                  </div>
 
-                  {showAdvanced && (
-                    <div className="space-y-4 rounded-lg border border-border bg-muted/30 p-4">
-                      <div className="space-y-2">
-                        <Label htmlFor="propertyType" className="flex items-center gap-2">
-                          <Home className="h-4 w-4" aria-hidden="true" />
-                          Property Type
-                        </Label>
-                        <select
-                          id="propertyType"
-                          value={propertyType}
-                          onChange={(e) => setPropertyType(e.target.value)}
-                          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                        >
-                          <option value="Flat">Flat</option>
-                          <option value="Terraced House">Terraced House</option>
-                          <option value="Semi-Detached House">Semi-Detached House</option>
-                          <option value="Detached House">Detached House</option>
-                        </select>
-                      </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="outdoorSpace" className="flex items-center gap-2">
+                      <Palmtree className="h-4 w-4" aria-hidden="true" />
+                      Outdoor Space
+                    </Label>
+                    <select
+                      id="outdoorSpace"
+                      value={outdoorSpace}
+                      onChange={(e) => setOutdoorSpace(e.target.value)}
+                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                    >
+                      <option value="none">None</option>
+                      <option value="balcony">Balcony or terrace</option>
+                      <option value="garden">Private garden</option>
+                      <option value="roof_terrace">Roof terrace</option>
+                    </select>
+                  </div>
+                </div>
 
-                      <div className="space-y-2">
-                        <Label htmlFor="livingArea" className="flex items-center gap-2">
-                          <Layers className="h-4 w-4" aria-hidden="true" />
-                          Living Area Size
-                        </Label>
-                        <select
-                          id="livingArea"
-                          value={livingArea}
-                          onChange={(e) => setLivingArea(e.target.value as "average" | "large" | "compact")}
-                          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                        >
-                          <option value="average">Average</option>
-                          <option value="large">Large</option>
-                          <option value="compact">Compact</option>
-                        </select>
-                        <p className="text-[11px] text-muted-foreground">
-                          Affects guest capacity — larger living areas can accommodate more guests on sofa beds
-                        </p>
-                      </div>
-
-                      <div className="flex items-center gap-3 pt-1">
-                        <input
-                          type="checkbox"
-                          id="hasParking"
-                          checked={hasParking}
-                          onChange={(e) => setHasParking(e.target.checked)}
-                          className="h-4 w-4 rounded border-input text-primary focus:ring-2 focus:ring-ring"
-                        />
-                        <Label htmlFor="hasParking" className="flex items-center gap-2 cursor-pointer">
-                          <Car className="h-4 w-4" aria-hidden="true" />
-                          Free Parking
-                        </Label>
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-4">
-                        <div className="space-y-2">
-                          <Label htmlFor="monthlyMortgage" className="flex items-center gap-2">
-                            Monthly Mortgage
-                          </Label>
-                          <Input
-                            type="number"
-                            id="monthlyMortgage"
-                            min={0}
-                            placeholder="e.g. 800"
-                            value={monthlyMortgage}
-                            onChange={(e) => setMonthlyMortgage(e.target.value)}
-                          />
-                        </div>
-
-                        <div className="space-y-2">
-                          <Label htmlFor="monthlyBills" className="flex items-center gap-2">
-                            Monthly Bills
-                          </Label>
-                          <Input
-                            type="number"
-                            id="monthlyBills"
-                            min={0}
-                            placeholder="e.g. 250"
-                            value={monthlyBills}
-                            onChange={(e) => setMonthlyBills(e.target.value)}
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  )}
+                {/* Row 5: Finish Quality (4 visual cards) */}
+                <div className="space-y-2">
+                  <Label className="flex items-center gap-2">
+                    <Sparkles className="h-4 w-4" aria-hidden="true" />
+                    Finish Quality
+                  </Label>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    {[
+                      { value: "below_average", label: "Needs work", desc: "Basic decor", color: "border-orange-400 bg-orange-50 dark:bg-orange-950/30", activeColor: "ring-2 ring-orange-400 border-orange-400 bg-orange-100 dark:bg-orange-950/50", dot: "bg-orange-400" },
+                      { value: "average", label: "Clean & functional", desc: "Standard finish", color: "border-blue-400 bg-blue-50 dark:bg-blue-950/30", activeColor: "ring-2 ring-blue-400 border-blue-400 bg-blue-100 dark:bg-blue-950/50", dot: "bg-blue-400" },
+                      { value: "above_average", label: "Well presented", desc: "Modern fixtures", color: "border-emerald-400 bg-emerald-50 dark:bg-emerald-950/30", activeColor: "ring-2 ring-emerald-400 border-emerald-400 bg-emerald-100 dark:bg-emerald-950/50", dot: "bg-emerald-400" },
+                      { value: "high", label: "Premium finish", desc: "Luxury spec", color: "border-purple-400 bg-purple-50 dark:bg-purple-950/30", activeColor: "ring-2 ring-purple-400 border-purple-400 bg-purple-100 dark:bg-purple-950/50", dot: "bg-purple-400" },
+                    ].map((option) => (
+                      <button
+                        key={option.value}
+                        type="button"
+                        onClick={() => setFinishQuality(option.value)}
+                        className={`flex flex-col items-center gap-1.5 rounded-lg border p-3 text-center transition-all cursor-pointer ${
+                          finishQuality === option.value
+                            ? option.activeColor
+                            : `${option.color} hover:shadow-sm`
+                        }`}
+                      >
+                        <div className={`h-3 w-3 rounded-full ${option.dot}`} />
+                        <span className="text-xs font-semibold leading-tight">{option.label}</span>
+                        <span className="text-[10px] text-muted-foreground leading-tight">{option.desc}</span>
+                      </button>
+                    ))}
+                  </div>
                 </div>
 
                 {error && (

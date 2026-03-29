@@ -14,8 +14,105 @@ import type { LongLetData } from '../types';
 // ─── Bedroom-scaled defaults ────────────────────────────────────
 // More realistic than a single static default for all property sizes.
 const AREA_BY_BEDROOMS: Record<number, number> = {
-  1: 450, 2: 650, 3: 900, 4: 1200, 5: 1500,
+  1: 500, 2: 700, 3: 900, 4: 1100, 5: 1350,
 };
+
+// ─── Floor Area + Build Year from /floor-areas ─────────────────
+export interface FloorAreaResult {
+  squareFeet: number;
+  constructionDate: string; // 'pre_1914' | '1914_2000' | '2000_onwards'
+}
+
+/**
+ * Calls the PropertyData /floor-areas endpoint to get actual square footage
+ * and build year for the property. Falls back to bedroom-based defaults.
+ */
+export async function getFloorArea(
+  postcode: string,
+  address: string,
+  bedrooms: number,
+): Promise<FloorAreaResult> {
+  const apiKey = process.env.PROPERTYDATA_API_KEY;
+  const clampedBedrooms = Math.max(1, Math.min(bedrooms, 5));
+  const fallbackArea = AREA_BY_BEDROOMS[clampedBedrooms] ?? 700;
+  const fallbackResult: FloorAreaResult = {
+    squareFeet: fallbackArea,
+    constructionDate: '1914_2000',
+  };
+
+  if (!apiKey) {
+    console.log('PROPERTYDATA_API_KEY not set, using bedroom fallback for floor area');
+    return fallbackResult;
+  }
+
+  try {
+    const url = new URL('https://api.propertydata.co.uk/floor-areas');
+    url.searchParams.set('key', apiKey);
+    url.searchParams.set('postcode', postcode);
+
+    const response = await fetch(url.toString());
+    if (!response.ok) {
+      console.log(`PropertyData /floor-areas: HTTP ${response.status}`);
+      return fallbackResult;
+    }
+
+    const data = await response.json();
+    if (data.status === 'error' || !data.data || !Array.isArray(data.data)) {
+      console.log('PropertyData /floor-areas: no data array returned');
+      return fallbackResult;
+    }
+
+    // Try to match the address in the results
+    const normAddr = address.toLowerCase().replace(/[^a-z0-9]/g, '');
+    let bestMatch: { square_feet?: number; build_year?: number } | null = null;
+
+    for (const entry of data.data) {
+      const entryAddr = (entry.address || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      if (entryAddr.includes(normAddr) || normAddr.includes(entryAddr)) {
+        bestMatch = entry;
+        break;
+      }
+    }
+
+    // If no exact match, try partial match on house number
+    if (!bestMatch) {
+      const houseNumber = address.match(/^\d+/)?.[0];
+      if (houseNumber) {
+        for (const entry of data.data) {
+          const entryAddr = (entry.address || '');
+          if (entryAddr.startsWith(houseNumber + ' ') || entryAddr.startsWith(houseNumber + ',')) {
+            bestMatch = entry;
+            break;
+          }
+        }
+      }
+    }
+
+    if (!bestMatch) {
+      console.log('PropertyData /floor-areas: no address match found, using bedroom fallback');
+      return fallbackResult;
+    }
+
+    const sqFt = bestMatch.square_feet ? Number(bestMatch.square_feet) : fallbackArea;
+    let constructionDate = '1914_2000';
+
+    if (bestMatch.build_year) {
+      const year = Number(bestMatch.build_year);
+      if (year < 1914) {
+        constructionDate = 'pre_1914';
+      } else if (year >= 2000) {
+        constructionDate = '2000_onwards';
+      }
+      // else stays '1914_2000'
+    }
+
+    console.log(`PropertyData /floor-areas: matched ${sqFt} sq ft, build ${constructionDate}`);
+    return { squareFeet: sqFt, constructionDate };
+  } catch (err) {
+    console.log('PropertyData /floor-areas: fetch error:', err);
+    return fallbackResult;
+  }
+}
 
 const BATHROOMS_BY_BEDROOMS: Record<number, number> = {
   1: 1, 2: 1, 3: 2, 4: 2, 5: 3,
