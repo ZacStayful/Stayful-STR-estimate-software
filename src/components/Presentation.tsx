@@ -474,7 +474,7 @@ export default function Presentation({ data, onClose }: PresentationProps) {
             </div>
             <div className="mx-auto mt-8 max-w-2xl rounded-xl px-6 py-3 text-center" style={{ backgroundColor: CARD_BG }}>
               <p className="text-sm font-semibold" style={{ color: GREEN }}>
-                30% of our bookings are now direct customers — saving platform fees
+                30% of our bookings are now direct customers, saving platform fees
               </p>
             </div>
           </div>
@@ -651,7 +651,7 @@ export default function Presentation({ data, onClose }: PresentationProps) {
                 { title: "Only 15% Management Fee", desc: "One of the lowest in the industry" },
                 { title: "Nationwide Coverage", desc: "We manage properties across the UK" },
                 { title: "Dynamic Pricing", desc: "Maximise revenue with smart pricing" },
-                { title: "Full Service Management", desc: "Guests, cleaning, maintenance — all handled" },
+                { title: "Full Service Management", desc: "Guests, cleaning, maintenance, all handled" },
                 { title: "24/7 Guest Support", desc: "Round-the-clock assistance for guests" },
                 { title: "4.8 Star Google Rating", desc: "Trusted by property owners nationwide" },
               ].map((item, i) => (

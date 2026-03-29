@@ -2618,8 +2618,8 @@ export default function HomePage() {
                       <option value="on_street">Free on-street only</option>
                       <option value="allocated">Allocated space (flat/apartment bay)</option>
                       <option value="garage">Single garage</option>
-                      <option value="driveway_1">Driveway — 1 car</option>
-                      <option value="driveway_2">Driveway — 2 or more cars</option>
+                      <option value="driveway_1">Driveway (1 car)</option>
+                      <option value="driveway_2">Driveway (2+ cars)</option>
                     </select>
                   </div>
 
@@ -2650,10 +2650,10 @@ export default function HomePage() {
                   </Label>
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                     {[
-                      { value: "below_average", label: "Needs work", desc: "Basic decor", color: "border-orange-400 bg-orange-50 dark:bg-orange-950/30", activeColor: "ring-2 ring-orange-400 border-orange-400 bg-orange-100 dark:bg-orange-950/50", dot: "bg-orange-400" },
-                      { value: "average", label: "Clean & functional", desc: "Standard finish", color: "border-blue-400 bg-blue-50 dark:bg-blue-950/30", activeColor: "ring-2 ring-blue-400 border-blue-400 bg-blue-100 dark:bg-blue-950/50", dot: "bg-blue-400" },
-                      { value: "above_average", label: "Well presented", desc: "Modern fixtures", color: "border-emerald-400 bg-emerald-50 dark:bg-emerald-950/30", activeColor: "ring-2 ring-emerald-400 border-emerald-400 bg-emerald-100 dark:bg-emerald-950/50", dot: "bg-emerald-400" },
-                      { value: "high", label: "Premium finish", desc: "Luxury spec", color: "border-purple-400 bg-purple-50 dark:bg-purple-950/30", activeColor: "ring-2 ring-purple-400 border-purple-400 bg-purple-100 dark:bg-purple-950/50", dot: "bg-purple-400" },
+                      { value: "below_average", label: "Needs work", desc: "Basic decor", color: "border-border bg-muted/30", activeColor: "ring-2 ring-primary border-primary bg-primary/10", dot: "bg-muted-foreground/50" },
+                      { value: "average", label: "Clean & functional", desc: "Standard finish", color: "border-border bg-muted/30", activeColor: "ring-2 ring-primary border-primary bg-primary/10", dot: "bg-muted-foreground" },
+                      { value: "above_average", label: "Well presented", desc: "Modern fixtures", color: "border-border bg-muted/30", activeColor: "ring-2 ring-primary border-primary bg-primary/10", dot: "bg-primary" },
+                      { value: "high", label: "Premium finish", desc: "Luxury spec", color: "border-border bg-muted/30", activeColor: "ring-2 ring-primary border-primary bg-primary/10", dot: "bg-primary" },
                     ].map((option) => (
                       <button
                         key={option.value}
