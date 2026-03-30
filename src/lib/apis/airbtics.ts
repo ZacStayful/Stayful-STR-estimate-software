@@ -75,7 +75,7 @@ export async function getShortLetData(
   _guests: number,
   lat: number,
   lng: number,
-  options?: { bathrooms?: number; hasParking?: boolean },
+  options?: { bathrooms?: number; hasParking?: boolean; finishQuality?: string },
 ): Promise<{ data: ShortLetData; quality: DataQuality }> {
   const apiKey = process.env.AIRBTICS_API_KEY;
 
@@ -95,7 +95,7 @@ export async function getShortLetData(
     const reportResult = await fetchReportAll(lat, lng, bedrooms, apiKey, postcode, options?.bathrooms);
     if (reportResult) {
       console.log(`Airbtics report/all: ${reportResult.comps.length} raw comps returned`);
-      return buildDataFromReportComps(reportResult, bedrooms, lat, lng, options?.hasParking);
+      return buildDataFromReportComps(reportResult, bedrooms, lat, lng, options?.hasParking, options?.finishQuality);
     }
     console.log('Airbtics report/all: no data, falling back to markets flow');
   } catch (err) {
@@ -270,6 +270,7 @@ function buildDataFromReportComps(
   lat: number,
   lng: number,
   hasParking?: boolean,
+  finishQuality?: string,
 ): { data: ShortLetData; quality: DataQuality } {
   // Filter comps: match bedrooms, filter bad operators, handle non-numeric bedrooms
   const filtered = report.comps.filter((c) => {
@@ -319,11 +320,29 @@ function buildDataFromReportComps(
     };
   });
 
-  // ── Headline stats: use upper-median performers (p60) ──
-  // filtered is sorted descending by revenue. Take the upper 40%
-  // This represents solid operators like Stayful — above median but not luxury outliers
-  const upperCount = Math.max(3, Math.ceil(filtered.length * 0.4));
-  const upperQuartile = filtered.slice(0, upperCount);
+  // ── Headline stats: adjust based on finish quality ──
+  // filtered is sorted descending by revenue
+  // very_high: top 3 (best performers, luxury spec achieves top results)
+  // high: upper 40% (good operators like Stayful)
+  // average: middle of the pack (median)
+  // below_average: bottom 3 average (poor spec = lower end performance)
+  let upperQuartile: typeof filtered;
+  const n = filtered.length;
+
+  if (finishQuality === 'very_high' && n >= 3) {
+    upperQuartile = filtered.slice(0, 3);
+  } else if (finishQuality === 'below_average' && n >= 3) {
+    upperQuartile = filtered.slice(-3); // bottom 3
+  } else if (finishQuality === 'average') {
+    // Middle third
+    const start = Math.floor(n * 0.33);
+    const end = Math.ceil(n * 0.67);
+    upperQuartile = filtered.slice(start, Math.max(end, start + 3));
+  } else {
+    // 'high' or default: upper 40%
+    const upperCount = Math.max(3, Math.ceil(n * 0.4));
+    upperQuartile = filtered.slice(0, upperCount);
+  }
 
   let annualRevenue: number;
   let avgOccupancy: number;

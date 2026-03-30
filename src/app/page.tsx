@@ -1407,6 +1407,26 @@ export default function HomePage() {
               subtitle="Detailed cost analysis: Short-Term vs Long-Term letting"
             />
 
+            {finishQuality === "below_average" && (
+              <div className="mb-4 rounded-lg border border-warning/50 bg-warning/10 p-4">
+                <p className="font-semibold text-sm text-foreground">Property Spec Impact</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Revenue projections are based on lower-performing comparable properties to reflect the current property condition.
+                  Upgrading the finish quality could increase revenue by 20-40%.
+                  Stayful can advise on cost-effective improvements that deliver the best return.
+                </p>
+              </div>
+            )}
+            {finishQuality === "average" && (
+              <div className="mb-4 rounded-lg border border-primary/30 bg-primary/5 p-4">
+                <p className="font-semibold text-sm text-foreground">Property Spec Impact</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Revenue projections are based on mid-range comparable properties.
+                  Properties with a higher specification typically achieve 15-25% more revenue through premium nightly rates and higher occupancy.
+                </p>
+              </div>
+            )}
+
             <div className="grid gap-6 lg:grid-cols-2">
               {/* Short-Term Rental Estimate */}
               <Card>

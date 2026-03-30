@@ -97,7 +97,7 @@ export async function POST(request: Request) {
     : 'none';
 
   // Finish quality: validate
-  const validFinishQualities = ['below_average', 'average', 'above_average', 'high'];
+  const validFinishQualities = ['below_average', 'average', 'high', 'very_high'];
   const validFinishQuality = typeof finishQuality === 'string' && validFinishQualities.includes(finishQuality)
     ? finishQuality
     : 'average';
@@ -194,7 +194,7 @@ export async function POST(request: Request) {
         });
 
         // Now fetch short-let (needs coords) + long-let in parallel
-        const shortLetPromise = getShortLetData(property.postcode, property.bedrooms, property.guests, coordinates.lat, coordinates.lng, { bathrooms: validBathrooms, hasParking: validHasParking });
+        const shortLetPromise = getShortLetData(property.postcode, property.bedrooms, property.guests, coordinates.lat, coordinates.lng, { bathrooms: validBathrooms, hasParking: validHasParking, finishQuality: validFinishQuality || undefined });
         const [shortLetResult, longLetResult] = await Promise.allSettled([shortLetPromise, longLetPromise]);
 
         const shortLetRaw = shortLetResult.status === 'fulfilled'
