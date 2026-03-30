@@ -76,8 +76,10 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import Presentation from "@/components/Presentation";
+import HeatmapOverlay from "@/components/HeatmapOverlay";
 import type { AnalysisResult, RiskLevel, VerdictFit } from "@/lib/types";
 import { DEMO_MAP } from "@/lib/demo-data";
+import { initTracker, endSession, trackCtaClick } from "@/lib/tracker";
 import {
   BarChart,
   Bar,
@@ -381,6 +383,14 @@ export default function HomePage() {
       setGuests(String(demoData.property.guests));
     }
   }, []);
+
+  // Session analytics tracker
+  useEffect(() => {
+    if (result) {
+      initTracker(result.property.address, result.property.postcode);
+      return () => { endSession(); };
+    }
+  }, [result]);
 
   const scrollToSection = (id: string) => {
     const el = sectionRefs.current[id];
@@ -925,6 +935,7 @@ export default function HomePage() {
 
     return (
       <>
+      <HeatmapOverlay />
       {showPresentation && (
         <Presentation data={r} onClose={() => setShowPresentation(false)} />
       )}
@@ -1038,7 +1049,7 @@ export default function HomePage() {
                   variant="outline"
                   size="sm"
                   className="border-primary-foreground/40 text-primary-foreground hover:bg-primary-foreground/10 bg-transparent"
-                  onClick={() => setShowPresentation(true)}
+                  onClick={() => { trackCtaClick("view_presentation"); setShowPresentation(true); }}
                 >
                   <Monitor className="mr-1.5 h-3.5 w-3.5" />
                   View Presentation
@@ -1105,7 +1116,8 @@ export default function HomePage() {
                 <p className="text-xs">{r.dataQuality.disclaimer}</p>
                 {r.dataQuality.level === "low" && (
                   <a href="https://calendly.com/zac-stayful/call" target="_blank" rel="noopener noreferrer"
-                    className="mt-2 inline-block text-xs font-medium text-primary underline">
+                    className="mt-2 inline-block text-xs font-medium text-primary underline"
+                    onClick={() => trackCtaClick("book_call")}>
                     Book a Free Assessment with Stayful
                   </a>
                 )}
@@ -1271,6 +1283,7 @@ export default function HomePage() {
                         target="_blank"
                         rel="noopener noreferrer"
                         className="mt-3 inline-flex items-center gap-1.5 text-xs font-semibold text-primary hover:underline"
+                        onClick={() => trackCtaClick("book_call")}
                       >
                         <Phone className="h-3 w-3" />
                         Book a Free Assessment
@@ -2451,12 +2464,13 @@ export default function HomePage() {
                   <Button
                     variant="secondary"
                     size="lg"
-                    onClick={() =>
+                    onClick={() => {
+                      trackCtaClick("book_call");
                       window.open(
                         "https://calendly.com/zac-stayful/call",
                         "_blank"
-                      )
-                    }
+                      );
+                    }}
                   >
                     <Calendar className="mr-2 h-4 w-4" />
                     Book a Free Consultation
