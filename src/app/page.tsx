@@ -869,7 +869,7 @@ export default function HomePage() {
         title: `${r.property.postcode.split(" ")[0]} Airbnb Market Data 2026`,
         source: "Airbtics",
         desc: "Local area Airbnb performance data including comparable properties.",
-        bullets: [`${Math.min(r.shortLet.activeListings || 8, 8)} comparable properties analysed`, "Nightly rate and occupancy data"],
+        bullets: [`${r.dataQuality?.comparablesFound || r.shortLet.activeListings || "Market"} comparable properties analysed`, "Nightly rate and occupancy data"],
         updated: "March 2026",
         url: "#",
       },
@@ -1052,20 +1052,29 @@ export default function HomePage() {
                   </p>
                 </div>
                 <div className="flex flex-col gap-3 lg:items-end">
-                  <div>
-                    <p className="text-xs text-primary-foreground/70 uppercase tracking-wider">Gross Revenue</p>
-                    <p className="text-2xl font-bold">
-                      {gbp(grossAnnual)}{" "}
-                      <span className="text-base font-normal text-primary-foreground/80">({gbp(Math.round(grossAnnual / 12))}/mo)</span>
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-primary-foreground/70 uppercase tracking-wider">Net Revenue</p>
-                    <p className="text-2xl font-bold">
-                      {gbp(stlNetAnnual)}{" "}
-                      <span className="text-base font-normal text-primary-foreground/80">({gbp(Math.round(stlNetAnnual / 12))}/mo)</span>
-                    </p>
-                  </div>
+                  {grossAnnual > 0 ? (
+                    <>
+                      <div>
+                        <p className="text-xs text-primary-foreground/70 uppercase tracking-wider">Gross Revenue</p>
+                        <p className="text-2xl font-bold">
+                          {gbp(grossAnnual)}{" "}
+                          <span className="text-base font-normal text-primary-foreground/80">({gbp(Math.round(grossAnnual / 12))}/mo)</span>
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-primary-foreground/70 uppercase tracking-wider">Net Revenue</p>
+                        <p className="text-2xl font-bold">
+                          {gbp(stlNetAnnual)}{" "}
+                          <span className="text-base font-normal text-primary-foreground/80">({gbp(Math.round(stlNetAnnual / 12))}/mo)</span>
+                        </p>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="text-right">
+                      <p className="text-sm text-primary-foreground/80">Limited market data available</p>
+                      <p className="text-xs text-primary-foreground/60 mt-1">Book a call with Stayful for a personalised estimate</p>
+                    </div>
+                  )}
                   <p className="text-[11px] text-primary-foreground/60">
                     After booking platform fees, cleaning, laundry and property management
                   </p>
@@ -1080,7 +1089,7 @@ export default function HomePage() {
           <section id="comparables" ref={setSectionRef("comparables")} className="mb-12">
             <SectionHeading
               icon={MapPin}
-              title={`${r.dataQuality?.comparablesFound ?? (hasComparables ? r.shortLet.comparables.length : 8)} Comparable Properties Analysed`}
+              title={r.dataQuality?.comparablesFound ? `${r.dataQuality.comparablesFound} Comparable Properties Analysed` : (hasComparables ? `${r.shortLet.comparables.length} Comparable Properties Analysed` : "Market Analysis")}
               subtitle={`Similar ${r.property.bedrooms}-bedroom properties accommodating ${r.property.guests} guests within your area.${r.dataQuality?.searchBroadened ? ` Search broadened to ${r.dataQuality.searchRadiusKm}km.` : ""}${hasTop5 ? " Revenue projections based on top-performing comparable properties." : ""}`}
             />
 
@@ -1248,8 +1257,11 @@ export default function HomePage() {
                         Market Data Summary
                       </p>
                       <p className="mt-1.5 text-sm text-muted-foreground leading-relaxed">
-                        Analysis based on <span className="font-medium text-foreground">{Math.min(r.shortLet.activeListings || 8, 8)}</span> comparable {r.property.bedrooms}-bedroom properties near <span className="font-medium text-foreground">{r.property.postcode}</span>.{" "}
-                        Data represents median performance from the local short-term rental market.
+                        {r.shortLet.annualRevenue > 0 ? (
+                          <>Analysis based on comparable {r.property.bedrooms}-bedroom properties near <span className="font-medium text-foreground">{r.property.postcode}</span>. Data represents performance from the local short-term rental market.</>
+                        ) : (
+                          <>Limited short-term rental data available near <span className="font-medium text-foreground">{r.property.postcode}</span>. This may be a rural or unique area with low competition, which can be advantageous for short-term letting.</>
+                        )}
                       </p>
                       <p className="mt-3 text-xs text-muted-foreground leading-relaxed">
                         For individual comparable listings with direct Airbnb links, contact Stayful for a comprehensive property assessment.
@@ -2652,8 +2664,8 @@ export default function HomePage() {
                     {[
                       { value: "below_average", label: "Needs work", desc: "Basic decor", color: "border-border bg-muted/30", activeColor: "ring-2 ring-primary border-primary bg-primary/10", dot: "bg-muted-foreground/50" },
                       { value: "average", label: "Clean & functional", desc: "Standard finish", color: "border-border bg-muted/30", activeColor: "ring-2 ring-primary border-primary bg-primary/10", dot: "bg-muted-foreground" },
-                      { value: "above_average", label: "Well presented", desc: "Modern fixtures", color: "border-border bg-muted/30", activeColor: "ring-2 ring-primary border-primary bg-primary/10", dot: "bg-primary" },
-                      { value: "high", label: "Premium finish", desc: "Luxury spec", color: "border-border bg-muted/30", activeColor: "ring-2 ring-primary border-primary bg-primary/10", dot: "bg-primary" },
+                      { value: "high", label: "Well presented", desc: "Modern fixtures", color: "border-border bg-muted/30", activeColor: "ring-2 ring-primary border-primary bg-primary/10", dot: "bg-primary" },
+                      { value: "very_high", label: "Premium finish", desc: "Luxury spec", color: "border-border bg-muted/30", activeColor: "ring-2 ring-primary border-primary bg-primary/10", dot: "bg-primary" },
                     ].map((option) => (
                       <button
                         key={option.value}

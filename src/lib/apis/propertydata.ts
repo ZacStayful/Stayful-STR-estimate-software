@@ -157,10 +157,11 @@ export async function getLongLetData(
     return result1;
   }
 
-  // Attempt 2: Simpler defaults — flat, broader construction date, average finish
+  // Attempt 2: Keep user's property type but simplify other params
+  const userPropertyType = options?.propertyType ?? 'flat';
   const attempt2Params = {
     postcode,
-    property_type: 'flat',
+    property_type: userPropertyType,
     construction_date: '1914_2000',
     internal_area: String(AREA_BY_BEDROOMS[clampedBedrooms] ?? 650),
     bedrooms: String(bedrooms),
@@ -172,31 +173,40 @@ export async function getLongLetData(
 
   const result2 = await tryPropertyDataCall(apiKey, attempt2Params);
   if (result2) {
-    console.log('PropertyData: succeeded on attempt 2 (simpler defaults)');
+    console.log(`PropertyData: succeeded on attempt 2 (${userPropertyType}, average finish)`);
     return result2;
   }
 
-  // Attempt 3: Minimal — smallest safe values
-  const attempt3Params = {
-    postcode,
-    property_type: 'flat',
-    construction_date: '1914_2000',
-    internal_area: '500',
-    bedrooms: String(bedrooms),
-    bathrooms: '1',
-    finish_quality: 'average',
-    outdoor_space: 'none',
-    off_street_parking: '0',
-  };
+  // Attempt 3: Try all common property types until one works
+  const propertyTypes = ['terraced_house', 'semi-detached_house', 'detached_house', 'flat'];
+  for (const pType of propertyTypes) {
+    const attempt3Params = {
+      postcode,
+      property_type: pType,
+      construction_date: '1914_2000',
+      internal_area: String(AREA_BY_BEDROOMS[clampedBedrooms] ?? 650),
+      bedrooms: String(bedrooms),
+      bathrooms: '1',
+      finish_quality: 'average',
+      outdoor_space: 'none',
+      off_street_parking: '0',
+    };
 
-  const result3 = await tryPropertyDataCall(apiKey, attempt3Params);
-  if (result3) {
-    console.log('PropertyData: succeeded on attempt 3 (minimal params)');
-    return result3;
+    const result3 = await tryPropertyDataCall(apiKey, attempt3Params);
+    if (result3) {
+      console.log(`PropertyData: succeeded on attempt 3 (${pType})`);
+      return result3;
+    }
   }
 
-  // All attempts failed
-  throw new Error('PropertyData API: all 3 attempts failed. The postcode may not have enough rental data.');
+  // All attempts failed, return zero instead of throwing (so the report still generates)
+  console.log('PropertyData: all attempts failed, returning zero rent');
+  return {
+    monthlyRent: 0,
+    estimateHigh: 0,
+    estimateLow: 0,
+    comparables: [],
+  };
 }
 
 /**

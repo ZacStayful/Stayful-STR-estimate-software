@@ -232,7 +232,7 @@ async function fetchReportAll(
     const readData = await readRes.json();
     const report = readData?.message ?? readData;
 
-    if (report?.comps_status === 'success' && Array.isArray(report.comps)) {
+    if ((report?.comps_status === 'success' || (Array.isArray(report?.comps) && report.comps.length > 0)) && Array.isArray(report.comps)) {
       return report as ReportAllResult;
     }
 
@@ -253,7 +253,7 @@ async function readReport(reportId: string, apiKey: string): Promise<ReportAllRe
   if (!res.ok) return null;
   const data = await res.json();
   const report = data?.message ?? data;
-  if (report?.comps_status === 'success' && Array.isArray(report.comps)) {
+  if ((report?.comps_status === 'success' || (Array.isArray(report?.comps) && report.comps.length > 0)) && Array.isArray(report.comps)) {
     return report as ReportAllResult;
   }
   return null;
@@ -271,12 +271,14 @@ function buildDataFromReportComps(
   lng: number,
   hasParking?: boolean,
 ): { data: ShortLetData; quality: DataQuality } {
-  // Filter comps: report/all already matches bedrooms in the request, so just
-  // filter out bad operators with very low guest capacity and zero-revenue listings
+  // Filter comps: match bedrooms, filter bad operators, handle non-numeric bedrooms
   const filtered = report.comps.filter((c) => {
+    const compBeds = typeof c.bedrooms === 'string' ? parseInt(c.bedrooms, 10) : (c.bedrooms ?? 0);
+    if (isNaN(compBeds)) return false; // Skip "Studio" etc.
+    const bedroomMatch = compBeds === bedrooms;
     const hasRevenue = (c.annual_revenue_ltm ?? 0) > 0;
     const hasReasonableCapacity = c.accommodates >= Math.max(bedrooms, 2);
-    return hasRevenue && hasReasonableCapacity;
+    return bedroomMatch && hasRevenue && hasReasonableCapacity;
   });
 
   // Sort by annual revenue descending
@@ -464,8 +466,11 @@ async function getShortLetDataFromMarkets(
   const occupancy = occupancyData.status === 'fulfilled' ? occupancyData.value : [];
   const listingsResult = listingsData.status === 'fulfilled' ? listingsData.value : null;
 
-  // If no monthly data AND no summary, fall back to estimates
-  if (revenue.length === 0 && !summary) {
+  // Check if summary has real data (not null values)
+  const summaryHasData = summary && summary.revenue != null && summary.revenue > 0;
+
+  // If no monthly data AND no useful summary, fall back to estimates
+  if (revenue.length === 0 && !summaryHasData) {
     console.log('Airbtics: no data available, using market estimates');
     return { data: generateMarketEstimate(bedrooms), quality: lowQuality };
   }
