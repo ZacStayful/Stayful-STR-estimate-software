@@ -313,7 +313,7 @@ function buildDataFromReportComps(
       occupancyRate: Math.round(c.avg_occupancy_rate_ltm ?? 0) / 100,
       annualRevenue: Math.round(c.annual_revenue_ltm ?? 0),
       distance,
-      rating: Math.round((c.reveiw_scores_rating ?? 0) * 10) / 10, // Already 0-5 scale
+      rating: Math.floor((c.reveiw_scores_rating ?? 0) * 10) / 10, // Always round DOWN (4.66 -> 4.6)
       reviewCount: c.visible_review_count ?? 0,
       listingAge: 0, // report/all doesn't include added_on
       daysAvailable: c.active_days_count_ltm ?? 0,
@@ -687,7 +687,7 @@ function extractComparables(
       occupancyRate: Math.round(l.avg_occupancy_rate_ltm ?? 0) / 100,
       annualRevenue: Math.round(l.annual_revenue_ltm ?? 0),
       distance: l.distance,
-      rating: Math.round(((l.reveiw_scores_rating ?? 0) / 20) * 10) / 10,
+      rating: Math.floor(((l.reveiw_scores_rating ?? 0) / 20) * 10) / 10, // Always round DOWN
       reviewCount: l.visible_review_count ?? 0,
       listingAge: ageYears,
       daysAvailable: l.active_days_count_ltm ?? 0,

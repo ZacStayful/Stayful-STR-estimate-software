@@ -843,7 +843,7 @@ export default function HomePage() {
     const compAvgOccupancy = hasComparables ? avgSource.reduce((s, c) => s + c.occupancyRate, 0) / avgSource.length : r.shortLet.occupancyRate;
     const compAvgRevenue = hasComparables ? Math.round(avgSource.reduce((s, c) => s + c.annualRevenue, 0) / avgSource.length) : r.shortLet.annualRevenue;
     const compsWithRating = comps.filter((c) => c.rating > 0);
-    const avgRating = compsWithRating.length > 0 ? Math.round(compsWithRating.reduce((s, c) => s + c.rating, 0) / compsWithRating.length * 10) / 10 : 0;
+    const avgRating = compsWithRating.length > 0 ? Math.floor(compsWithRating.reduce((s, c) => s + c.rating, 0) / compsWithRating.length * 10) / 10 : 0;
     const compsWithReviews = comps.filter((c) => c.reviewCount > 0);
     const avgReviews = compsWithReviews.length > 0 ? Math.round(compsWithReviews.reduce((s, c) => s + c.reviewCount, 0) / compsWithReviews.length) : 0;
     const compsWithAge = comps.filter((c) => c.listingAge > 0);
