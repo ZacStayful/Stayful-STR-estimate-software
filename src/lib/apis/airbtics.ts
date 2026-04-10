@@ -91,24 +91,53 @@ export async function getShortLetData(
   }
 
   // ── PRIMARY: Try report/all ($0.50, highest accuracy with real comps) ──
+  let reportAllResult: { data: ShortLetData; quality: DataQuality } | null = null;
   try {
     const reportResult = await fetchReportAll(lat, lng, bedrooms, guests, apiKey, postcode, options?.bathrooms);
     if (reportResult) {
-      console.log(`Airbtics report/all: ${reportResult.comps.length} raw comps returned`);
-      return buildDataFromReportComps(reportResult, bedrooms, guests, lat, lng, options?.hasParking, options?.finishQuality);
+      console.log(`[Airbtics] report/all returned ${reportResult.comps.length} raw comps`);
+      reportAllResult = buildDataFromReportComps(reportResult, bedrooms, guests, lat, lng, options?.hasParking, options?.finishQuality);
+
+      // If we got 12+ quality comps, use the report result directly
+      if (reportAllResult.quality.comparablesFound >= TARGET_COMPARABLES) {
+        console.log(`[Airbtics] Using report/all result: ${reportAllResult.quality.comparablesFound} comps found`);
+        return reportAllResult;
+      }
+      console.log(`[Airbtics] report/all only found ${reportAllResult.quality.comparablesFound}/${TARGET_COMPARABLES} comps - trying bounds expansion`);
+    } else {
+      console.log('[Airbtics] report/all returned null (credits exhausted or failed)');
     }
-    console.log('Airbtics report/all: no data, falling back to markets flow');
   } catch (err) {
-    console.log('Airbtics report/all failed, falling back to markets flow:', err);
+    console.log('[Airbtics] report/all failed:', err);
   }
 
-  // ── FALLBACK: markets/summary + metrics + bounds (~$0.46) ──
+  // ── SECONDARY: Try bounds-based progressive radius expansion ──
+  // This runs when report/all found < 12 comps OR failed entirely.
+  // Uses PMI-style radius steps (0.4km to 8km) until 12 comps found.
   try {
-    return await getShortLetDataFromMarkets(postcode, bedrooms, guests, lat, lng, apiKey, options?.finishQuality);
+    const marketsResult = await getShortLetDataFromMarkets(postcode, bedrooms, guests, lat, lng, apiKey, options?.finishQuality);
+
+    // Pick the better result between report/all and markets
+    // Prefer whichever found more comparables
+    if (reportAllResult && reportAllResult.quality.comparablesFound > marketsResult.quality.comparablesFound) {
+      console.log(`[Airbtics] Keeping report/all result (${reportAllResult.quality.comparablesFound} > ${marketsResult.quality.comparablesFound} comps)`);
+      return reportAllResult;
+    }
+    console.log(`[Airbtics] Using markets flow result: ${marketsResult.quality.comparablesFound} comps`);
+    return marketsResult;
   } catch (err) {
-    console.log('Airbtics markets fallback also failed, using estimates:', err);
-    return { data: generateMarketEstimate(bedrooms), quality: lowQuality };
+    console.log('[Airbtics] markets fallback failed:', err);
   }
+
+  // ── LAST RESORT: Return report/all result even with few comps ──
+  if (reportAllResult) {
+    console.log('[Airbtics] Returning report/all result as last resort');
+    return reportAllResult;
+  }
+
+  // ── FINAL FALLBACK: generic estimate ──
+  console.log('[Airbtics] All paths failed - using generic market estimate');
+  return { data: generateMarketEstimate(bedrooms), quality: lowQuality };
 }
 
 // ─── report/all comp shape ─────────────────────────────────────
