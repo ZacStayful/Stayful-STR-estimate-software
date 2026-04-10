@@ -22,7 +22,7 @@ import type { ShortLetData, ShortLetComparable, DataQuality } from '../types';
 const BASE_URL = process.env.AIRBTICS_BASE_URL || 'https://crap0y5bx5.execute-api.us-east-2.amazonaws.com/prod';
 
 const TARGET_COMPARABLES = 12;
-const SEARCH_RADII_KM = [1.5, 3, 5, 10]; // Progressively broaden
+const SEARCH_RADII_KM = [0.4, 0.8, 1.6, 2.4, 3.2, 4.8, 8.0]; // PMI-equivalent steps (0.25mi–5mi in km)
 const REPORT_POLL_INTERVAL_MS = 2000;
 const REPORT_POLL_MAX_MS = 25000; // 25 seconds (up from 15)
 
@@ -72,7 +72,7 @@ function haversineKm(
 export async function getShortLetData(
   postcode: string,
   bedrooms: number,
-  _guests: number,
+  guests: number,
   lat: number,
   lng: number,
   options?: { bathrooms?: number; hasParking?: boolean; finishQuality?: string },
@@ -92,10 +92,10 @@ export async function getShortLetData(
 
   // ── PRIMARY: Try report/all ($0.50, highest accuracy with real comps) ──
   try {
-    const reportResult = await fetchReportAll(lat, lng, bedrooms, apiKey, postcode, options?.bathrooms);
+    const reportResult = await fetchReportAll(lat, lng, bedrooms, guests, apiKey, postcode, options?.bathrooms);
     if (reportResult) {
       console.log(`Airbtics report/all: ${reportResult.comps.length} raw comps returned`);
-      return buildDataFromReportComps(reportResult, bedrooms, lat, lng, options?.hasParking, options?.finishQuality);
+      return buildDataFromReportComps(reportResult, bedrooms, guests, lat, lng, options?.hasParking, options?.finishQuality);
     }
     console.log('Airbtics report/all: no data, falling back to markets flow');
   } catch (err) {
@@ -158,11 +158,12 @@ async function fetchReportAll(
   lat: number,
   lng: number,
   bedrooms: number,
+  guests: number,
   apiKey: string,
   postcode: string,
   formBathrooms?: number,
 ): Promise<ReportAllResult | null> {
-  const accommodates = (bedrooms * 2) + 2;
+  const accommodates = guests;
   const bathrooms = formBathrooms ?? Math.max(1, Math.ceil(bedrooms * 0.75));
 
   // Check cache first — reading existing reports is FREE
@@ -260,33 +261,55 @@ async function readReport(reportId: string, apiKey: string): Promise<ReportAllRe
 }
 
 /**
+ * Calculates the median of an array of numbers.
+ */
+function calculateMedian(values: number[]): number {
+  if (values.length === 0) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 !== 0 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+}
+
+/** Finish quality multipliers applied after median calculation. */
+const FINISH_MULTIPLIERS: Record<string, number> = {
+  'below_average': 0.75,
+  'average': 1.0,
+  'high': 1.15,
+  'very_high': 1.30,
+};
+
+/** Days in each calendar month (non-leap year). */
+const DAYS_IN_MONTH = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+
+/**
  * Builds ShortLetData + DataQuality from report/all comps.
- * Filters by accommodates >= bedrooms * 2, takes top 12 by revenue,
- * uses top 5 performers for headline stats, and extracts real monthly data.
+ * Filters by guest capacity (within +/-2 of user's guest count),
+ * uses MEDIAN stats across all filtered comps, then applies finish quality multiplier.
  */
 function buildDataFromReportComps(
   report: ReportAllResult,
   bedrooms: number,
+  guests: number,
   lat: number,
   lng: number,
   hasParking?: boolean,
   finishQuality?: string,
 ): { data: ShortLetData; quality: DataQuality } {
-  // Filter comps: match bedrooms, filter bad operators, handle non-numeric bedrooms
+  // Filter comps: match by guest capacity (within +/-2), filter bad operators
   const filtered = report.comps.filter((c) => {
-    const compBeds = typeof c.bedrooms === 'string' ? parseInt(c.bedrooms, 10) : (c.bedrooms ?? 0);
-    if (isNaN(compBeds)) return false; // Skip "Studio" etc.
-    const bedroomMatch = compBeds === bedrooms;
     const hasRevenue = (c.annual_revenue_ltm ?? 0) > 0;
-    const hasReasonableCapacity = c.accommodates >= Math.max(bedrooms, 2);
-    return bedroomMatch && hasRevenue && hasReasonableCapacity;
+    const guestMatch = Math.abs((c.accommodates ?? 0) - guests) <= 2;
+    return guestMatch && hasRevenue;
   });
 
-  // Sort by annual revenue descending
-  filtered.sort((a, b) => (b.annual_revenue_ltm ?? 0) - (a.annual_revenue_ltm ?? 0));
+  // Sort by distance (closest first) for comparable selection
+  filtered.sort((a, b) => {
+    const distA = haversineKm(lat, lng, a.latitude, a.longitude);
+    const distB = haversineKm(lat, lng, b.latitude, b.longitude);
+    return distA - distB;
+  });
 
   // When hasParking is true, prefer comps with parking — sort parking comps first
-  // within the same revenue tier. Use a stable sort: parking comps first, then non-parking.
   if (hasParking) {
     const compHasParking = (c: ReportComp): boolean => {
       if (!c.amenities) return false;
@@ -296,7 +319,10 @@ function buildDataFromReportComps(
       const aParking = compHasParking(a) ? 1 : 0;
       const bParking = compHasParking(b) ? 1 : 0;
       if (bParking !== aParking) return bParking - aParking;
-      return (b.annual_revenue_ltm ?? 0) - (a.annual_revenue_ltm ?? 0);
+      // Preserve distance ordering within same parking tier
+      const distA = haversineKm(lat, lng, a.latitude, a.longitude);
+      const distB = haversineKm(lat, lng, b.latitude, b.longitude);
+      return distA - distB;
     });
   }
   const top12 = filtered.slice(0, TARGET_COMPARABLES);
@@ -320,49 +346,33 @@ function buildDataFromReportComps(
     };
   });
 
-  // ── Headline stats: adjust based on finish quality ──
-  // filtered is sorted descending by revenue
-  // very_high: top 3 (best performers, luxury spec achieves top results)
-  // high: upper 40% (good operators like Stayful)
-  // average: middle of the pack (median)
-  // below_average: bottom 3 average (poor spec = lower end performance)
-  let upperQuartile: typeof filtered;
-  const n = filtered.length;
-
-  if (finishQuality === 'very_high' && n >= 3) {
-    upperQuartile = filtered.slice(0, 3);
-  } else if (finishQuality === 'below_average' && n >= 3) {
-    upperQuartile = filtered.slice(-3); // bottom 3
-  } else if (finishQuality === 'average') {
-    // Middle third
-    const start = Math.floor(n * 0.33);
-    const end = Math.ceil(n * 0.67);
-    upperQuartile = filtered.slice(start, Math.max(end, start + 3));
-  } else {
-    // 'high' or default: upper 40%
-    const upperCount = Math.max(3, Math.ceil(n * 0.4));
-    upperQuartile = filtered.slice(0, upperCount);
-  }
-
+  // ── Headline stats: MEDIAN across ALL filtered comps, then finish quality multiplier ──
   let annualRevenue: number;
   let avgOccupancy: number;
   let derivedAdr: number;
   let monthlyRevenue: number[];
 
-  if (upperQuartile.length > 0) {
-    const n = upperQuartile.length;
-    annualRevenue = Math.round(upperQuartile.reduce((s, c) => s + (c.annual_revenue_ltm ?? 0), 0) / n);
-    derivedAdr = Math.round(upperQuartile.reduce((s, c) => s + (c.avg_booked_daily_rate_ltm ?? 0), 0) / n);
-    avgOccupancy = upperQuartile.reduce((s, c) => s + (c.avg_occupancy_rate_ltm ?? 0), 0) / n / 100;
-    monthlyRevenue = extractMonthlyFromComps(upperQuartile);
-  } else if (filtered.length > 0) {
-    const n = filtered.length;
-    annualRevenue = Math.round(filtered.reduce((s, c) => s + (c.annual_revenue_ltm ?? 0), 0) / n);
-    derivedAdr = Math.round(filtered.reduce((s, c) => s + (c.avg_booked_daily_rate_ltm ?? 0), 0) / n);
-    avgOccupancy = filtered.reduce((s, c) => s + (c.avg_occupancy_rate_ltm ?? 0), 0) / n / 100;
-    monthlyRevenue = extractMonthlyFromComps(filtered);
+  if (filtered.length > 0) {
+    const medianADR = calculateMedian(filtered.map(c => c.avg_booked_daily_rate_ltm ?? 0));
+    const medianOccupancy = calculateMedian(filtered.map(c => (c.avg_occupancy_rate_ltm ?? 0) / 100));
+
+    // Build seasonal multipliers from real monthly data if available
+    const seasonalADRMultiplier = buildSeasonalMultipliers(filtered, 'booked_daily_rate_ltm_monthly');
+    const seasonalOccMultiplier = buildSeasonalMultipliers(filtered, 'occupancy_rate_ltm_monthly');
+
+    // Monthly revenue = medianADR * adrMultiplier * medianOccupancy * occMultiplier * daysInMonth
+    monthlyRevenue = DAYS_IN_MONTH.map((days, i) =>
+      Math.round(medianADR * seasonalADRMultiplier[i] * medianOccupancy * seasonalOccMultiplier[i] * days),
+    );
+
+    // Apply finish quality multiplier
+    const multiplier = FINISH_MULTIPLIERS[finishQuality || 'high'] ?? 1.15;
+    monthlyRevenue = monthlyRevenue.map(m => Math.round(m * multiplier));
+    annualRevenue = monthlyRevenue.reduce((s, m) => s + m, 0);
+    derivedAdr = Math.round(medianADR * multiplier);
+    avgOccupancy = Math.round(medianOccupancy * 100) / 100;
   } else {
-    // No comps matched filters — use estimate
+    // No comps matched filters - use estimate
     const estimate = generateMarketEstimate(bedrooms);
     return {
       data: estimate,
@@ -372,7 +382,7 @@ function buildDataFromReportComps(
         searchRadiusKm: report.radius ? report.radius / 1000 : 0,
         searchBroadened: false,
         level: 'low',
-        disclaimer: `No comparable ${bedrooms}-bedroom properties were found in the report. Market-level estimates have been used. Book a web meeting with Stayful for accurate, personalised revenue projections.`,
+        disclaimer: `No comparable properties accommodating ~${guests} guests were found in the report. Market-level estimates have been used. Book a web meeting with Stayful for accurate, personalised revenue projections.`,
       },
     };
   }
@@ -389,12 +399,12 @@ function buildDataFromReportComps(
     qualityLevel = 'high';
   } else if (comparablesFound >= 6) {
     qualityLevel = 'moderate';
-    disclaimer = `${comparablesFound} comparable ${bedrooms}-bedroom properties were found within ${searchRadiusKm}km. Data accuracy may be slightly reduced. This could indicate a unique property type for the area — uniqueness is often advantageous for short-term letting.`;
+    disclaimer = `${comparablesFound} comparable properties (accommodating ~${guests} guests) were found within ${searchRadiusKm}km. Data accuracy may be slightly reduced. This could indicate a unique property type for the area, which is often advantageous for short-term letting.`;
   } else {
     qualityLevel = 'low';
     disclaimer = comparablesFound > 0
-      ? `Only ${comparablesFound} comparable ${bedrooms}-bedroom properties were found within ${searchRadiusKm}km. This area may be rural or the property type may be unique — both can be highly advantageous for short-term letting as competition is low. We recommend booking a web meeting with Stayful for a more detailed, personalised assessment.`
-      : `No comparable ${bedrooms}-bedroom properties were found. Market-level estimates have been used. Book a web meeting with Stayful for accurate, personalised revenue projections.`;
+      ? `Only ${comparablesFound} comparable properties (accommodating ~${guests} guests) were found within ${searchRadiusKm}km. This area may be rural or the property type may be unique, both of which can be highly advantageous for short-term letting as competition is low. We recommend booking a web meeting with Stayful for a more detailed, personalised assessment.`
+      : `No comparable properties accommodating ~${guests} guests were found. Market-level estimates have been used. Book a web meeting with Stayful for accurate, personalised revenue projections.`;
   }
 
   return {
@@ -445,6 +455,46 @@ function extractMonthlyFromComps(comps: ReportComp[]): number[] {
   return monthTotals.map((total, i) =>
     monthCounts[i] > 0 ? Math.round(total / monthCounts[i]) : 0,
   );
+}
+
+/**
+ * Builds seasonal multipliers from comp monthly data.
+ * multiplier[month] = monthAverage / annualAverage
+ * Falls back to typical UK seasonal pattern if no real data.
+ */
+function buildSeasonalMultipliers(
+  comps: ReportComp[],
+  monthlyField: 'booked_daily_rate_ltm_monthly' | 'occupancy_rate_ltm_monthly',
+): number[] {
+  const monthTotals: number[] = new Array(12).fill(0);
+  const monthCounts: number[] = new Array(12).fill(0);
+
+  for (const comp of comps) {
+    const monthlyData = comp[monthlyField];
+    if (!monthlyData) continue;
+    for (const [key, value] of Object.entries(monthlyData)) {
+      const monthPart = key.split('-')[1];
+      if (!monthPart) continue;
+      const monthIndex = parseInt(monthPart, 10) - 1;
+      if (monthIndex >= 0 && monthIndex < 12 && typeof value === 'number' && value > 0) {
+        monthTotals[monthIndex] += value;
+        monthCounts[monthIndex]++;
+      }
+    }
+  }
+
+  const monthAverages = monthTotals.map((total, i) =>
+    monthCounts[i] > 0 ? total / monthCounts[i] : 0,
+  );
+
+  const validMonths = monthAverages.filter(v => v > 0);
+  if (validMonths.length < 6) {
+    // Not enough real data, use default UK seasonal pattern
+    return [0.82, 0.85, 0.95, 1.00, 1.08, 1.18, 1.25, 1.22, 1.10, 0.98, 0.88, 0.80];
+  }
+
+  const annualAverage = validMonths.reduce((s, v) => s + v, 0) / validMonths.length;
+  return monthAverages.map(v => v > 0 ? v / annualAverage : 1.0);
 }
 
 /**
