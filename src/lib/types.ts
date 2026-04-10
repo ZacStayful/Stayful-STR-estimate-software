@@ -22,6 +22,20 @@ export interface ShortLetComparable {
   daysAvailable: number;
 }
 
+// ─── V2 Scenarios (worst/base/best) ─────────────────────────────
+export interface Scenario {
+  annualRevenue: number;
+  averageDailyRate: number;
+  occupancyPercent: number;
+  monthly: { label: string; adr: number; occupancy: number; revenue: number }[];
+}
+
+export interface Scenarios {
+  worst: Scenario;
+  base: Scenario;
+  best: Scenario;
+}
+
 export interface ShortLetData {
   annualRevenue: number;
   monthlyRevenue: [number, number, number, number, number, number, number, number, number, number, number, number];
@@ -29,6 +43,7 @@ export interface ShortLetData {
   averageDailyRate: number;
   activeListings: number;
   comparables: ShortLetComparable[];
+  scenarios?: Scenarios; // V2: optional until fully rolled out
 }
 
 // ─── Long-Term Let Data ──────────────────────────────────────────

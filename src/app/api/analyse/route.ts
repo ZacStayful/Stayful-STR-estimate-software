@@ -44,7 +44,15 @@ export async function POST(request: Request) {
   const forwarded = request.headers.get('x-forwarded-for');
   const ip = forwarded?.split(',')[0]?.trim() || 'unknown';
 
-  if (isRateLimited(ip)) {
+  // Calibration bypass: dev-mode only, requires header with shared secret from .env
+  const calibrationHeader = request.headers.get('x-calibration-bypass');
+  const calibrationSecret = process.env.CALIBRATION_BYPASS_SECRET;
+  const isCalibrationBypass =
+    process.env.NODE_ENV !== 'production' &&
+    calibrationSecret &&
+    calibrationHeader === calibrationSecret;
+
+  if (!isCalibrationBypass && isRateLimited(ip)) {
     return Response.json(
       { error: 'Too many requests. Please wait a minute before trying again.' },
       { status: 429 },
