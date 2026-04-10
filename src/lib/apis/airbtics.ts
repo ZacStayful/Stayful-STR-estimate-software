@@ -104,7 +104,7 @@ export async function getShortLetData(
 
   // ── FALLBACK: markets/summary + metrics + bounds (~$0.46) ──
   try {
-    return await getShortLetDataFromMarkets(postcode, bedrooms, lat, lng, apiKey, options?.finishQuality);
+    return await getShortLetDataFromMarkets(postcode, bedrooms, guests, lat, lng, apiKey, options?.finishQuality);
   } catch (err) {
     console.log('Airbtics markets fallback also failed, using estimates:', err);
     return { data: generateMarketEstimate(bedrooms), quality: lowQuality };
@@ -504,6 +504,7 @@ function buildSeasonalMultipliers(
 async function getShortLetDataFromMarkets(
   postcode: string,
   bedrooms: number,
+  guests: number,
   lat: number,
   lng: number,
   apiKey: string,
@@ -571,11 +572,17 @@ async function getShortLetDataFromMarkets(
 
   // Apply finish quality multiplier (same as report/all path)
   const qualityMultiplier = FINISH_MULTIPLIERS[finishQuality || 'high'] ?? 1.15;
-  const rawRevenue = summaryRevenue || monthlyRevenue.reduce((a, b) => a + b, 0);
-  let annualRevenue = Math.round(rawRevenue * qualityMultiplier);
-  let derivedAdr = Math.round((summaryAdr || Math.round(rawRevenue / 12 / ((avgOccupancy || 0.65) * 30))) * qualityMultiplier);
 
-  monthlyRevenue = monthlyRevenue.map(m => Math.round(m * qualityMultiplier));
+  // Apply guest-count adjustment: market data is for median guest count (~4)
+  // Larger properties (more guests) command proportionally more revenue
+  // Scale linearly: +12% per guest above 4 (capped at 1.5x for 8+ guests)
+  const guestAdjustment = Math.min(1 + (Math.max(0, guests - 4) * 0.12), 1.5);
+
+  const rawRevenue = summaryRevenue || monthlyRevenue.reduce((a, b) => a + b, 0);
+  let annualRevenue = Math.round(rawRevenue * qualityMultiplier * guestAdjustment);
+  let derivedAdr = Math.round((summaryAdr || Math.round(rawRevenue / 12 / ((avgOccupancy || 0.65) * 30))) * qualityMultiplier * guestAdjustment);
+
+  monthlyRevenue = monthlyRevenue.map(m => Math.round(m * qualityMultiplier * guestAdjustment));
 
   // ── Rule of 12: Try to find 12 comparables, broadening search if needed ──
   let comparables: ShortLetComparable[] = [];
@@ -585,12 +592,12 @@ async function getShortLetDataFromMarkets(
 
   // First attempt uses the initial bounds result
   if (listingsResult) {
-    const result = extractComparables(listingsResult, bedrooms, lat, lng);
+    const result = extractComparables(listingsResult, guests, lat, lng);
     comparables = result.comparables;
     activeListings = result.totalMatches;
   }
 
-  // If we have fewer than 12, try broader radii
+  // If we have fewer than 12, try broader radii (PMI progressive expansion)
   if (comparables.length < TARGET_COMPARABLES) {
     for (let i = 1; i < SEARCH_RADII_KM.length; i++) {
       const radiusKm = SEARCH_RADII_KM[i];
@@ -600,7 +607,7 @@ async function getShortLetDataFromMarkets(
 
       const broaderResult = await fetchNearbyListings(lat, lng, apiKey, radiusKm);
       if (broaderResult) {
-        const result = extractComparables(broaderResult, bedrooms, lat, lng);
+        const result = extractComparables(broaderResult, guests, lat, lng);
         comparables = result.comparables;
         activeListings = result.totalMatches;
         if (comparables.length >= TARGET_COMPARABLES) break;
@@ -643,12 +650,13 @@ async function getShortLetDataFromMarkets(
     qualityLevel = 'high';
   } else if (comparablesFound >= 6) {
     qualityLevel = 'moderate';
-    disclaimer = `Only ${comparablesFound} comparable ${bedrooms}-bedroom properties were found within ${searchRadiusKm}km. Data accuracy may be slightly reduced. This could indicate a unique property type for the area — uniqueness is often advantageous for short-term letting.`;
+    disclaimer = `${comparablesFound} comparable properties (accommodating ~${guests} guests) were found within ${searchRadiusKm}km after expanding the search. Data accuracy may be slightly reduced. This could indicate a unique property type for the area, which is often advantageous for short-term letting.`;
+  } else if (comparablesFound > 0) {
+    qualityLevel = 'low';
+    disclaimer = `Only ${comparablesFound} comparable properties (accommodating ~${guests} guests) were found even after broadening the search to ${searchRadiusKm}km. This area may be rural or the property type may be unique, both of which can be advantageous for short-term letting due to low competition. Book a web meeting with Stayful for a detailed, personalised assessment.`;
   } else {
     qualityLevel = 'low';
-    disclaimer = comparablesFound > 0
-      ? `Only ${comparablesFound} comparable ${bedrooms}-bedroom properties were found even after broadening the search to ${searchRadiusKm}km. This area may be rural or the property type may be unique — both can be highly advantageous for short-term letting as competition is low. We recommend booking a web meeting with Stayful for a more detailed, personalised assessment.`
-      : `No comparable ${bedrooms}-bedroom properties were found nearby. This is a strong indicator of either a rural location or a highly unique property — both can perform exceptionally well for short-term letting due to low competition. Market-level estimates have been used. Book a web meeting with Stayful for accurate, personalised revenue projections.`;
+    disclaimer = `Projections are based on ${bedrooms}-bedroom market median data for the area, adjusted for guest capacity and property specification. Real-time comparable listings were not available during this lookup. Book a web meeting with Stayful for accurate, personalised revenue projections based on your specific location.`;
   }
 
   const quality: DataQuality = {
@@ -706,17 +714,19 @@ interface BoundsResponse {
  */
 function extractComparables(
   result: BoundsResponse,
-  bedrooms: number,
+  guests: number,
   lat: number,
   lng: number,
 ): { comparables: ShortLetComparable[]; totalMatches: number } {
-  const bedroomMatches = result.listings.filter(
+  // Filter by GUESTS (PMI behaviour) not bedrooms
+  // Allow ±2 guest flexibility to find similar-sized properties
+  const guestMatches = result.listings.filter(
     (l: AirbticsListing) =>
-      l.bedrooms === bedrooms &&
-      l.accommodates >= bedrooms * 2, // Filter out bad operators (e.g. 3-bed listing only accommodating 3 guests)
+      Math.abs((l.accommodates ?? 0) - guests) <= 2 &&
+      (l.annual_revenue_ltm ?? 0) > 0, // Filter zero-revenue listings
   );
 
-  const withDistance = bedroomMatches.map((l: AirbticsListing) => ({
+  const withDistance = guestMatches.map((l: AirbticsListing) => ({
     ...l,
     distance: haversineKm(lat, lng, l.latitude, l.longitude),
   }));
@@ -744,7 +754,7 @@ function extractComparables(
     };
   });
 
-  return { comparables, totalMatches: bedroomMatches.length };
+  return { comparables, totalMatches: guestMatches.length };
 }
 
 /**
