@@ -104,7 +104,7 @@ export async function getShortLetData(
 
   // ── FALLBACK: markets/summary + metrics + bounds (~$0.46) ──
   try {
-    return await getShortLetDataFromMarkets(postcode, bedrooms, lat, lng, apiKey);
+    return await getShortLetDataFromMarkets(postcode, bedrooms, lat, lng, apiKey, options?.finishQuality);
   } catch (err) {
     console.log('Airbtics markets fallback also failed, using estimates:', err);
     return { data: generateMarketEstimate(bedrooms), quality: lowQuality };
@@ -507,6 +507,7 @@ async function getShortLetDataFromMarkets(
   lat: number,
   lng: number,
   apiKey: string,
+  finishQuality?: string,
 ): Promise<{ data: ShortLetData; quality: DataQuality }> {
   const lowQuality: DataQuality = {
     comparablesFound: 0, comparablesTarget: TARGET_COMPARABLES,
@@ -568,14 +569,13 @@ async function getShortLetDataFromMarkets(
     avgOccupancy = summaryOccupancy || 0.65;
   }
 
-  // Apply "good operator" uplift — market data represents median (p50) which includes
-  // bad operators. Stayful consistently performs at p60-p65, roughly 25% above median.
+  // Apply finish quality multiplier (same as report/all path)
+  const qualityMultiplier = FINISH_MULTIPLIERS[finishQuality || 'high'] ?? 1.15;
   const rawRevenue = summaryRevenue || monthlyRevenue.reduce((a, b) => a + b, 0);
-  let annualRevenue = Math.round(rawRevenue * GOOD_OPERATOR_UPLIFT);
-  let derivedAdr = Math.round((summaryAdr || Math.round(rawRevenue / 12 / ((avgOccupancy || 0.65) * 30))) * GOOD_OPERATOR_UPLIFT);
+  let annualRevenue = Math.round(rawRevenue * qualityMultiplier);
+  let derivedAdr = Math.round((summaryAdr || Math.round(rawRevenue / 12 / ((avgOccupancy || 0.65) * 30))) * qualityMultiplier);
 
-  // Also uplift monthly figures
-  monthlyRevenue = monthlyRevenue.map(m => Math.round(m * GOOD_OPERATOR_UPLIFT));
+  monthlyRevenue = monthlyRevenue.map(m => Math.round(m * qualityMultiplier));
 
   // ── Rule of 12: Try to find 12 comparables, broadening search if needed ──
   let comparables: ShortLetComparable[] = [];
