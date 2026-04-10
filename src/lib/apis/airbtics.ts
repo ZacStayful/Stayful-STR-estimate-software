@@ -206,37 +206,45 @@ async function fetchReportAll(
   }
 
   // Step 1: Create report ($0.50)
+  const reportBody = {
+    latitude: lat,
+    longitude: lng,
+    bedrooms,
+    bathrooms,
+    accommodates,
+    currency: 'GBP',
+    country_code: 'GB',
+  };
+  console.log('[DEBUG] report/all POST body:', JSON.stringify(reportBody));
+
   const createRes = await fetch(`${BASE_URL}/report/all`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'x-api-key': apiKey,
     },
-    body: JSON.stringify({
-      latitude: lat,
-      longitude: lng,
-      bedrooms,
-      bathrooms,
-      accommodates,
-      currency: 'GBP',
-      country_code: 'GB',
-    }),
+    body: JSON.stringify(reportBody),
+    cache: 'no-store',
   });
 
+  console.log(`[DEBUG] report/all HTTP status: ${createRes.status}`);
+
   if (!createRes.ok) {
-    console.error(`Airbtics report/all POST returned HTTP ${createRes.status}`);
+    console.error(`[DEBUG] Airbtics report/all POST failed HTTP ${createRes.status}`);
     return null;
   }
 
   const createData = await createRes.json();
+  console.log('[DEBUG] report/all raw response:', JSON.stringify(createData).slice(0, 2000));
+
   if (createData.message === 'insufficient_credits') {
-    console.log('Airbtics: insufficient credits for report/all');
+    console.log('[DEBUG] Airbtics: insufficient_credits for report/all — NO data returned');
     return null;
   }
 
   const reportId = createData?.message?.report_id;
   if (!reportId) {
-    console.error('Airbtics report/all: no report_id in response', createData);
+    console.error('[DEBUG] Airbtics report/all: no report_id in response', createData);
     return null;
   }
 
@@ -252,6 +260,7 @@ async function fetchReportAll(
 
     const readRes = await fetch(`${BASE_URL}/report?id=${reportId}`, {
       headers: { 'x-api-key': apiKey },
+      cache: 'no-store',
     });
 
     if (!readRes.ok) {
@@ -260,16 +269,21 @@ async function fetchReportAll(
     }
 
     const readData = await readRes.json();
+    console.log('[DEBUG] report/read raw response:', JSON.stringify(readData).slice(0, 1500));
     const report = readData?.message ?? readData;
 
     if ((report?.comps_status === 'success' || (Array.isArray(report?.comps) && report.comps.length > 0)) && Array.isArray(report.comps)) {
+      console.log(`[DEBUG] report/all SUCCESS: comps_status="${report?.comps_status}", comps_count=${report.comps.length}`);
+      if (report.comps.length > 0) {
+        console.log('[DEBUG] First comp fields:', Object.keys(report.comps[0]).join(','));
+      }
       return report as ReportAllResult;
     }
 
-    console.log(`Airbtics report/all: comps_status="${report?.comps_status}", retrying...`);
+    console.log(`[DEBUG] report/all: comps_status="${report?.comps_status}", comps_length=${Array.isArray(report?.comps) ? report.comps.length : 'N/A'}, retrying...`);
   }
 
-  console.error('Airbtics report/all: timed out waiting for comps_status=success');
+  console.error('[DEBUG] Airbtics report/all: TIMED OUT waiting for comps');
   return null;
 }
 
@@ -279,6 +293,7 @@ async function fetchReportAll(
 async function readReport(reportId: string, apiKey: string): Promise<ReportAllResult | null> {
   const res = await fetch(`${BASE_URL}/report?id=${reportId}`, {
     headers: { 'x-api-key': apiKey },
+    cache: 'no-store',
   });
   if (!res.ok) return null;
   const data = await res.json();
@@ -810,6 +825,10 @@ async function fetchNearbyListings(
     currency: 'GBP',
   };
 
+  const radiusMetres = Math.round(radiusKm * 1000);
+  console.log(`[DEBUG] listings/search/bounds radius: ${radiusKm}km (${radiusMetres}m)`);
+  console.log('[DEBUG] listings/search/bounds body:', JSON.stringify(body));
+
   const response = await fetch(`${BASE_URL}/listings/search/bounds`, {
     method: 'POST',
     headers: {
@@ -817,17 +836,21 @@ async function fetchNearbyListings(
       'x-api-key': apiKey,
     },
     body: JSON.stringify(body),
+    cache: 'no-store',
   });
 
+  console.log(`[DEBUG] listings/search/bounds HTTP status: ${response.status}`);
+
   if (!response.ok) {
-    console.error(`Airbtics bounds search returned HTTP ${response.status}`);
+    console.error(`[DEBUG] Airbtics bounds search failed HTTP ${response.status}`);
     return null;
   }
 
   const data = await response.json();
+  console.log('[DEBUG] Airbtics raw response:', JSON.stringify(data).slice(0, 2000));
 
   if (data.message === 'insufficient_credits') {
-    console.log('Airbtics: insufficient credits for listings/search/bounds');
+    console.log('[DEBUG] Airbtics: insufficient_credits for listings/search/bounds — returning null');
     return null;
   }
 
@@ -842,8 +865,13 @@ async function fetchNearbyListings(
         : data.message.listings;
       listings = Array.isArray(parsed) ? parsed : [];
     } catch (e) {
-      console.error('Airbtics: failed to parse listings JSON:', e);
+      console.error('[DEBUG] Airbtics: failed to parse listings JSON:', e);
     }
+  }
+
+  console.log(`[DEBUG] Listings found: ${listings.length} (total_count: ${totalCount}, radius: ${radiusMetres}m)`);
+  if (listings.length > 0) {
+    console.log('[DEBUG] First listing fields:', Object.keys(listings[0]).join(','));
   }
 
   return { totalCount, listings };
@@ -872,14 +900,21 @@ async function fetchMarketSummary(
   url.searchParams.set('bedrooms', String(bedrooms));
   url.searchParams.set('currency', 'GBP');
 
+  console.log(`[DEBUG] markets/summary URL: ${url.toString()}`);
+
   const response = await fetch(url.toString(), {
     headers: { 'x-api-key': apiKey },
+    cache: 'no-store',
   });
 
+  console.log(`[DEBUG] markets/summary HTTP status: ${response.status}`);
   if (!response.ok) return null;
 
   const data = await response.json();
+  console.log('[DEBUG] Market summary raw:', JSON.stringify(data).slice(0, 1000));
+
   if (data.message === 'insufficient_credits' || typeof data.message !== 'object') {
+    console.log(`[DEBUG] markets/summary rejected: ${JSON.stringify(data.message)}`);
     return null;
   }
 
@@ -955,6 +990,7 @@ async function findMarketId(postcode: string, apiKey: string): Promise<number | 
 
   const response = await fetch(url.toString(), {
     headers: { 'x-api-key': apiKey },
+    cache: 'no-store',
   });
 
   if (!response.ok) {
@@ -995,16 +1031,22 @@ async function fetchMetric(
   url.searchParams.set('bedrooms', String(bedrooms));
   if (currency) url.searchParams.set('currency', currency);
 
+  console.log(`[DEBUG] markets/metrics/${metric} URL: ${url.toString()}`);
+
   const response = await fetch(url.toString(), {
     headers: { 'x-api-key': apiKey },
+    cache: 'no-store',
   });
+
+  console.log(`[DEBUG] markets/metrics/${metric} HTTP status: ${response.status}`);
 
   if (!response.ok) return [];
 
   const data = await response.json();
+  console.log(`[DEBUG] Market monthly (${metric}) raw:`, JSON.stringify(data).slice(0, 1000));
 
   if (data.message === 'insufficient_credits') {
-    console.log(`Airbtics: insufficient credits for metrics/${metric}`);
+    console.log(`[DEBUG] markets/metrics/${metric}: insufficient_credits`);
     return [];
   }
 
