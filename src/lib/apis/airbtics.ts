@@ -17,7 +17,15 @@
  *   4. listings/search/bounds — nearby comparables ($0.05)
  */
 
-import type { ShortLetData, ShortLetComparable, DataQuality, Scenarios } from '../types';
+import type {
+  ShortLetData,
+  ShortLetComparable,
+  DataQuality,
+  Scenarios,
+  LocationClass,
+  AdrMultipliers,
+  AnnualisationMeta,
+} from '../types';
 
 // ─── V2 Filters & Tiering ───────────────────────────────────────
 // Non-residential types: deprioritised but not excluded
@@ -29,9 +37,105 @@ const NON_RESIDENTIAL_TYPES = [
 // UK lat/lng bounds — properties outside this box are pollutants
 const UK_BOUNDS = { minLat: 49, maxLat: 61, minLng: -8, maxLng: 2 };
 
-// V2: Outlier ADR trimming threshold
+// V2: Outlier ADR trimming threshold (retained for wasADRTrimmed meta reporting only)
 const ADR_OUTLIER_SPREAD_THRESHOLD = 2.5;
 const ADR_OUTLIER_TRIM_PERCENT = 0.15;
+
+// ─── V3 Location classification ─────────────────────────────────
+// UK major-city outward-code prefixes → treated as urban
+const URBAN_POSTCODE_PREFIXES = new Set<string>([
+  // Greater London
+  'E', 'EC', 'N', 'NW', 'SE', 'SW', 'W', 'WC',
+  'BR', 'CR', 'DA', 'EN', 'HA', 'IG', 'KT', 'RM', 'SM', 'TW', 'UB', 'WD',
+  // Core cities
+  'B', 'M', 'LS', 'S', 'L', 'BS', 'EH', 'G', 'NE', 'NG', 'CF', 'LE', 'CV', 'BD',
+]);
+
+// UK coastal outward-code prefixes
+const COASTAL_POSTCODE_PREFIXES = new Set<string>([
+  'TR', 'PL', 'EX', 'TQ', 'BH', 'BN', 'CT', 'TN', 'PO', 'SO', 'SA', 'LL',
+  'PH', 'AB', 'KW', 'TD', 'DG', 'PA', 'KA', 'ZE', 'HS', 'IV',
+]);
+
+// Default radius steps (km) per location class — rural properties start wider
+const RADIUS_BY_CLASS: Record<LocationClass, number[]> = {
+  urban:          [0.4, 0.8, 1.6],
+  suburban:       [0.8, 1.6, 3.2],
+  rural_village:  [4.0, 8.0, 16.0],
+  rural_isolated: [8.0, 16.0, 32.0],
+  coastal:        [6.0, 12.0, 20.0],
+};
+
+// UK STR seasonal fallback index (sums to 12.00) — blended market data
+const UK_DEFAULT_SEASONAL_INDEX = [
+  0.77, 0.70, 0.82, 0.90, 0.98, 1.21,
+  1.31, 1.25, 1.09, 0.92, 0.75, 1.30,
+];
+
+// ─── V3 ADR multiplier tables ───────────────────────────────────
+const LOCATION_ADR_MULT: Record<LocationClass, number> = {
+  urban:          1.00,
+  suburban:       1.05,
+  rural_village:  1.22,
+  rural_isolated: 1.32,
+  coastal:        1.28,
+};
+
+const PROPERTY_TYPE_ADR_MULT: Record<string, number> = {
+  flat:            1.00,
+  apartment:       1.00,
+  terraced:        1.05,
+  terraced_house:  1.05,
+  semi_detached:   1.08,
+  'semi-detached_house': 1.08,
+  detached:        1.14,
+  detached_house:  1.14,
+  bungalow:        1.10,
+  cottage:         1.26,
+  farmhouse:       1.32,
+  barn_conversion: 1.38,
+  unique:          1.45,
+};
+
+const OUTDOOR_ADR_MULT: Record<string, number> = {
+  none:            1.00,
+  small_garden:    1.08,
+  balcony:         1.04,
+  balcony_terrace: 1.04,
+  garden:          1.08,
+  large_garden:    1.14,
+  hot_tub:         1.24,
+  grounds:         1.20,
+  large_grounds:   1.20,
+  roof_terrace:    1.06,
+};
+
+const CONDITION_ADR_MULT: Record<string, number> = {
+  below_average: 0.80,
+  average:       1.00,
+  good:          1.12,
+  high:          1.24,
+  very_high:     1.38,
+  luxury:        1.38,
+};
+
+// Ramp-up uplift by review count (applied to annualised revenue per comp)
+const RAMP_UPLIFT_BY_REVIEWS: { max: number; uplift: number }[] = [
+  { max: 4,         uplift: 0.30 },
+  { max: 9,         uplift: 0.18 },
+  { max: 19,        uplift: 0.08 },
+  { max: 49,        uplift: 0.03 },
+  { max: Infinity,  uplift: 0.00 },
+];
+
+// Comp weight multiplier by review count (stacks with similarity weight)
+const REVIEW_WEIGHT_MULT: { max: number; weight: number }[] = [
+  { max: 4,         weight: 0.40 },
+  { max: 9,         weight: 0.60 },
+  { max: 19,        weight: 0.80 },
+  { max: 49,        weight: 0.95 },
+  { max: Infinity,  weight: 1.00 },
+];
 
 const BASE_URL = process.env.AIRBTICS_BASE_URL || 'https://crap0y5bx5.execute-api.us-east-2.amazonaws.com/prod';
 
@@ -83,13 +187,23 @@ function haversineKm(
   return Math.round(R * c * 100) / 100;
 }
 
+export interface ShortLetOptions {
+  bathrooms?: number;
+  hasParking?: boolean;
+  parkingSpaces?: number;      // V3: stacked ADR multiplier input
+  finishQuality?: string;
+  outdoorSpace?: string;       // V3: stacked ADR multiplier input
+  propertyType?: string;       // V3: stacked ADR multiplier input
+  specialFeatures?: string[];  // V3: e.g. ['sea_views','hot_tub','near_events_venue']
+}
+
 export async function getShortLetData(
   postcode: string,
   bedrooms: number,
   guests: number,
   lat: number,
   lng: number,
-  options?: { bathrooms?: number; hasParking?: boolean; finishQuality?: string },
+  options?: ShortLetOptions,
 ): Promise<{ data: ShortLetData; quality: DataQuality }> {
   const apiKey = process.env.AIRBTICS_API_KEY;
 
@@ -98,6 +212,10 @@ export async function getShortLetData(
     searchRadiusKm: 0, searchBroadened: false, level: 'low',
     disclaimer: 'Limited data available for this area. This property may be in a unique or rural location, which can be advantageous for short-term letting. Book a web meeting with Stayful for a more detailed, personalised assessment.',
   };
+
+  // V3 — Classify location once (used by pipeline + dynamic radius steps)
+  const locationClass = classifyLocation(postcode);
+  console.log(`[V3] locationClass=${locationClass} for postcode ${postcode}`);
 
   if (!apiKey) {
     console.log('AIRBTICS_API_KEY not set, using market estimates');
@@ -110,7 +228,7 @@ export async function getShortLetData(
     const reportResult = await fetchReportAll(lat, lng, bedrooms, guests, apiKey, postcode, options?.bathrooms);
     if (reportResult) {
       console.log(`[Airbtics] report/all returned ${reportResult.comps.length} raw comps`);
-      reportAllResult = buildDataFromReportComps(reportResult, bedrooms, guests, lat, lng, options?.hasParking, options?.finishQuality);
+      reportAllResult = buildDataFromReportComps(reportResult, bedrooms, guests, lat, lng, locationClass, options);
 
       // If we got 12+ quality comps, use the report result directly
       if (reportAllResult.quality.comparablesFound >= TARGET_COMPARABLES) {
@@ -178,6 +296,10 @@ interface ReportComp {
   revenue_ltm_monthly: Record<string, number>; // "YYYY-MM" → revenue
   booked_daily_rate_ltm_monthly: Record<string, number>;
   occupancy_rate_ltm_monthly: Record<string, number>;
+  // V3: listing maturity date — present on bounds listings, may or may not be on report/all
+  added_on?: string;
+  created_date?: string;
+  listed_date?: string;
 }
 
 // ─── V2 Helper functions ────────────────────────────────────────
@@ -219,28 +341,6 @@ function filterByGuestsTiered(comps: ReportComp[], targetGuests: number): Report
     if (tolerance === 3) return filtered.length > 0 ? filtered : comps;
   }
   return comps;
-}
-
-/** V2 Step 5a: Outlier ADR trimming — only when spread > 2.5x */
-function calculateBaseADR(comps: ReportComp[]): number {
-  const adrs = comps
-    .map(c => c.avg_booked_daily_rate_ltm || 0)
-    .filter(v => v > 0)
-    .sort((a, b) => a - b);
-
-  if (adrs.length === 0) return 0;
-
-  const minADR = adrs[0];
-  const maxADR = adrs[adrs.length - 1];
-  const shouldTrim = adrs.length >= 6 && (maxADR / minADR) > ADR_OUTLIER_SPREAD_THRESHOLD;
-
-  if (shouldTrim) {
-    const trimCount = Math.floor(adrs.length * ADR_OUTLIER_TRIM_PERCENT);
-    const trimmed = adrs.slice(trimCount, adrs.length - trimCount);
-    console.log(`[V2] ADR trimmed: removed ${trimCount*2} outliers (spread was ${(maxADR/minADR).toFixed(1)}x)`);
-    return calculateMedian(trimmed);
-  }
-  return calculateMedian(adrs);
 }
 
 /** Whether ADR trimming was applied (for meta reporting) */
@@ -409,26 +509,383 @@ const FINISH_MULTIPLIERS: Record<string, number> = {
 /** Days in each calendar month (non-leap year). */
 const DAYS_IN_MONTH = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
 
+// ═══════════════════════════════════════════════════════════════════
+// V3 HELPERS
+// ═══════════════════════════════════════════════════════════════════
+
+/** V3 — Classify location from UK postcode outward code. Defaults to 'suburban'. */
+function classifyLocation(postcode: string | undefined): LocationClass {
+  if (!postcode) return 'suburban';
+  // Extract outward code letters (e.g. "SW1A 1AA" → "SW")
+  const match = postcode.toUpperCase().match(/^([A-Z]{1,2})/);
+  if (!match) return 'suburban';
+  const prefix = match[1];
+  if (URBAN_POSTCODE_PREFIXES.has(prefix)) return 'urban';
+  if (COASTAL_POSTCODE_PREFIXES.has(prefix)) return 'coastal';
+  // Unknown prefix = likely rural/smaller town — be conservative with 'rural_village'
+  // Urban prefixes cover all major cities so anything else is probably rural/smalltown
+  return 'rural_village';
+}
+
+/** V3 — Parse listing date field (supports multiple field names from Airbtics). */
+function parseCompDate(comp: ReportComp): Date | null {
+  const raw = comp.added_on || comp.created_date || comp.listed_date;
+  if (!raw) return null;
+  const d = new Date(raw);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+/** V3 — Month diff (integer months between two dates, from ≤ to). */
+function monthDiffMonths(from: Date, to: Date): number {
+  return (to.getFullYear() - from.getFullYear()) * 12
+       + (to.getMonth() - from.getMonth());
+}
+
+/** V3 — Ramp-up revenue uplift based on review count (for new/developing listings). */
+function getRampUplift(reviewCount: number | null | undefined): number {
+  if (reviewCount == null) return 0.18; // unknown — assume developing
+  for (const tier of RAMP_UPLIFT_BY_REVIEWS) {
+    if (reviewCount <= tier.max) return tier.uplift;
+  }
+  return 0;
+}
+
+/** V3 — Per-comp weight multiplier from review count. */
+function getReviewWeight(reviewCount: number | null | undefined): number {
+  if (reviewCount == null) return 0.60;
+  for (const tier of REVIEW_WEIGHT_MULT) {
+    if (reviewCount <= tier.max) return tier.weight;
+  }
+  return 1.0;
+}
+
+/** V3 — Convert our monthly-revenue dict ("YYYY-MM"→revenue) to a 12-element array by calendar month. */
+function revenueDictToArray(dict: Record<string, number> | undefined): number[] | null {
+  if (!dict) return null;
+  const out: number[] = new Array(12).fill(0);
+  const counts: number[] = new Array(12).fill(0);
+  for (const [key, value] of Object.entries(dict)) {
+    const monthPart = key.split('-')[1];
+    if (!monthPart) continue;
+    const mi = parseInt(monthPart, 10) - 1;
+    if (mi >= 0 && mi < 12 && typeof value === 'number' && value > 0) {
+      out[mi] += value;
+      counts[mi] += 1;
+    }
+  }
+  for (let i = 0; i < 12; i++) {
+    if (counts[i] > 0) out[i] /= counts[i];
+  }
+  // If >80% of months are zero, treat as missing
+  const nonZero = out.filter(v => v > 0).length;
+  if (nonZero < 3) return null;
+  return out;
+}
+
+/**
+ * V3 — Build a blended 12-point seasonal index.
+ * Priority: 50% mature comps monthly average + 50% market (from first comp's dict) + fallback to UK default.
+ */
+function buildSeasonalIndex(comps: ReportComp[]): { index: number[]; source: string } {
+  const now = new Date();
+  const matureComps = comps.filter(c => {
+    const d = parseCompDate(c);
+    return d && monthDiffMonths(d, now) >= 12;
+  });
+
+  // Build mature comp curve
+  let matureIndex: number[] | null = null;
+  if (matureComps.length >= 3) {
+    const totals = new Array(12).fill(0);
+    const counts = new Array(12).fill(0);
+    for (const comp of matureComps) {
+      const arr = revenueDictToArray(comp.revenue_ltm_monthly);
+      if (!arr) continue;
+      for (let i = 0; i < 12; i++) {
+        if (arr[i] > 0) {
+          totals[i] += arr[i];
+          counts[i] += 1;
+        }
+      }
+    }
+    const avgs = totals.map((t, i) => counts[i] > 0 ? t / counts[i] : 0);
+    const avgTotal = avgs.reduce((s, v) => s + v, 0);
+    if (avgTotal > 0 && avgs.filter(v => v > 0).length >= 6) {
+      matureIndex = avgs.map(v => (v / avgTotal) * 12);
+    }
+  }
+
+  // Build market curve from any comp with monthly occupancy data (used as proxy)
+  let marketIndex: number[] | null = null;
+  const totals2 = new Array(12).fill(0);
+  const counts2 = new Array(12).fill(0);
+  for (const comp of comps) {
+    const arr = revenueDictToArray(comp.occupancy_rate_ltm_monthly);
+    if (!arr) continue;
+    for (let i = 0; i < 12; i++) {
+      if (arr[i] > 0) {
+        totals2[i] += arr[i];
+        counts2[i] += 1;
+      }
+    }
+  }
+  const marketAvgs = totals2.map((t, i) => counts2[i] > 0 ? t / counts2[i] : 0);
+  const marketTotal = marketAvgs.reduce((s, v) => s + v, 0);
+  if (marketTotal > 0 && marketAvgs.filter(v => v > 0).length >= 6) {
+    marketIndex = marketAvgs.map(v => (v / marketTotal) * 12);
+  }
+
+  if (matureIndex && marketIndex) {
+    return {
+      index: matureIndex.map((v, i) => v * 0.5 + marketIndex![i] * 0.5),
+      source: 'mature_comps + airbtics_market',
+    };
+  }
+  if (matureIndex) return { index: matureIndex, source: 'mature_comps' };
+  if (marketIndex) return { index: marketIndex, source: 'airbtics_market' };
+  return { index: [...UK_DEFAULT_SEASONAL_INDEX], source: 'uk_default_curve' };
+}
+
+/** V3 per-comp enrichment from annualiseComps. */
+interface CompEnrichment {
+  rawRevenue: number;
+  annualisedRevenue: number;
+  annualised: boolean;
+  monthsLive: number | null;
+  rampUplift: number;
+  reviewWeight: number;
+  seasonalCoverage: number | null;
+}
+
+/**
+ * V3 — For each comp:
+ *   1. Determine listing age from added_on/created_date
+ *   2. If < 12 months: correct revenue using seasonal coverage fraction
+ *   3. Apply ramp-up uplift based on review count
+ *   4. Store per-comp review weight
+ */
+function annualiseComps(
+  comps: ReportComp[],
+  seasonalIndex: number[],
+): Map<string, CompEnrichment> {
+  const now = new Date();
+  const indexTotal = seasonalIndex.reduce((s, v) => s + v, 0) || 12;
+  const out = new Map<string, CompEnrichment>();
+
+  for (const comp of comps) {
+    const rawRevenue = comp.annual_revenue_ltm ?? 0;
+    const reviews = comp.visible_review_count ?? null;
+    const rampUplift = getRampUplift(reviews);
+    const reviewWeight = getReviewWeight(reviews);
+    const created = parseCompDate(comp);
+
+    if (!created) {
+      // No date — treat as mature, apply ramp-up uplift only
+      out.set(comp.listingID, {
+        rawRevenue,
+        annualisedRevenue: rawRevenue * (1 + rampUplift),
+        annualised: false,
+        monthsLive: null,
+        rampUplift,
+        reviewWeight,
+        seasonalCoverage: null,
+      });
+      continue;
+    }
+
+    const ageMonths = monthDiffMonths(created, now);
+    if (ageMonths >= 12) {
+      out.set(comp.listingID, {
+        rawRevenue,
+        annualisedRevenue: rawRevenue * (1 + rampUplift),
+        annualised: false,
+        monthsLive: ageMonths,
+        rampUplift,
+        reviewWeight,
+        seasonalCoverage: null,
+      });
+      continue;
+    }
+
+    // Immature — seasonal annualisation
+    const activeMonths: number[] = [];
+    for (let i = 0; i < ageMonths; i++) {
+      const d = new Date(created.getFullYear(), created.getMonth() + i, 1);
+      activeMonths.push(d.getMonth());
+    }
+    const activeCoverage = activeMonths.reduce(
+      (s, m) => s + (seasonalIndex[m] || 1),
+      0,
+    );
+    const seasonalCoverage = Math.max(activeCoverage / indexTotal, 0.05);
+    const annualisedRaw = rawRevenue / seasonalCoverage;
+    out.set(comp.listingID, {
+      rawRevenue,
+      annualisedRevenue: annualisedRaw * (1 + rampUplift),
+      annualised: true,
+      monthsLive: ageMonths,
+      rampUplift,
+      reviewWeight,
+      seasonalCoverage,
+    });
+  }
+  return out;
+}
+
+/** V3 — Per-comp similarity weight: distance × bedroom match × type × review weight. */
+function compSimilarityWeight(
+  comp: ReportComp,
+  targetBeds: number | null,
+  lat: number,
+  lng: number,
+  reviewWeight: number,
+): number {
+  // Distance score — inverse (closer = heavier)
+  const distMi = haversineKm(lat, lng, comp.latitude, comp.longitude) * 0.621371;
+  const distScore = 1 / (1 + distMi);
+
+  // Bedroom match
+  const compBeds = typeof comp.bedrooms === 'string'
+    ? parseInt(comp.bedrooms, 10)
+    : (comp.bedrooms ?? 0);
+  const bedroomScore = (targetBeds != null && compBeds > 0)
+    ? (compBeds === targetBeds ? 1.0 : 0.7)
+    : 1.0;
+
+  // Residential preference
+  const typeScore = isResidential(comp) ? 1.2 : 0.85;
+
+  return distScore * bedroomScore * typeScore * reviewWeight;
+}
+
+/** V3 — Weighted ADR from selected comps using similarity × review weights. */
+function calculateWeightedADR(
+  comps: ReportComp[],
+  enrichment: Map<string, CompEnrichment>,
+  targetBeds: number,
+  lat: number,
+  lng: number,
+): number {
+  let weightedSum = 0;
+  let totalWeight = 0;
+  for (const comp of comps) {
+    const adr = comp.avg_booked_daily_rate_ltm ?? 0;
+    if (!adr || adr <= 0) continue;
+    const e = enrichment.get(comp.listingID);
+    const reviewW = e?.reviewWeight ?? 1.0;
+    const weight = compSimilarityWeight(comp, targetBeds, lat, lng, reviewW);
+    weightedSum += adr * weight;
+    totalWeight += weight;
+  }
+  if (totalWeight === 0) {
+    // Fallback to median
+    const adrs = comps.map(c => c.avg_booked_daily_rate_ltm ?? 0).filter(v => v > 0);
+    return calculateMedian(adrs);
+  }
+  return weightedSum / totalWeight;
+}
+
+/** V3 — Weighted occupancy (0–1 scale) using same similarity weights. */
+function calculateWeightedOccupancy(
+  comps: ReportComp[],
+  enrichment: Map<string, CompEnrichment>,
+  lat: number,
+  lng: number,
+): number {
+  let weightedSum = 0;
+  let totalWeight = 0;
+  for (const comp of comps) {
+    const occ = (comp.avg_occupancy_rate_ltm ?? 0) / 100;
+    if (occ <= 0) continue;
+    const e = enrichment.get(comp.listingID);
+    const reviewW = e?.reviewWeight ?? 1.0;
+    const weight = compSimilarityWeight(comp, null, lat, lng, reviewW);
+    weightedSum += occ * weight;
+    totalWeight += weight;
+  }
+  if (totalWeight === 0) {
+    const occs = comps.map(c => (c.avg_occupancy_rate_ltm ?? 0) / 100).filter(v => v > 0);
+    return calculateMedian(occs);
+  }
+  return weightedSum / totalWeight;
+}
+
+/** V3 — Stacked ADR feature multiplier (location × property type × outdoor × parking × condition + special bonus). */
+interface AdrMultInput {
+  locationClass: LocationClass;
+  propertyType?: string;
+  outdoorSpace?: string;
+  parkingSpaces?: number;
+  finishQuality?: string;
+  specialFeatures?: string[];
+}
+
+interface AdrMultOutput {
+  total: number;
+  breakdown: {
+    locMult: number;
+    propTypeMult: number;
+    outdoorMult: number;
+    parkingMult: number;
+    conditionMult: number;
+    specialBonus: number;
+  };
+}
+
+function getADRMultiplier(input: AdrMultInput): AdrMultOutput {
+  const locMult = LOCATION_ADR_MULT[input.locationClass] ?? 1.0;
+
+  const propKey = (input.propertyType || '').toLowerCase().replace(/[\s-]/g, '_');
+  const propTypeMult = PROPERTY_TYPE_ADR_MULT[propKey] ?? 1.05;
+
+  const outdoorKey = (input.outdoorSpace || 'none').toLowerCase();
+  const outdoorMult = OUTDOOR_ADR_MULT[outdoorKey] ?? 1.0;
+
+  const conditionMult = CONDITION_ADR_MULT[(input.finishQuality || 'average').toLowerCase()] ?? 1.0;
+
+  const parkingNum = input.parkingSpaces ?? 0;
+  const parkingMult = parkingNum >= 2 ? 1.10 : parkingNum === 1 ? 1.06 : 1.0;
+
+  let specialBonus = 0;
+  const sf = input.specialFeatures ?? [];
+  if (sf.includes('sea_views') || sf.includes('lake_views')) specialBonus += 0.15;
+  if (sf.includes('hot_tub')) specialBonus += 0.20;
+  if (sf.includes('ev_charging')) specialBonus += 0.04;
+  if (sf.includes('near_events_venue')) specialBonus += 0.08;
+  if (sf.includes('annexe') || sf.includes('games_room')) specialBonus += 0.06;
+
+  const total = (locMult * propTypeMult * outdoorMult * parkingMult * conditionMult) + specialBonus;
+
+  return {
+    total,
+    breakdown: { locMult, propTypeMult, outdoorMult, parkingMult, conditionMult, specialBonus },
+  };
+}
+
 /**
  * Builds ShortLetData + DataQuality from report/all comps.
  * Filters by guest capacity (within +/-2 of user's guest count),
  * uses MEDIAN stats across all filtered comps, then applies finish quality multiplier.
  */
 /**
- * V2 — Build short-let data from report/all comps.
+ * V3 — Build short-let data from report/all comps.
  *
- * Pipeline (per v2 spec):
+ * Pipeline (per V3 spec):
  *   3a. Filter non-UK lat/lng
  *   3b. Filter zero-revenue comps
  *   3c. Tiered guest tolerance (exact → ±1 → ±2 → ±3)
- *   3d. Property type tiering (residential preferred, not excluded)
- *   3e. Review count tiering (established preferred, not excluded)
+ *   3d. Property type tiering (residential preferred)
+ *   3e. Review count tiering (established preferred)
+ *   3f. Seasonal index + comp annualisation (NEW): correct revenue for listings <12mo;
+ *       apply ramp-up uplift for low-review comps.
  *   4.  Sort by tier then distance, take top 12
- *   5.  Calculate base ADR (with outlier trimming > 2.5× spread) and median occupancy
+ *   5.  Weighted ADR + weighted occupancy (NEW — replaces median)
  *   6.  Store quality multiplier (NOT applied to headline — only to scenarios)
  *   7.  Build separate ADR + occupancy seasonal multipliers from market data
  *   8.  Monthly forecast: ADR × occ × days_in_month
- *   9.  Scenarios: worst=quality-adj, base=worst+5% occ, best=worst (PMI behaviour)
+ *   8b. Stacked ADR feature multiplier (NEW — applies location/propType/outdoor/parking/condition/special)
+ *   9.  Scenarios: worst=quality-adj, base=worst+5% occ, best=quality-adj + 5% occ + 5% ADR
+ *       (V3 fix: was returning worstForecast — copy-paste bug)
  */
 function buildDataFromReportComps(
   report: ReportAllResult,
@@ -436,9 +893,11 @@ function buildDataFromReportComps(
   guests: number,
   lat: number,
   lng: number,
-  hasParking?: boolean,
-  finishQuality?: string,
+  locationClass: LocationClass,
+  options?: ShortLetOptions,
 ): { data: ShortLetData; quality: DataQuality } {
+  const hasParking = options?.hasParking;
+  const finishQuality = options?.finishQuality;
   const allComps = report.comps || [];
   console.log(`[V2] buildDataFromReportComps: ${allComps.length} raw comps`);
 
@@ -485,26 +944,7 @@ function buildDataFromReportComps(
   });
 
   const top12 = sorted.slice(0, TARGET_COMPARABLES);
-  console.log(`[V2] Selected top ${top12.length} comps`);
-
-  // Convert to ShortLetComparable[]
-  const comparables: ShortLetComparable[] = top12.map((c): ShortLetComparable => {
-    const distance = haversineKm(lat, lng, c.latitude, c.longitude);
-    return {
-      title: c.name || 'Airbnb Listing',
-      url: `https://www.airbnb.co.uk/rooms/${c.listingID}`,
-      bedrooms: typeof c.bedrooms === 'string' ? parseInt(c.bedrooms, 10) : (c.bedrooms ?? 0),
-      accommodates: c.accommodates ?? 0,
-      averageDailyRate: Math.round(c.avg_booked_daily_rate_ltm ?? 0),
-      occupancyRate: Math.round(c.avg_occupancy_rate_ltm ?? 0) / 100,
-      annualRevenue: Math.round(c.annual_revenue_ltm ?? 0),
-      distance,
-      rating: Math.floor((c.reveiw_scores_rating ?? 0) * 10) / 10, // Always round DOWN
-      reviewCount: c.visible_review_count ?? 0,
-      listingAge: 0,
-      daysAvailable: c.active_days_count_ltm ?? 0,
-    };
-  });
+  console.log(`[V3] Selected top ${top12.length} comps`);
 
   // ── Handle no-comps edge case ──
   if (top12.length === 0) {
@@ -523,25 +963,80 @@ function buildDataFromReportComps(
     };
   }
 
-  // ── Step 5: Base ADR (with outlier trimming) and base occupancy ──
-  const base_ADR = calculateBaseADR(top12);
-  const base_occ = calculateMedian(
-    top12.map((c) => (c.avg_occupancy_rate_ltm ?? 0) / 100).filter((v) => v > 0),
-  );
-  const trimmed = wasADRTrimmed(top12);
-  console.log(`[V2] Step 5: base_ADR=£${base_ADR.toFixed(0)} (trimmed=${trimmed}), base_occ=${(base_occ*100).toFixed(0)}%`);
+  // ── Step 3f (V3): Build seasonal index + annualise comps ──
+  // Fixes the "6-months-live comp with £20k revenue being read as £20k/year" bug:
+  // immature listings are revenue-corrected for seasonal coverage, then ramp-up
+  // uplift is applied based on review count.
+  const { index: seasonalIndex, source: seasonalSource } = buildSeasonalIndex(top12);
+  const enrichment = annualiseComps(top12, seasonalIndex);
+  const annualisedCount = Array.from(enrichment.values()).filter(e => e.annualised).length;
+  console.log(`[V3] Step 3f: seasonalSource=${seasonalSource}, comps_annualised=${annualisedCount}/${top12.length}`);
+
+  // Swap annualised revenue onto the comps used for downstream weighting and comparables output.
+  const enrichedComps: ReportComp[] = top12.map(c => {
+    const e = enrichment.get(c.listingID);
+    if (!e) return c;
+    return { ...c, annual_revenue_ltm: Math.round(e.annualisedRevenue) };
+  });
+
+  // Build comparables for UI using enriched (annualised) values.
+  const comparables: ShortLetComparable[] = enrichedComps.map((c): ShortLetComparable => {
+    const e = enrichment.get(c.listingID);
+    const distance = haversineKm(lat, lng, c.latitude, c.longitude);
+    // listingAge: show months-live / 12 as decimal years when <12 months, else rounded years.
+    let listingAge = 0;
+    if (e?.monthsLive != null) {
+      listingAge = Math.round((e.monthsLive / 12) * 10) / 10;
+    }
+    return {
+      title: c.name || 'Airbnb Listing',
+      url: `https://www.airbnb.co.uk/rooms/${c.listingID}`,
+      bedrooms: typeof c.bedrooms === 'string' ? parseInt(c.bedrooms, 10) : (c.bedrooms ?? 0),
+      accommodates: c.accommodates ?? 0,
+      averageDailyRate: Math.round(c.avg_booked_daily_rate_ltm ?? 0),
+      occupancyRate: Math.round(c.avg_occupancy_rate_ltm ?? 0) / 100,
+      annualRevenue: Math.round(c.annual_revenue_ltm ?? 0),
+      distance,
+      rating: Math.floor((c.reveiw_scores_rating ?? 0) * 10) / 10,
+      reviewCount: c.visible_review_count ?? 0,
+      listingAge,
+      daysAvailable: c.active_days_count_ltm ?? 0,
+    };
+  });
+
+  // ── Step 5 (V3): Weighted ADR + weighted occupancy ──
+  // Replaces V2's median + outlier trimming. Distance, bedroom-match, property-type,
+  // and review-count all contribute to each comp's weight.
+  const base_ADR = calculateWeightedADR(enrichedComps, enrichment, bedrooms, lat, lng);
+  const base_occ = calculateWeightedOccupancy(enrichedComps, enrichment, lat, lng);
+  const trimmed = wasADRTrimmed(enrichedComps);
+  console.log(`[V3] Step 5: base_ADR=£${base_ADR.toFixed(0)}, base_occ=${(base_occ*100).toFixed(0)}% (weighted)`);
 
   // ── Step 6: Quality multiplier (stored for scenarios, NOT applied to headline) ──
   const qualityMultiplier = FINISH_MULTIPLIERS[finishQuality || 'average'] ?? 1.0;
-  console.log(`[V2] Step 6: quality multiplier = ${qualityMultiplier} (${finishQuality || 'average'})`);
+  console.log(`[V3] Step 6: quality multiplier = ${qualityMultiplier} (${finishQuality || 'average'})`);
 
   // ── Step 7: Separate ADR + occupancy seasonal curves from comp monthly data ──
-  const seasonalADRMultiplier = buildSeasonalMultipliers(top12, 'booked_daily_rate_ltm_monthly');
-  const seasonalOccMultiplier = buildSeasonalMultipliers(top12, 'occupancy_rate_ltm_monthly');
+  const seasonalADRMultiplier = buildSeasonalMultipliers(enrichedComps, 'booked_daily_rate_ltm_monthly');
+  const seasonalOccMultiplier = buildSeasonalMultipliers(enrichedComps, 'occupancy_rate_ltm_monthly');
 
-  // ── Step 8: Build 12-month forecast (rolling from current month for scenarios,
-  //            but keep calendar Jan–Dec order for main monthly revenue output).
-  //            Formula: ADR × seasonal_ADR × occ × seasonal_occ × days_in_month
+  // ── Step 8b (V3): Stacked ADR feature multiplier (the big form-fields fix) ──
+  // This is what closes the PMI gap on rural, coastal, and unique properties —
+  // location class, property type, outdoor space, parking, finish, and special
+  // features all stack multiplicatively onto the headline ADR.
+  const { total: adrMultiplier, breakdown: multBreakdown } = getADRMultiplier({
+    locationClass,
+    propertyType: options?.propertyType,
+    outdoorSpace: options?.outdoorSpace,
+    parkingSpaces: options?.parkingSpaces,
+    finishQuality,
+    specialFeatures: options?.specialFeatures,
+  });
+  const adjusted_ADR = base_ADR * adrMultiplier;
+  console.log(`[V3] Step 8b: adrMultiplier=${adrMultiplier.toFixed(3)} (loc=${multBreakdown.locMult} type=${multBreakdown.propTypeMult} out=${multBreakdown.outdoorMult} park=${multBreakdown.parkingMult} cond=${multBreakdown.conditionMult} special=${multBreakdown.specialBonus.toFixed(2)}) → adjusted_ADR=£${adjusted_ADR.toFixed(0)}`);
+
+  // ── Step 8: Build 12-month forecast ──
+  //    Formula: adjusted_ADR × seasonal_ADR × occ × seasonal_occ × days_in_month
   const buildForecast = (adr: number, occ: number) => {
     return DAYS_IN_MONTH.map((days, i) => {
       const monthlyADR = adr * seasonalADRMultiplier[i];
@@ -551,14 +1046,15 @@ function buildDataFromReportComps(
     });
   };
 
-  const headlineForecast = buildForecast(base_ADR, base_occ);
+  const headlineForecast = buildForecast(adjusted_ADR, base_occ);
   const headlineAnnualRevenue = headlineForecast.reduce((s, m) => s + m.revenue, 0);
 
-  // ── Step 9: Scenarios (worst/base/best) with quality multiplier applied ──
-  const worstForecast = buildForecast(base_ADR * qualityMultiplier, base_occ);
-  const baseCaseForecast = buildForecast(base_ADR * qualityMultiplier, Math.min(base_occ * 1.05, 1.0));
-  // PMI behaviour: best case = worst case unless user overrides
-  const bestForecast = worstForecast;
+  // ── Step 9 (V3 FIX): Scenarios (worst/base/best) ──
+  // V2 had a copy-paste bug where `bestForecast = worstForecast`. V3 properly
+  // differentiates: best adds +5% ADR and +5% occupancy on top of quality multiplier.
+  const worstForecast = buildForecast(adjusted_ADR * qualityMultiplier, base_occ);
+  const baseCaseForecast = buildForecast(adjusted_ADR * qualityMultiplier, Math.min(base_occ * 1.05, 1.0));
+  const bestForecast = buildForecast(adjusted_ADR * qualityMultiplier * 1.05, Math.min(base_occ * 1.05, 1.0));
 
   const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   const buildScenarioMonthly = (f: ReturnType<typeof buildForecast>) =>
@@ -619,6 +1115,28 @@ function buildDataFromReportComps(
       : `No comparable properties accommodating ~${guests} guests were found. Market-level estimates have been used. Book a web meeting with Stayful for accurate, personalised revenue projections.`;
   }
 
+  // ── V3 metadata for UI + debugging ──
+  const adrMultipliers: AdrMultipliers = {
+    total: parseFloat(adrMultiplier.toFixed(3)),
+    location: parseFloat(multBreakdown.locMult.toFixed(3)),
+    propertyType: parseFloat(multBreakdown.propTypeMult.toFixed(3)),
+    outdoorSpace: parseFloat(multBreakdown.outdoorMult.toFixed(3)),
+    parking: parseFloat(multBreakdown.parkingMult.toFixed(3)),
+    condition: parseFloat(multBreakdown.conditionMult.toFixed(3)),
+    specialFeatures: parseFloat(multBreakdown.specialBonus.toFixed(3)),
+    baseAdrPreMult: Math.round(base_ADR),
+    finalAdr: Math.round(adjusted_ADR),
+  };
+
+  const annualisationMeta: AnnualisationMeta = {
+    compsAnnualised: annualisedCount,
+    compsMature: top12.length - annualisedCount,
+    seasonalDataSource: seasonalSource,
+  };
+
+  // Quiet the unused-binding linter — kept for future meta reporting
+  void trimmed;
+
   return {
     data: {
       annualRevenue: Math.round(headlineAnnualRevenue),
@@ -628,6 +1146,9 @@ function buildDataFromReportComps(
       activeListings,
       comparables,
       scenarios,
+      locationClass,
+      adrMultipliers,
+      annualisationMeta,
     },
     quality: {
       comparablesFound,

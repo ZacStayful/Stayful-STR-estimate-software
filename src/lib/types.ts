@@ -36,6 +36,32 @@ export interface Scenarios {
   best: Scenario;
 }
 
+// ─── V3 Location + pricing metadata ─────────────────────────────
+export type LocationClass =
+  | 'urban'
+  | 'suburban'
+  | 'rural_village'
+  | 'rural_isolated'
+  | 'coastal';
+
+export interface AdrMultipliers {
+  total: number;
+  location: number;
+  propertyType: number;
+  outdoorSpace: number;
+  parking: number;
+  condition: number;
+  specialFeatures: number;
+  baseAdrPreMult: number;
+  finalAdr: number;
+}
+
+export interface AnnualisationMeta {
+  compsAnnualised: number;
+  compsMature: number;
+  seasonalDataSource: string;
+}
+
 export interface ShortLetData {
   annualRevenue: number;
   monthlyRevenue: [number, number, number, number, number, number, number, number, number, number, number, number];
@@ -44,6 +70,10 @@ export interface ShortLetData {
   activeListings: number;
   comparables: ShortLetComparable[];
   scenarios?: Scenarios; // V2: optional until fully rolled out
+  // V3 additions (all optional)
+  locationClass?: LocationClass;
+  adrMultipliers?: AdrMultipliers;
+  annualisationMeta?: AnnualisationMeta;
 }
 
 // ─── Long-Term Let Data ──────────────────────────────────────────

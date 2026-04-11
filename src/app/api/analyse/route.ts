@@ -70,12 +70,23 @@ export async function POST(request: Request) {
   }
 
   // Validate input
-  const { address, postcode, bedrooms, guests, bathrooms, parking, outdoorSpace, finishQuality, propertyType, monthlyMortgage, monthlyBills } = body as {
+  const { address, postcode, bedrooms, guests, bathrooms, parking, outdoorSpace, finishQuality, propertyType, specialFeatures, monthlyMortgage, monthlyBills } = body as {
     address: unknown; postcode: unknown; bedrooms: unknown; guests: unknown;
     bathrooms: unknown; parking: unknown; outdoorSpace: unknown;
-    finishQuality: unknown; propertyType: unknown;
+    finishQuality: unknown; propertyType: unknown; specialFeatures: unknown;
     monthlyMortgage: unknown; monthlyBills: unknown;
   };
+
+  // V3: whitelist special_features so we don't silently accept junk
+  const ALLOWED_SPECIAL_FEATURES = new Set([
+    'sea_views', 'lake_views', 'hot_tub', 'ev_charging',
+    'near_events_venue', 'annexe', 'games_room',
+  ]);
+  const validSpecialFeatures: string[] = Array.isArray(specialFeatures)
+    ? (specialFeatures as unknown[]).filter(
+        (v): v is string => typeof v === 'string' && ALLOWED_SPECIAL_FEATURES.has(v),
+      )
+    : [];
 
   const bathroomCount = Number(bathrooms);
   const validBathrooms = Number.isFinite(bathroomCount) && bathroomCount >= 1 ? bathroomCount : undefined;
@@ -202,7 +213,22 @@ export async function POST(request: Request) {
         });
 
         // Now fetch short-let (needs coords) + long-let in parallel
-        const shortLetPromise = getShortLetData(property.postcode, property.bedrooms, property.guests, coordinates.lat, coordinates.lng, { bathrooms: validBathrooms, hasParking: validHasParking, finishQuality: validFinishQuality || undefined });
+        const shortLetPromise = getShortLetData(
+          property.postcode,
+          property.bedrooms,
+          property.guests,
+          coordinates.lat,
+          coordinates.lng,
+          {
+            bathrooms: validBathrooms,
+            hasParking: validHasParking,
+            parkingSpaces: parkingValue,            // V3: for ADR feature multiplier
+            finishQuality: validFinishQuality || undefined,
+            outdoorSpace: validOutdoorSpace,        // V3
+            propertyType: mappedPropertyType,       // V3
+            specialFeatures: validSpecialFeatures,  // V3
+          },
+        );
         const [shortLetResult, longLetResult] = await Promise.allSettled([shortLetPromise, longLetPromise]);
 
         const shortLetRaw = shortLetResult.status === 'fulfilled'
