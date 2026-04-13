@@ -70,56 +70,21 @@ export async function POST(request: Request) {
   }
 
   // Validate input
-  const { address, postcode, bedrooms, guests, bathrooms, parking, outdoorSpace, finishQuality, propertyType, specialFeatures, monthlyMortgage, monthlyBills } = body as {
+  const { address, postcode, bedrooms, guests, propertyType, monthlyMortgage, monthlyBills } = body as {
     address: unknown; postcode: unknown; bedrooms: unknown; guests: unknown;
-    bathrooms: unknown; parking: unknown; outdoorSpace: unknown;
-    finishQuality: unknown; propertyType: unknown; specialFeatures: unknown;
+    propertyType: unknown;
     monthlyMortgage: unknown; monthlyBills: unknown;
   };
 
-  // V3: whitelist special_features so we don't silently accept junk
-  const ALLOWED_SPECIAL_FEATURES = new Set([
-    'sea_views', 'lake_views', 'hot_tub', 'ev_charging',
-    'near_events_venue', 'annexe', 'games_room',
-  ]);
-  const validSpecialFeatures: string[] = Array.isArray(specialFeatures)
-    ? (specialFeatures as unknown[]).filter(
-        (v): v is string => typeof v === 'string' && ALLOWED_SPECIAL_FEATURES.has(v),
-      )
-    : [];
-
-  const bathroomCount = Number(bathrooms);
-  const validBathrooms = Number.isFinite(bathroomCount) && bathroomCount >= 1 ? bathroomCount : undefined;
-
-  // Parking: map user selection to API numeric value
-  const parkingMap: Record<string, number> = {
-    'no_parking': 0,
-    'on_street': 0,
-    'allocated': 1,
-    'garage': 1,
-    'driveway_1': 1,
-    'driveway_2': 2,
-  };
-  const validParking = typeof parking === 'string' && parking in parkingMap ? parking : 'no_parking';
-  const parkingValue = parkingMap[validParking] ?? 0;
-  const validHasParking = validParking !== 'no_parking' && validParking !== 'on_street';
-
-  // Outdoor space: map to PropertyData format
-  const outdoorMap: Record<string, string> = {
-    'none': 'none',
-    'balcony': 'balcony_terrace',
-    'garden': 'garden',
-    'roof_terrace': 'balcony_terrace',
-  };
-  const validOutdoorSpace = typeof outdoorSpace === 'string' && outdoorSpace in outdoorMap
-    ? outdoorMap[outdoorSpace]
-    : 'none';
-
-  // Finish quality: validate
-  const validFinishQualities = ['below_average', 'average', 'high', 'very_high'];
-  const validFinishQuality = typeof finishQuality === 'string' && validFinishQualities.includes(finishQuality)
-    ? finishQuality
-    : 'average';
+  // Hardcoded top-spec values — all properties analysed at best-case specification.
+  // Prevents users re-entering different specs, wasting API credits, or getting
+  // confused when figures don't change after spec edits.
+  const validBathrooms: number | undefined = undefined; // auto-derived from bedrooms
+  const parkingValue = 1;
+  const validHasParking = true;
+  const validOutdoorSpace = 'garden';
+  const validFinishQuality = 'very_high';
+  const validSpecialFeatures: string[] = [];
 
   if (!address || typeof address !== 'string' || (address as string).trim().length === 0) {
     return Response.json(
@@ -206,7 +171,6 @@ export async function POST(request: Request) {
           propertyType: mappedPropertyType,
           constructionDate: floorArea.constructionDate,
           internalArea: floorArea.squareFeet,
-          ...(validBathrooms && { bathrooms: validBathrooms }),
           finishQuality: validFinishQuality,
           outdoorSpace: validOutdoorSpace,
           offStreetParking: parkingValue,

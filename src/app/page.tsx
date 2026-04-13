@@ -47,15 +47,12 @@ import {
   ShieldCheck,
   Eye,
   Briefcase,
-  Palmtree,
   Baby,
   PartyPopper,
   Info,
   Wifi,
   Flame,
-  Droplets,
   Sparkles,
-  Car,
   Monitor,
   Coffee,
   Database,
@@ -284,11 +281,7 @@ export default function HomePage() {
   const [postcode, setPostcode] = useState("");
   const [bedrooms, setBedrooms] = useState("2");
   const [guests, setGuests] = useState("6"); // Auto-calculated: (bedrooms × 2) + 2
-  const [bathrooms, setBathrooms] = useState("1");
   const [propertyType, setPropertyType] = useState("Flat");
-  const [parking, setParking] = useState("no_parking");
-  const [outdoorSpace, setOutdoorSpace] = useState("none");
-  const [finishQuality, setFinishQuality] = useState("average");
   const [monthlyMortgage, setMonthlyMortgage] = useState("");
   const [monthlyBills, setMonthlyBills] = useState("");
 
@@ -427,10 +420,6 @@ export default function HomePage() {
           postcode,
           bedrooms: Number(bedrooms),
           guests: Number(guests),
-          bathrooms: Number(bathrooms),
-          parking,
-          outdoorSpace,
-          finishQuality,
           propertyType,
           ...(monthlyMortgage !== "" && { monthlyMortgage: Number(monthlyMortgage) }),
           ...(monthlyBills !== "" && { monthlyBills: Number(monthlyBills) }),
@@ -1420,25 +1409,6 @@ export default function HomePage() {
               subtitle="Detailed cost analysis: Short-Term vs Long-Term letting"
             />
 
-            {finishQuality === "below_average" && (
-              <div className="mb-4 rounded-lg border border-warning/50 bg-warning/10 p-4">
-                <p className="font-semibold text-sm text-foreground">Property Spec Impact</p>
-                <p className="text-xs text-muted-foreground mt-1">
-                  Revenue projections are based on lower-performing comparable properties to reflect the current property condition.
-                  Upgrading the finish quality could increase revenue by 20-40%.
-                  Stayful can advise on cost-effective improvements that deliver the best return.
-                </p>
-              </div>
-            )}
-            {finishQuality === "average" && (
-              <div className="mb-4 rounded-lg border border-primary/30 bg-primary/5 p-4">
-                <p className="font-semibold text-sm text-foreground">Property Spec Impact</p>
-                <p className="text-xs text-muted-foreground mt-1">
-                  Revenue projections are based on mid-range comparable properties.
-                  Properties with a higher specification typically achieve 15-25% more revenue through premium nightly rates and higher occupancy.
-                </p>
-              </div>
-            )}
 
             <div className="grid gap-6 lg:grid-cols-2">
               {/* Short-Term Rental Estimate */}
@@ -2614,22 +2584,6 @@ export default function HomePage() {
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="bathrooms" className="flex items-center gap-2">
-                      <Droplets className="h-4 w-4" aria-hidden="true" />
-                      Bathrooms
-                    </Label>
-                    <Input
-                      type="number"
-                      id="bathrooms"
-                      min={0}
-                      max={5}
-                      required
-                      value={bathrooms}
-                      onChange={(e) => setBathrooms(e.target.value)}
-                    />
-                  </div>
-
-                  <div className="space-y-2">
                     <Label htmlFor="guests" className="flex items-center gap-2">
                       <Users className="h-4 w-4" aria-hidden="true" />
                       Max Guests
@@ -2647,77 +2601,6 @@ export default function HomePage() {
                   </div>
                 </div>
 
-                {/* Row 4: Parking | Outdoor Space */}
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="parking" className="flex items-center gap-2">
-                      <Car className="h-4 w-4" aria-hidden="true" />
-                      Parking
-                    </Label>
-                    <select
-                      id="parking"
-                      value={parking}
-                      onChange={(e) => setParking(e.target.value)}
-                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                    >
-                      <option value="no_parking">No parking available</option>
-                      <option value="on_street">Free on-street only</option>
-                      <option value="allocated">Allocated space (flat/apartment bay)</option>
-                      <option value="garage">Single garage</option>
-                      <option value="driveway_1">Driveway (1 car)</option>
-                      <option value="driveway_2">Driveway (2+ cars)</option>
-                    </select>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="outdoorSpace" className="flex items-center gap-2">
-                      <Palmtree className="h-4 w-4" aria-hidden="true" />
-                      Outdoor Space
-                    </Label>
-                    <select
-                      id="outdoorSpace"
-                      value={outdoorSpace}
-                      onChange={(e) => setOutdoorSpace(e.target.value)}
-                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                    >
-                      <option value="none">None</option>
-                      <option value="balcony">Balcony or terrace</option>
-                      <option value="garden">Private garden</option>
-                      <option value="roof_terrace">Roof terrace</option>
-                    </select>
-                  </div>
-                </div>
-
-                {/* Row 5: Finish Quality (4 visual cards) */}
-                <div className="space-y-2">
-                  <Label className="flex items-center gap-2">
-                    <Sparkles className="h-4 w-4" aria-hidden="true" />
-                    Finish Quality
-                  </Label>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                    {[
-                      { value: "below_average", label: "Needs work", desc: "Basic decor", color: "border-border bg-muted/30", activeColor: "ring-2 ring-primary border-primary bg-primary/10", dot: "bg-muted-foreground/50" },
-                      { value: "average", label: "Clean & functional", desc: "Standard finish", color: "border-border bg-muted/30", activeColor: "ring-2 ring-primary border-primary bg-primary/10", dot: "bg-muted-foreground" },
-                      { value: "high", label: "Well presented", desc: "Modern fixtures", color: "border-border bg-muted/30", activeColor: "ring-2 ring-primary border-primary bg-primary/10", dot: "bg-primary" },
-                      { value: "very_high", label: "Premium finish", desc: "Luxury spec", color: "border-border bg-muted/30", activeColor: "ring-2 ring-primary border-primary bg-primary/10", dot: "bg-primary" },
-                    ].map((option) => (
-                      <button
-                        key={option.value}
-                        type="button"
-                        onClick={() => setFinishQuality(option.value)}
-                        className={`flex flex-col items-center gap-1.5 rounded-lg border p-3 text-center transition-all cursor-pointer ${
-                          finishQuality === option.value
-                            ? option.activeColor
-                            : `${option.color} hover:shadow-sm`
-                        }`}
-                      >
-                        <div className={`h-3 w-3 rounded-full ${option.dot}`} />
-                        <span className="text-xs font-semibold leading-tight">{option.label}</span>
-                        <span className="text-[10px] text-muted-foreground leading-tight">{option.desc}</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
 
                 {error && (
                   <div className="flex items-start gap-2 rounded-lg bg-destructive/10 p-3 text-sm text-destructive">
