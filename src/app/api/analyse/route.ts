@@ -104,10 +104,10 @@ export async function POST(request: Request) {
     ? outdoorMap[outdoorSpace]
     : 'none';
 
-  // Finish quality hardcoded — removed from form per client request.
-  // Set to 'average' (1.00× condition multiplier) so the stacked ADR multiplier
-  // doesn't inflate revenue. Location/type/outdoor/parking still differentiate.
-  const validFinishQuality = 'average';
+  // Finish quality hardcoded to top spec — removed from form per client request.
+  // All properties analysed at premium finish to prevent users re-entering specs,
+  // wasting API credits, or getting confused when figures stay the same.
+  const validFinishQuality = 'very_high';
   const validSpecialFeatures: string[] = [];
 
   if (!address || typeof address !== 'string' || (address as string).trim().length === 0) {
