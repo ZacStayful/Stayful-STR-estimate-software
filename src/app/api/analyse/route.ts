@@ -125,13 +125,9 @@ export async function POST(request: Request) {
   }
 
   const bedroomCount = Number(bedrooms);
-  // PMI rule: studios (0-bed) follow the identical revenue formula as larger
-  // properties — median_ADR × median_occupancy × 365.
-  // Upper bound kept at 10 so the unsupported-response check below can return
-  // a graceful 200 JSON for 6-10 bed properties (business rule: 6+ out of scope).
-  if (!Number.isFinite(bedroomCount) || bedroomCount < 0 || bedroomCount > 10) {
+  if (!Number.isFinite(bedroomCount) || bedroomCount < 1 || bedroomCount > 10) {
     return Response.json(
-      { error: 'Bedrooms must be a number between 0 and 10.' },
+      { error: 'Bedrooms must be a number between 1 and 10.' },
       { status: 400 },
     );
   }
@@ -150,27 +146,6 @@ export async function POST(request: Request) {
     bedrooms: bedroomCount,
     guests: guestCount,
   };
-
-  // PMI business rule: 6+ bed properties require manual assessment — too varied
-  // for comp-based estimation (HMO considerations, events properties, large
-  // group dynamics). Return a graceful unsupported response rather than an
-  // unreliable estimate.
-  if (bedroomCount > 5) {
-    return new Response(
-      JSON.stringify({
-        property: { address: property.address, bedrooms: bedroomCount, bathrooms: validBathrooms ?? null, guests: guestCount },
-        headline: null,
-        monthly_forecast: null,
-        comparables: null,
-        long_let: null,
-        unsupported: true,
-        unsupported_reason: 'bedrooms_exceeds_maximum',
-        unsupported_message: 'Properties with 6 or more bedrooms require a personalised assessment. Please contact the Stayful team directly.',
-        meta: { generated_at: new Date().toISOString() },
-      }),
-      { status: 200, headers: { 'Content-Type': 'application/json' } },
-    );
-  }
 
   // Map property type to PropertyData format
   const propertyTypeMap: Record<string, string> = {

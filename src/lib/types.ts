@@ -20,11 +20,6 @@ export interface ShortLetComparable {
   reviewCount: number;
   listingAge: number;      // years, calculated from added_on
   daysAvailable: number;
-  // PMI rule: always return 12 comparables. When real Airbtics comps are
-  // unavailable, synthetic representative comps are generated so the UI
-  // never shows a blank comparables section.
-  synthetic?: boolean;
-  note?: string;
 }
 
 // ─── V2 Scenarios (worst/base/best) ─────────────────────────────
@@ -171,9 +166,6 @@ export interface DataQuality {
   searchBroadened: boolean;
   level: 'high' | 'moderate' | 'low';
   disclaimer: string | null;
-  // PMI rule: indicate whether comparables are real Airbtics data or
-  // synthetic market-derived fallbacks so the UI can disclose appropriately.
-  comparablesSource?: 'airbtics' | 'synthetic';
 }
 
 // ─── Full Analysis Result ────────────────────────────────────────
