@@ -1894,6 +1894,7 @@ function generateMarketEstimate(bedrooms: number): ShortLetData {
   // V3 fix — previously 4/5/6/7/8-bed all used identical [200,280] range.
   // Calibrated against PMI data: Derby 5-bed = £174 ADR, Bradford 1-bed = £87 ADR.
   const adrRanges: Record<number, [number, number]> = {
+    0: [65, 95],   // studio — PMI rule: ~75-85% of 1-bed ADR, sleeps max 2 guests
     1: [70,  100],
     2: [90,  130],
     3: [120, 170],
@@ -1909,6 +1910,7 @@ function generateMarketEstimate(bedrooms: number): ShortLetData {
   // V3 fix — graduate occupancy by bedroom count — larger properties have
   // lower base occupancy.
   const occupancyByBeds: Record<number, number> = {
+    0: 0.62,   // studio — slightly higher occupancy than 1-beds, lower price point fills easier
     1: 0.72, 2: 0.70, 3: 0.67, 4: 0.66, 5: 0.65, 6: 0.63, 7: 0.61, 8: 0.59,
   };
   const occupancy = occupancyByBeds[Math.min(bedrooms, 8)] ?? 0.63;

@@ -125,9 +125,9 @@ export async function POST(request: Request) {
   }
 
   const bedroomCount = Number(bedrooms);
-  if (!Number.isFinite(bedroomCount) || bedroomCount < 1 || bedroomCount > 10) {
+  if (!Number.isFinite(bedroomCount) || bedroomCount < 0 || bedroomCount > 10) {
     return Response.json(
-      { error: 'Bedrooms must be a number between 1 and 10.' },
+      { error: 'Bedrooms must be a number between 0 and 10.' },
       { status: 400 },
     );
   }
