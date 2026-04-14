@@ -52,7 +52,10 @@ import {
   Info,
   Wifi,
   Flame,
+  Palmtree,
+  Droplets,
   Sparkles,
+  Car,
   Monitor,
   Coffee,
   Database,
@@ -281,7 +284,10 @@ export default function HomePage() {
   const [postcode, setPostcode] = useState("");
   const [bedrooms, setBedrooms] = useState("2");
   const [guests, setGuests] = useState("6"); // Auto-calculated: (bedrooms × 2) + 2
+  const [bathrooms, setBathrooms] = useState("1");
   const [propertyType, setPropertyType] = useState("Flat");
+  const [parking, setParking] = useState("no_parking");
+  const [outdoorSpace, setOutdoorSpace] = useState("none");
   const [monthlyMortgage, setMonthlyMortgage] = useState("");
   const [monthlyBills, setMonthlyBills] = useState("");
 
@@ -420,6 +426,9 @@ export default function HomePage() {
           postcode,
           bedrooms: Number(bedrooms),
           guests: Number(guests),
+          bathrooms: Number(bathrooms),
+          parking,
+          outdoorSpace,
           propertyType,
           ...(monthlyMortgage !== "" && { monthlyMortgage: Number(monthlyMortgage) }),
           ...(monthlyBills !== "" && { monthlyBills: Number(monthlyBills) }),
@@ -2601,6 +2610,65 @@ export default function HomePage() {
                   </div>
                 </div>
 
+                {/* Row 3b: Bathrooms */}
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="bathrooms" className="flex items-center gap-2">
+                      <Droplets className="h-4 w-4" aria-hidden="true" />
+                      Bathrooms
+                    </Label>
+                    <Input
+                      type="number"
+                      id="bathrooms"
+                      min={0}
+                      max={5}
+                      required
+                      value={bathrooms}
+                      onChange={(e) => setBathrooms(e.target.value)}
+                    />
+                  </div>
+                </div>
+
+                {/* Row 4: Parking | Outdoor Space */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="parking" className="flex items-center gap-2">
+                      <Car className="h-4 w-4" aria-hidden="true" />
+                      Parking
+                    </Label>
+                    <select
+                      id="parking"
+                      value={parking}
+                      onChange={(e) => setParking(e.target.value)}
+                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                    >
+                      <option value="no_parking">No parking available</option>
+                      <option value="on_street">Free on-street only</option>
+                      <option value="allocated">Allocated space (flat/apartment bay)</option>
+                      <option value="garage">Single garage</option>
+                      <option value="driveway_1">Driveway (1 car)</option>
+                      <option value="driveway_2">Driveway (2+ cars)</option>
+                    </select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="outdoorSpace" className="flex items-center gap-2">
+                      <Palmtree className="h-4 w-4" aria-hidden="true" />
+                      Outdoor Space
+                    </Label>
+                    <select
+                      id="outdoorSpace"
+                      value={outdoorSpace}
+                      onChange={(e) => setOutdoorSpace(e.target.value)}
+                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                    >
+                      <option value="none">None</option>
+                      <option value="balcony">Balcony or terrace</option>
+                      <option value="garden">Private garden</option>
+                      <option value="roof_terrace">Roof terrace</option>
+                    </select>
+                  </div>
+                </div>
 
                 {error && (
                   <div className="flex items-start gap-2 rounded-lg bg-destructive/10 p-3 text-sm text-destructive">

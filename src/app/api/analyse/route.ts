@@ -70,19 +70,43 @@ export async function POST(request: Request) {
   }
 
   // Validate input
-  const { address, postcode, bedrooms, guests, propertyType, monthlyMortgage, monthlyBills } = body as {
+  const { address, postcode, bedrooms, guests, bathrooms, parking, outdoorSpace, propertyType, monthlyMortgage, monthlyBills } = body as {
     address: unknown; postcode: unknown; bedrooms: unknown; guests: unknown;
+    bathrooms: unknown; parking: unknown; outdoorSpace: unknown;
     propertyType: unknown;
     monthlyMortgage: unknown; monthlyBills: unknown;
   };
 
-  // Hardcoded top-spec values — all properties analysed at best-case specification.
-  // Prevents users re-entering different specs, wasting API credits, or getting
-  // confused when figures don't change after spec edits.
-  const validBathrooms: number | undefined = undefined; // auto-derived from bedrooms
-  const parkingValue = 1;
-  const validHasParking = true;
-  const validOutdoorSpace = 'garden';
+  const bathroomCount = Number(bathrooms);
+  const validBathrooms = Number.isFinite(bathroomCount) && bathroomCount >= 1 ? bathroomCount : undefined;
+
+  // Parking: map user selection to API numeric value
+  const parkingMap: Record<string, number> = {
+    'no_parking': 0,
+    'on_street': 0,
+    'allocated': 1,
+    'garage': 1,
+    'driveway_1': 1,
+    'driveway_2': 2,
+  };
+  const validParking = typeof parking === 'string' && parking in parkingMap ? parking : 'no_parking';
+  const parkingValue = parkingMap[validParking] ?? 0;
+  const validHasParking = validParking !== 'no_parking' && validParking !== 'on_street';
+
+  // Outdoor space: map to PropertyData format
+  const outdoorMap: Record<string, string> = {
+    'none': 'none',
+    'balcony': 'balcony_terrace',
+    'garden': 'garden',
+    'roof_terrace': 'balcony_terrace',
+  };
+  const validOutdoorSpace = typeof outdoorSpace === 'string' && outdoorSpace in outdoorMap
+    ? outdoorMap[outdoorSpace]
+    : 'none';
+
+  // Finish quality hardcoded to top spec — removed from form per client request.
+  // All properties analysed at premium finish to prevent users re-entering specs,
+  // wasting API credits, or getting confused when figures stay the same.
   const validFinishQuality = 'very_high';
   const validSpecialFeatures: string[] = [];
 
@@ -171,6 +195,7 @@ export async function POST(request: Request) {
           propertyType: mappedPropertyType,
           constructionDate: floorArea.constructionDate,
           internalArea: floorArea.squareFeet,
+          ...(validBathrooms && { bathrooms: validBathrooms }),
           finishQuality: validFinishQuality,
           outdoorSpace: validOutdoorSpace,
           offStreetParking: parkingValue,
