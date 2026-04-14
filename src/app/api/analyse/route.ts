@@ -104,10 +104,10 @@ export async function POST(request: Request) {
     ? outdoorMap[outdoorSpace]
     : 'none';
 
-  // Finish quality hardcoded to top spec — removed from form per client request.
-  // All properties analysed at premium finish to prevent users re-entering specs,
-  // wasting API credits, or getting confused when figures stay the same.
-  const validFinishQuality = 'very_high';
+  // Changed from 'very_high' to 'average' — hardcoded 1.38x condition multiplier
+  // was inflating every property estimate by 38% regardless of actual finish quality.
+  // PMI applies no quality multiplier to the headline figure.
+  const validFinishQuality = 'average';
   const validSpecialFeatures: string[] = [];
 
   if (!address || typeof address !== 'string' || (address as string).trim().length === 0) {

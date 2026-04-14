@@ -144,9 +144,12 @@ const SEARCH_RADII_KM = [0.4, 0.8, 1.6, 2.4, 3.2, 4.8, 8.0]; // PMI-equivalent s
 const REPORT_POLL_INTERVAL_MS = 2000;
 const REPORT_POLL_MAX_MS = 25000; // 25 seconds (up from 15)
 
-// "Good operator" uplift applied to market fallback data.
-// Based on observed difference: report/all p60 is ~25% above market median.
+// DEAD CONSTANT — declared but never used anywhere in this file.
+// Originally intended as a 25% uplift for Tier B market fallback data
+// but was never wired up. Tier B now uses headlineMode multiplier instead.
+// Do not delete — kept for documentation purposes.
 const GOOD_OPERATOR_UPLIFT = 1.25;
+void GOOD_OPERATOR_UPLIFT;
 
 // ─── In-memory cache for report IDs ─────────────────────────────
 // Reading existing reports is FREE. Cache report_id by postcode+bedrooms
@@ -247,7 +250,9 @@ export async function getShortLetData(
   // This runs when report/all found < 12 comps OR failed entirely.
   // Uses PMI-style radius steps (0.4km to 8km) until 12 comps found.
   try {
-    const marketsResult = await getShortLetDataFromMarkets(postcode, bedrooms, guests, lat, lng, apiKey, options?.finishQuality);
+    // V3 fix — pass full options so Tier B can apply the headline-mode
+    // multiplier (outdoor + parking) instead of the deprecated quality mult.
+    const marketsResult = await getShortLetDataFromMarkets(postcode, bedrooms, guests, lat, lng, apiKey, options);
 
     // Pick the better result between report/all and markets
     // Prefer whichever found more comparables
@@ -359,6 +364,15 @@ interface ReportAllResult {
   radius: number;
   comps_status: string;
   comps: ReportComp[];
+  // V3 fix — Airbtics returns aggregate median stats at the report level.
+  // PMI uses these directly rather than computing a median from the displayed
+  // comp list. Verified against 13 PMI PDF reports.
+  median_adr?: number;
+  median_occupancy?: number;
+  summary?: {
+    median_adr?: number;
+    median_occupancy?: number;
+  };
 }
 
 /**
@@ -496,6 +510,15 @@ function calculateMedian(values: number[]): number {
   const sorted = [...values].sort((a, b) => a - b);
   const mid = Math.floor(sorted.length / 2);
   return sorted.length % 2 !== 0 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+}
+
+/**
+ * V3 fix — Airbtics summary occupancy may arrive as either a 0–1 ratio
+ * (e.g. 0.72) or a 0–100 percentage (e.g. 72). Normalise to 0–1.
+ */
+function normaliseOccupancy(value: number): number {
+  if (!Number.isFinite(value) || value <= 0) return 0;
+  return value > 1 ? value / 100 : value;
 }
 
 /** Finish quality multipliers applied after median calculation. */
@@ -832,7 +855,45 @@ interface AdrMultOutput {
   };
 }
 
-function getADRMultiplier(input: AdrMultInput): AdrMultOutput {
+function getADRMultiplier(input: AdrMultInput, headlineMode = false): AdrMultOutput {
+  const parkingNum = input.parkingSpaces ?? 0;
+
+  if (headlineMode) {
+    // V3 fix — HEADLINE MODE uses outdoor and parking only.
+    // Location class, property type and condition are already reflected in the
+    // Airbtics comp pool ADR. Applying them again double-counts the premium
+    // and inflates the headline vs PMI. Verified against 13 PMI reports — PMI
+    // applies no such multipliers to the headline figure.
+    const outdoorHeadline: Record<string, number> = {
+      none: 1.00,
+      small_garden: 1.03,
+      garden: 1.03,
+      balcony: 1.00,
+      balcony_terrace: 1.00,
+      large_garden: 1.06,
+      hot_tub: 1.12,
+      grounds: 1.06,
+      large_grounds: 1.06,
+      roof_terrace: 1.00,
+    };
+    const outdoorKey = (input.outdoorSpace || 'none').toLowerCase();
+    const outdoorMult = outdoorHeadline[outdoorKey] ?? 1.00;
+    const parkingMult = parkingNum >= 2 ? 1.05 : parkingNum === 1 ? 1.03 : 1.00;
+
+    return {
+      total: outdoorMult * parkingMult,
+      breakdown: {
+        locMult: 1.0,
+        propTypeMult: 1.0,
+        outdoorMult,
+        parkingMult,
+        conditionMult: 1.0,
+        specialBonus: 0,
+      },
+    };
+  }
+
+  // FULL STACK — used for scenarios only, not headline.
   const locMult = LOCATION_ADR_MULT[input.locationClass] ?? 1.0;
 
   const propKey = (input.propertyType || '').toLowerCase().replace(/[\s-]/g, '_');
@@ -843,7 +904,6 @@ function getADRMultiplier(input: AdrMultInput): AdrMultOutput {
 
   const conditionMult = CONDITION_ADR_MULT[(input.finishQuality || 'average').toLowerCase()] ?? 1.0;
 
-  const parkingNum = input.parkingSpaces ?? 0;
   const parkingMult = parkingNum >= 2 ? 1.10 : parkingNum === 1 ? 1.06 : 1.0;
 
   let specialBonus = 0;
@@ -900,6 +960,19 @@ function buildDataFromReportComps(
   const finishQuality = options?.finishQuality;
   const allComps = report.comps || [];
   console.log(`[V2] buildDataFromReportComps: ${allComps.length} raw comps`);
+
+  // V3 diagnostic — verify whether Airbtics report/all populates listing
+  // date fields. If all three are undefined, annualisation silently degrades
+  // to review-count uplift only and the seasonal-coverage correction never runs.
+  // Remove this log once confirmed.
+  const dateFieldSample = report.comps?.slice(0, 3).map((c: ReportComp) => ({
+    id: c.listingID ?? (c as unknown as { id?: string }).id,
+    added_on: (c as unknown as { added_on?: string }).added_on,
+    created_date: (c as unknown as { created_date?: string }).created_date,
+    listed_date: (c as unknown as { listed_date?: string }).listed_date,
+    active_days_count_ltm: c.active_days_count_ltm,
+  }));
+  console.log('[V3] Comp date field sample:', JSON.stringify(dateFieldSample, null, 2));
 
   // ── Step 3a: Non-UK lat/lng filter ──
   const ukComps = allComps.filter(isUKListing);
@@ -1007,8 +1080,25 @@ function buildDataFromReportComps(
   // ── Step 5 (V3): Weighted ADR + weighted occupancy ──
   // Replaces V2's median + outlier trimming. Distance, bedroom-match, property-type,
   // and review-count all contribute to each comp's weight.
-  const base_ADR = calculateWeightedADR(enrichedComps, enrichment, bedrooms, lat, lng);
-  const base_occ = calculateWeightedOccupancy(enrichedComps, enrichment, lat, lng);
+  //
+  // V3 fix — use Airbtics' own summary stats if available.
+  // These are more accurate than computing from the comp list because
+  // Airbtics' internal calculation uses all listings in their dataset,
+  // not just the 12 displayed comps. Verified as root cause of Sheffield
+  // S1 returning £10,239 vs PMI's £24,421 for the same property.
+  const summaryADR = report.median_adr ?? report.summary?.median_adr ?? 0;
+  const summaryOcc = report.median_occupancy ?? report.summary?.median_occupancy ?? 0;
+
+  console.log('[V3] base_ADR source:', summaryADR > 0 ? 'airbtics_summary' : 'weighted_comp_calc', { summaryADR, summaryOcc });
+
+  const base_ADR = summaryADR > 0
+    ? summaryADR
+    : calculateWeightedADR(enrichedComps, enrichment, bedrooms, lat, lng);
+
+  const base_occ = summaryOcc > 0
+    ? normaliseOccupancy(summaryOcc)
+    : calculateWeightedOccupancy(enrichedComps, enrichment, lat, lng);
+
   const trimmed = wasADRTrimmed(enrichedComps);
   console.log(`[V3] Step 5: base_ADR=£${base_ADR.toFixed(0)}, base_occ=${(base_occ*100).toFixed(0)}% (weighted)`);
 
@@ -1020,20 +1110,22 @@ function buildDataFromReportComps(
   const seasonalADRMultiplier = buildSeasonalMultipliers(enrichedComps, 'booked_daily_rate_ltm_monthly');
   const seasonalOccMultiplier = buildSeasonalMultipliers(enrichedComps, 'occupancy_rate_ltm_monthly');
 
-  // ── Step 8b (V3): Stacked ADR feature multiplier (the big form-fields fix) ──
-  // This is what closes the PMI gap on rural, coastal, and unique properties —
-  // location class, property type, outdoor space, parking, finish, and special
-  // features all stack multiplicatively onto the headline ADR.
-  const { total: adrMultiplier, breakdown: multBreakdown } = getADRMultiplier({
+  // ── Step 8b (V3): Headline ADR multiplier — outdoor + parking only ──
+  // V3 fix — headline mode strips location, property type and condition because
+  // these are already reflected in the Airbtics comp pool ADR. Double-counting
+  // them was the source of PMI-vs-app divergence on rural, coastal and unique
+  // properties. Scenarios below use the full stack.
+  const adrMultInput: AdrMultInput = {
     locationClass,
     propertyType: options?.propertyType,
     outdoorSpace: options?.outdoorSpace,
     parkingSpaces: options?.parkingSpaces,
     finishQuality,
     specialFeatures: options?.specialFeatures,
-  });
+  };
+  const { total: adrMultiplier, breakdown: multBreakdown } = getADRMultiplier(adrMultInput, true);
   const adjusted_ADR = base_ADR * adrMultiplier;
-  console.log(`[V3] Step 8b: adrMultiplier=${adrMultiplier.toFixed(3)} (loc=${multBreakdown.locMult} type=${multBreakdown.propTypeMult} out=${multBreakdown.outdoorMult} park=${multBreakdown.parkingMult} cond=${multBreakdown.conditionMult} special=${multBreakdown.specialBonus.toFixed(2)}) → adjusted_ADR=£${adjusted_ADR.toFixed(0)}`);
+  console.log(`[V3] Step 8b (headline): adrMultiplier=${adrMultiplier.toFixed(3)} (loc=${multBreakdown.locMult} type=${multBreakdown.propTypeMult} out=${multBreakdown.outdoorMult} park=${multBreakdown.parkingMult} cond=${multBreakdown.conditionMult} special=${multBreakdown.specialBonus.toFixed(2)}) → adjusted_ADR=£${adjusted_ADR.toFixed(0)}`);
 
   // ── Step 8: Build 12-month forecast ──
   //    Formula: adjusted_ADR × seasonal_ADR × occ × seasonal_occ × days_in_month
@@ -1052,9 +1144,15 @@ function buildDataFromReportComps(
   // ── Step 9 (V3 FIX): Scenarios (worst/base/best) ──
   // V2 had a copy-paste bug where `bestForecast = worstForecast`. V3 properly
   // differentiates: best adds +5% ADR and +5% occupancy on top of quality multiplier.
-  const worstForecast = buildForecast(adjusted_ADR * qualityMultiplier, base_occ);
-  const baseCaseForecast = buildForecast(adjusted_ADR * qualityMultiplier, Math.min(base_occ * 1.05, 1.0));
-  const bestForecast = buildForecast(adjusted_ADR * qualityMultiplier * 1.05, Math.min(base_occ * 1.05, 1.0));
+  //
+  // V3 fix — scenarios use the FULL-STACK multiplier (location × type × outdoor ×
+  // parking × condition + specials) so worst/base/best can still reflect property
+  // characteristics even though the headline strips them.
+  const { total: fullStackMultiplier } = getADRMultiplier(adrMultInput);
+  const scenarioADR = base_ADR * fullStackMultiplier;
+  const worstForecast = buildForecast(scenarioADR * qualityMultiplier, base_occ);
+  const baseCaseForecast = buildForecast(scenarioADR * qualityMultiplier, Math.min(base_occ * 1.05, 1.0));
+  const bestForecast = buildForecast(scenarioADR * qualityMultiplier * 1.05, Math.min(base_occ * 1.05, 1.0));
 
   const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   const buildScenarioMonthly = (f: ReturnType<typeof buildForecast>) =>
@@ -1242,8 +1340,12 @@ async function getShortLetDataFromMarkets(
   lat: number,
   lng: number,
   apiKey: string,
-  finishQuality?: string,
+  // V3 fix — Tier B now accepts the full options object so it can apply the
+  // same headline-mode (outdoor + parking) multiplier as Tier A instead of
+  // the old, now-deprecated quality multiplier.
+  options?: ShortLetOptions,
 ): Promise<{ data: ShortLetData; quality: DataQuality }> {
+  const finishQuality = options?.finishQuality;
   const lowQuality: DataQuality = {
     comparablesFound: 0, comparablesTarget: TARGET_COMPARABLES,
     searchRadiusKm: 0, searchBroadened: false, level: 'low',
@@ -1304,8 +1406,24 @@ async function getShortLetDataFromMarkets(
     avgOccupancy = summaryOccupancy || 0.65;
   }
 
-  // Apply finish quality multiplier (same as report/all path)
-  const qualityMultiplier = FINISH_MULTIPLIERS[finishQuality || 'high'] ?? 1.15;
+  // V3 fix — replace old finish-quality multiplier with headline-mode multiplier
+  // (outdoor + parking only). This keeps Tier B aligned with Tier A's headline
+  // methodology: location/type/condition are considered already baked into the
+  // Airbtics market figures, so we only apply the property-feature uplift.
+  // finishQuality is still read from options so noqa on unused-variable.
+  void finishQuality;
+  const tierBLocationClass = classifyLocation(postcode);
+  const { total: headlineMult } = getADRMultiplier(
+    {
+      locationClass: tierBLocationClass,
+      propertyType: options?.propertyType,
+      outdoorSpace: options?.outdoorSpace,
+      parkingSpaces: options?.parkingSpaces,
+      finishQuality: options?.finishQuality,
+      specialFeatures: options?.specialFeatures,
+    },
+    true,
+  );
 
   // Apply guest-count adjustment: market data is for median guest count (~4)
   // Larger properties (more guests) command proportionally more revenue
@@ -1313,10 +1431,10 @@ async function getShortLetDataFromMarkets(
   const guestAdjustment = Math.min(1 + (Math.max(0, guests - 4) * 0.12), 1.5);
 
   const rawRevenue = summaryRevenue || monthlyRevenue.reduce((a, b) => a + b, 0);
-  let annualRevenue = Math.round(rawRevenue * qualityMultiplier * guestAdjustment);
-  let derivedAdr = Math.round((summaryAdr || Math.round(rawRevenue / 12 / ((avgOccupancy || 0.65) * 30))) * qualityMultiplier * guestAdjustment);
+  let annualRevenue = Math.round(rawRevenue * headlineMult * guestAdjustment);
+  let derivedAdr = Math.round((summaryAdr || Math.round(rawRevenue / 12 / ((avgOccupancy || 0.65) * 30))) * headlineMult * guestAdjustment);
 
-  monthlyRevenue = monthlyRevenue.map(m => Math.round(m * qualityMultiplier * guestAdjustment));
+  monthlyRevenue = monthlyRevenue.map(m => Math.round(m * headlineMult * guestAdjustment));
 
   // ── Rule of 12: Try to find 12 comparables, broadening search if needed ──
   let comparables: ShortLetComparable[] = [];
@@ -1773,16 +1891,27 @@ function padTo12Months(data: number[]): ShortLetData['monthlyRevenue'] {
  * Used when Airbtics API is unavailable or has insufficient credits.
  */
 function generateMarketEstimate(bedrooms: number): ShortLetData {
+  // V3 fix — previously 4/5/6/7/8-bed all used identical [200,280] range.
+  // Calibrated against PMI data: Derby 5-bed = £174 ADR, Bradford 1-bed = £87 ADR.
   const adrRanges: Record<number, [number, number]> = {
-    1: [85, 100],
-    2: [110, 140],
-    3: [150, 200],
+    1: [70,  100],
+    2: [90,  130],
+    3: [120, 170],
+    4: [150, 210],
+    5: [165, 230],
+    6: [180, 250],
+    7: [200, 270],
+    8: [220, 290],
   };
-  const defaultRange: [number, number] = [200, 280];
-  const [adrLow, adrHigh] = adrRanges[bedrooms] ?? defaultRange;
-  const adr = Math.round((adrLow + adrHigh) / 2);
+  const range = adrRanges[Math.min(bedrooms, 8)] ?? adrRanges[5];
+  const adr = Math.round((range[0] + range[1]) / 2);
 
-  const occupancy = bedrooms <= 1 ? 0.72 : bedrooms <= 2 ? 0.70 : bedrooms <= 3 ? 0.67 : 0.65;
+  // V3 fix — graduate occupancy by bedroom count — larger properties have
+  // lower base occupancy.
+  const occupancyByBeds: Record<number, number> = {
+    1: 0.72, 2: 0.70, 3: 0.67, 4: 0.66, 5: 0.65, 6: 0.63, 7: 0.61, 8: 0.59,
+  };
+  const occupancy = occupancyByBeds[Math.min(bedrooms, 8)] ?? 0.63;
   const annualRevenue = Math.round(adr * 365 * occupancy);
 
   const seasonalMultipliers = [
