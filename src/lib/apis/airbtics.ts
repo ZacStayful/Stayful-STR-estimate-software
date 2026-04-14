@@ -47,14 +47,15 @@ const URBAN_POSTCODE_PREFIXES = new Set<string>([
   // Greater London
   'E', 'EC', 'N', 'NW', 'SE', 'SW', 'W', 'WC',
   'BR', 'CR', 'DA', 'EN', 'HA', 'IG', 'KT', 'RM', 'SM', 'TW', 'UB', 'WD',
-  // Core cities
+  // Core cities (incl. Scottish city centres — urban regardless of coastal proximity)
   'B', 'M', 'LS', 'S', 'L', 'BS', 'EH', 'G', 'NE', 'NG', 'CF', 'LE', 'CV', 'BD',
+  'AB', 'DD',
 ]);
 
-// UK coastal outward-code prefixes
+// UK coastal outward-code prefixes (AB moved to urban — Aberdeen is a city centre)
 const COASTAL_POSTCODE_PREFIXES = new Set<string>([
   'TR', 'PL', 'EX', 'TQ', 'BH', 'BN', 'CT', 'TN', 'PO', 'SO', 'SA', 'LL',
-  'PH', 'AB', 'KW', 'TD', 'DG', 'PA', 'KA', 'ZE', 'HS', 'IV',
+  'PH', 'KW', 'TD', 'DG', 'PA', 'KA', 'ZE', 'HS', 'IV',
 ]);
 
 // Default radius steps (km) per location class — rural properties start wider
@@ -1089,15 +1090,31 @@ function buildDataFromReportComps(
   const summaryADR = report.median_adr ?? report.summary?.median_adr ?? 0;
   const summaryOcc = report.median_occupancy ?? report.summary?.median_occupancy ?? 0;
 
-  console.log('[V3] base_ADR source:', summaryADR > 0 ? 'airbtics_summary' : 'weighted_comp_calc', { summaryADR, summaryOcc });
+  // PMI rule: market-level summary stats are not representative for large properties.
+  // For 7+ guest properties the market median reflects mostly smaller properties
+  // and severely undervalues premium large-format properties like Edinburgh Old Town.
+  // Verified: EH1 4-bed/9-guest returns £119 ADR from summary vs £671 ADR from comps.
+  const targetGuests = guests;
+  const summaryStatsReliable = summaryADR > 0 && targetGuests < 7;
 
-  const base_ADR = summaryADR > 0
-    ? summaryADR
-    : calculateWeightedADR(enrichedComps, enrichment, bedrooms, lat, lng);
+  let base_ADR: number;
+  let base_occ: number;
 
-  const base_occ = summaryOcc > 0
-    ? normaliseOccupancy(summaryOcc)
-    : calculateWeightedOccupancy(enrichedComps, enrichment, lat, lng);
+  if (summaryStatsReliable) {
+    base_ADR = summaryADR;
+    base_occ = summaryOcc > 0
+      ? normaliseOccupancy(summaryOcc)
+      : calculateWeightedOccupancy(enrichedComps, enrichment, lat, lng);
+    console.log('[V3] base_ADR: summary_stats', { summaryADR, targetGuests });
+  } else {
+    console.log('[V3] base_ADR: weighted_comp_calc', {
+      reason: targetGuests >= 7 ? 'large_property' : 'no_summary_stats',
+      summaryADR,
+      targetGuests,
+    });
+    base_ADR = calculateWeightedADR(enrichedComps, enrichment, bedrooms, lat, lng);
+    base_occ = calculateWeightedOccupancy(enrichedComps, enrichment, lat, lng);
+  }
 
   const trimmed = wasADRTrimmed(enrichedComps);
   console.log(`[V3] Step 5: base_ADR=£${base_ADR.toFixed(0)}, base_occ=${(base_occ*100).toFixed(0)}% (weighted)`);
