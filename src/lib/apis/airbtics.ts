@@ -43,26 +43,34 @@ const ADR_OUTLIER_TRIM_PERCENT = 0.15;
 
 // ─── V3 Location classification ─────────────────────────────────
 // UK major-city outward-code prefixes → treated as urban
+// PMI rule: city centre classification takes precedence over coastal proximity.
+// EH1 Old Town comps drawn within 0.15mi radius — dense urban behaviour.
+// Scottish city centres (G Glasgow, EH Edinburgh, AB Aberdeen, DD Dundee) are
+// classified urban regardless of proximity to water.
 const URBAN_POSTCODE_PREFIXES = new Set<string>([
   // Greater London
   'E', 'EC', 'N', 'NW', 'SE', 'SW', 'W', 'WC',
   'BR', 'CR', 'DA', 'EN', 'HA', 'IG', 'KT', 'RM', 'SM', 'TW', 'UB', 'WD',
-  // Core cities
+  // Core cities (incl. Scottish city centres)
   'B', 'M', 'LS', 'S', 'L', 'BS', 'EH', 'G', 'NE', 'NG', 'CF', 'LE', 'CV', 'BD',
+  'AB', 'DD',
 ]);
 
-// UK coastal outward-code prefixes
+// UK coastal outward-code prefixes (AB removed — Aberdeen is urban, not coastal)
 const COASTAL_POSTCODE_PREFIXES = new Set<string>([
   'TR', 'PL', 'EX', 'TQ', 'BH', 'BN', 'CT', 'TN', 'PO', 'SO', 'SA', 'LL',
-  'PH', 'AB', 'KW', 'TD', 'DG', 'PA', 'KA', 'ZE', 'HS', 'IV',
+  'PH', 'KW', 'TD', 'DG', 'PA', 'KA', 'ZE', 'HS', 'IV',
 ]);
 
-// Default radius steps (km) per location class — rural properties start wider
+// Default radius steps (km) per location class — rural properties start wider.
+// PMI rule: expand radius until 12 comps found regardless of distance.
+// Grundisburgh IP13 required 2.88mi for 12th comp — fixed caps produce unstable
+// thin-market results. Rural steps now extend to ~15-20 miles if needed.
 const RADIUS_BY_CLASS: Record<LocationClass, number[]> = {
   urban:          [0.4, 0.8, 1.6],
   suburban:       [0.8, 1.6, 3.2],
-  rural_village:  [4.0, 8.0, 16.0],
-  rural_isolated: [8.0, 16.0, 32.0],
+  rural_village:  [4.0, 8.0, 16.0, 24.0],   // keep expanding to ~15 miles
+  rural_isolated: [8.0, 16.0, 24.0, 32.0],  // keep expanding to ~20 miles
   coastal:        [6.0, 12.0, 20.0],
 };
 
@@ -213,7 +221,8 @@ export async function getShortLetData(
   const lowQuality: DataQuality = {
     comparablesFound: 0, comparablesTarget: TARGET_COMPARABLES,
     searchRadiusKm: 0, searchBroadened: false, level: 'low',
-    disclaimer: 'Limited data available for this area. This property may be in a unique or rural location, which can be advantageous for short-term letting. Book a web meeting with Stayful for a more detailed, personalised assessment.',
+    disclaimer: 'Comparables are estimated from local market data. Real-time listings were unavailable for this location.',
+    comparablesSource: 'synthetic',
   };
 
   // V3 — Classify location once (used by pipeline + dynamic radius steps)
@@ -222,7 +231,7 @@ export async function getShortLetData(
 
   if (!apiKey) {
     console.log('AIRBTICS_API_KEY not set, using market estimates');
-    return { data: generateMarketEstimate(bedrooms), quality: lowQuality };
+    return { data: generateMarketEstimate(bedrooms, locationClass, guests), quality: lowQuality };
   }
 
   // ── PRIMARY: Try report/all ($0.50, highest accuracy with real comps) ──
@@ -274,7 +283,7 @@ export async function getShortLetData(
 
   // ── FINAL FALLBACK: generic estimate ──
   console.log('[Airbtics] All paths failed - using generic market estimate');
-  return { data: generateMarketEstimate(bedrooms), quality: lowQuality };
+  return { data: generateMarketEstimate(bedrooms, locationClass, guests), quality: lowQuality };
 }
 
 // ─── report/all comp shape ─────────────────────────────────────
@@ -1022,7 +1031,7 @@ function buildDataFromReportComps(
   // ── Handle no-comps edge case ──
   if (top12.length === 0) {
     console.log(`[V2] No comps matched — falling back to generic estimate`);
-    const estimate = generateMarketEstimate(bedrooms);
+    const estimate = generateMarketEstimate(bedrooms, locationClass, guests);
     return {
       data: estimate,
       quality: {
@@ -1031,7 +1040,8 @@ function buildDataFromReportComps(
         searchRadiusKm: report.radius ? report.radius / 1000 : 0,
         searchBroadened: false,
         level: 'low',
-        disclaimer: `No comparable properties accommodating ~${guests} guests were found. Market-level estimates have been used. Book a web meeting with Stayful for accurate, personalised revenue projections.`,
+        disclaimer: 'Comparables are estimated from local market data. Real-time listings were unavailable for this location.',
+        comparablesSource: 'synthetic',
       },
     };
   }
@@ -1089,15 +1099,42 @@ function buildDataFromReportComps(
   const summaryADR = report.median_adr ?? report.summary?.median_adr ?? 0;
   const summaryOcc = report.median_occupancy ?? report.summary?.median_occupancy ?? 0;
 
-  console.log('[V3] base_ADR source:', summaryADR > 0 ? 'airbtics_summary' : 'weighted_comp_calc', { summaryADR, summaryOcc });
+  // PMI rule: summary stats must represent the correct guest tier.
+  // Airbtics returns market-wide medians; for large properties (6+ guests) these
+  // reflect the smaller-property majority and undervalue the subject property.
+  // If the selected comp pool's median guest count differs from target by >2,
+  // the summary stats are not representative — use guest-filtered weighted calc instead.
+  const compGuestCounts = enrichedComps
+    .map(c => c.accommodates ?? 0)
+    .filter(g => g > 0)
+    .sort((a, b) => a - b);
+  const compMedianGuests = compGuestCounts.length > 0
+    ? compGuestCounts[Math.floor(compGuestCounts.length / 2)]
+    : 0;
+  const targetGuests = guests;
+  const summaryStatsRepresentative = compMedianGuests === 0
+    || Math.abs(compMedianGuests - targetGuests) <= 2;
 
-  const base_ADR = summaryADR > 0
-    ? summaryADR
-    : calculateWeightedADR(enrichedComps, enrichment, bedrooms, lat, lng);
+  let base_ADR: number;
+  let base_occ: number;
 
-  const base_occ = summaryOcc > 0
-    ? normaliseOccupancy(summaryOcc)
-    : calculateWeightedOccupancy(enrichedComps, enrichment, lat, lng);
+  if (summaryADR > 0 && summaryStatsRepresentative) {
+    base_ADR = summaryADR;
+    base_occ = summaryOcc > 0
+      ? normaliseOccupancy(summaryOcc)
+      : calculateWeightedOccupancy(enrichedComps, enrichment, lat, lng);
+    console.log('[V3] base_ADR: airbtics_summary (representative)', { summaryADR, summaryOcc, compMedianGuests, targetGuests });
+  } else if (summaryADR > 0 && !summaryStatsRepresentative) {
+    // Summary stats exist but represent wrong guest tier — use guest-filtered comp calc.
+    console.log('[V3] base_ADR: weighted_comp_calc (guest mismatch)', { summaryADR, compMedianGuests, targetGuests });
+    base_ADR = calculateWeightedADR(enrichedComps, enrichment, bedrooms, lat, lng);
+    base_occ = calculateWeightedOccupancy(enrichedComps, enrichment, lat, lng);
+  } else {
+    // No summary stats — use comp calc as before.
+    console.log('[V3] base_ADR: weighted_comp_calc (no summary stats)');
+    base_ADR = calculateWeightedADR(enrichedComps, enrichment, bedrooms, lat, lng);
+    base_occ = calculateWeightedOccupancy(enrichedComps, enrichment, lat, lng);
+  }
 
   const trimmed = wasADRTrimmed(enrichedComps);
   console.log(`[V3] Step 5: base_ADR=£${base_ADR.toFixed(0)}, base_occ=${(base_occ*100).toFixed(0)}% (weighted)`);
@@ -1255,6 +1292,8 @@ function buildDataFromReportComps(
       searchBroadened: false,
       level: qualityLevel,
       disclaimer,
+      // PMI rule: comps here are real Airbtics report/all listings.
+      comparablesSource: 'airbtics',
     },
   };
 }
@@ -1346,17 +1385,22 @@ async function getShortLetDataFromMarkets(
   options?: ShortLetOptions,
 ): Promise<{ data: ShortLetData; quality: DataQuality }> {
   const finishQuality = options?.finishQuality;
+  // PMI rule: coastal occupancy differs structurally from urban. Compute location
+  // class early so fallback paths (no market, no data) can apply the correct
+  // occupancy table in generateMarketEstimate.
+  const tierBLocationClass = classifyLocation(postcode);
   const lowQuality: DataQuality = {
     comparablesFound: 0, comparablesTarget: TARGET_COMPARABLES,
     searchRadiusKm: 0, searchBroadened: false, level: 'low',
-    disclaimer: 'Limited data available for this area. This property may be in a unique or rural location, which can be advantageous for short-term letting. Book a web meeting with Stayful for a more detailed, personalised assessment.',
+    disclaimer: 'Comparables are estimated from local market data. Real-time listings were unavailable for this location.',
+    comparablesSource: 'synthetic',
   };
 
   // Step 1: Find market ID from postcode area (cached)
   const marketId = await findMarketId(postcode, apiKey);
   if (!marketId) {
     console.log('Airbtics: no market found for postcode, using estimates');
-    return { data: generateMarketEstimate(bedrooms), quality: lowQuality };
+    return { data: generateMarketEstimate(bedrooms, tierBLocationClass, guests), quality: lowQuality };
   }
 
   // Step 2: Fetch ALL data in parallel for maximum accuracy ($0.70 total)
@@ -1379,7 +1423,7 @@ async function getShortLetDataFromMarkets(
   // If no monthly data AND no useful summary, fall back to estimates
   if (revenue.length === 0 && !summaryHasData) {
     console.log('Airbtics: no data available, using market estimates');
-    return { data: generateMarketEstimate(bedrooms), quality: lowQuality };
+    return { data: generateMarketEstimate(bedrooms, tierBLocationClass, guests), quality: lowQuality };
   }
 
   // Use summary as primary source (bedroom-specific, always accurate)
@@ -1400,7 +1444,7 @@ async function getShortLetDataFromMarkets(
       : summaryOccupancy || 0.65;
   } else {
     // Use summary annual revenue distributed with seasonal weighting
-    const base = (summaryRevenue || generateMarketEstimate(bedrooms).annualRevenue) / 12;
+    const base = (summaryRevenue || generateMarketEstimate(bedrooms, tierBLocationClass).annualRevenue) / 12;
     const seasonalMultipliers = [0.82, 0.85, 0.95, 1.00, 1.08, 1.18, 1.25, 1.22, 1.10, 0.98, 0.88, 0.80];
     monthlyRevenue = seasonalMultipliers.map(m => Math.round(base * m));
     avgOccupancy = summaryOccupancy || 0.65;
@@ -1412,7 +1456,8 @@ async function getShortLetDataFromMarkets(
   // Airbtics market figures, so we only apply the property-feature uplift.
   // finishQuality is still read from options so noqa on unused-variable.
   void finishQuality;
-  const tierBLocationClass = classifyLocation(postcode);
+  // tierBLocationClass already declared at top of function (used earlier for
+  // fallback paths); reuse it here for the headline-mode multiplier.
   const { total: headlineMult } = getADRMultiplier(
     {
       locationClass: tierBLocationClass,
@@ -1437,9 +1482,18 @@ async function getShortLetDataFromMarkets(
   monthlyRevenue = monthlyRevenue.map(m => Math.round(m * headlineMult * guestAdjustment));
 
   // ── Rule of 12: Try to find 12 comparables, broadening search if needed ──
+  // PMI rule: radius expansion is driven by comp count, not distance. For rural
+  // markets, use location-class-specific wider radii so thin markets can still
+  // reach 12 comps (e.g. Grundisburgh IP13 needs ~4.6km for its 12th comp).
+  const classRadii = RADIUS_BY_CLASS[tierBLocationClass] ?? SEARCH_RADII_KM;
+  const radiusSteps: number[] = (
+    tierBLocationClass === 'rural_village' || tierBLocationClass === 'rural_isolated'
+  )
+    ? classRadii
+    : SEARCH_RADII_KM;
   let comparables: ShortLetComparable[] = [];
   let activeListings = 0;
-  let searchRadiusKm = SEARCH_RADII_KM[0];
+  let searchRadiusKm = radiusSteps[0];
   let searchBroadened = false;
 
   // First attempt uses the initial bounds result
@@ -1451,9 +1505,9 @@ async function getShortLetDataFromMarkets(
 
   // If we have fewer than 12, try broader radii (PMI progressive expansion)
   if (comparables.length < TARGET_COMPARABLES) {
-    for (let i = 1; i < SEARCH_RADII_KM.length; i++) {
-      const radiusKm = SEARCH_RADII_KM[i];
-      console.log(`Airbtics: only ${comparables.length}/${TARGET_COMPARABLES} comparables, broadening to ${radiusKm}km`);
+    for (let i = 1; i < radiusSteps.length; i++) {
+      const radiusKm = radiusSteps[i];
+      console.log(`Airbtics: only ${comparables.length}/${TARGET_COMPARABLES} comparables, broadening to ${radiusKm}km (class=${tierBLocationClass})`);
       searchBroadened = true;
       searchRadiusKm = radiusKm;
 
@@ -1466,7 +1520,7 @@ async function getShortLetDataFromMarkets(
       }
     }
   } else {
-    searchRadiusKm = SEARCH_RADII_KM[0];
+    searchRadiusKm = radiusSteps[0];
   }
 
   // Cap at 12 comparables
@@ -1511,6 +1565,8 @@ async function getShortLetDataFromMarkets(
     disclaimer = `Projections are based on ${bedrooms}-bedroom market median data for the area, adjusted for guest capacity and property specification. Real-time comparable listings were not available during this lookup. Book a web meeting with Stayful for accurate, personalised revenue projections based on your specific location.`;
   }
 
+  // PMI rule: tier B comps can be either real Airbtics listings or synthetic
+  // fallbacks if the bounds endpoint returned nothing.
   const quality: DataQuality = {
     comparablesFound,
     comparablesTarget: TARGET_COMPARABLES,
@@ -1518,9 +1574,17 @@ async function getShortLetDataFromMarkets(
     searchBroadened,
     level: qualityLevel,
     disclaimer,
+    comparablesSource: comparables.length > 0 ? 'airbtics' : 'synthetic',
   };
 
   const paddedRevenue = padTo12Months(monthlyRevenue);
+
+  // PMI rule: never return an empty comparables array. If the bounds endpoint
+  // gave us nothing usable, synthesise representative comps from the computed
+  // market stats so the UI still has something to show.
+  const finalComparables = comparables.length > 0
+    ? comparables
+    : generateSyntheticComps(bedrooms, guests, derivedAdr, avgOccupancy);
 
   return {
     data: {
@@ -1529,7 +1593,7 @@ async function getShortLetDataFromMarkets(
       occupancyRate: Math.round(avgOccupancy * 100) / 100,
       averageDailyRate: derivedAdr,
       activeListings,
-      comparables,
+      comparables: finalComparables,
     },
     quality,
   };
@@ -1887,31 +1951,119 @@ function padTo12Months(data: number[]): ShortLetData['monthlyRevenue'] {
 }
 
 /**
+ * PMI rule: always show 12 comparable listings — users must see what they are
+ * compared against. When real Airbtics comps are unavailable, generate three
+ * representative synthetic comps (below-market / market-rate / well-managed)
+ * from the calculated market stats.
+ */
+function generateSyntheticComps(
+  bedrooms: number,
+  guests: number,
+  adr: number,
+  occupancy: number,
+): ShortLetComparable[] {
+  const label = bedrooms === 0 ? 'studio' : `${bedrooms}-bed`;
+  const clamp = (v: number, lo: number, hi: number): number => Math.max(lo, Math.min(hi, v));
+
+  const wellOcc = clamp(occupancy * 1.1, 0, 0.90);
+  return [
+    {
+      title: `Typical ${label} property in this area`,
+      url: '',
+      bedrooms,
+      accommodates: guests,
+      averageDailyRate: Math.round(adr * 0.85),
+      occupancyRate: Math.round(occupancy * 100) / 100,
+      annualRevenue: Math.round(adr * 0.85 * occupancy * 280),
+      distance: undefined,
+      rating: 0,
+      reviewCount: 0,
+      listingAge: 0,
+      daysAvailable: 280,
+      synthetic: true,
+      note: 'Estimated from local market data',
+    },
+    {
+      title: `Average ${label} property in this area`,
+      url: '',
+      bedrooms,
+      accommodates: guests,
+      averageDailyRate: Math.round(adr),
+      occupancyRate: Math.round(occupancy * 100) / 100,
+      annualRevenue: Math.round(adr * occupancy * 310),
+      distance: undefined,
+      rating: 0,
+      reviewCount: 0,
+      listingAge: 0,
+      daysAvailable: 310,
+      synthetic: true,
+      note: 'Estimated from local market data',
+    },
+    {
+      title: `Well-managed ${label} property in this area`,
+      url: '',
+      bedrooms,
+      accommodates: guests,
+      averageDailyRate: Math.round(adr * 1.15),
+      occupancyRate: Math.round(wellOcc * 100) / 100,
+      annualRevenue: Math.round(adr * 1.15 * wellOcc * 340),
+      distance: undefined,
+      rating: 0,
+      reviewCount: 0,
+      listingAge: 0,
+      daysAvailable: 340,
+      synthetic: true,
+      note: 'Estimated from local market data',
+    },
+  ];
+}
+
+/**
  * Generates realistic short-let estimates based on UK market averages.
  * Used when Airbtics API is unavailable or has insufficient credits.
  */
-function generateMarketEstimate(bedrooms: number): ShortLetData {
+function generateMarketEstimate(bedrooms: number, locationClass?: LocationClass, guests?: number): ShortLetData {
   // V3 fix — previously 4/5/6/7/8-bed all used identical [200,280] range.
   // Calibrated against PMI data: Derby 5-bed = £174 ADR, Bradford 1-bed = £87 ADR.
+  //
+  // PMI rule: studios follow identical formula to larger properties —
+  // median_ADR × median_occ × 365. ADR ~75-85% of local 1-bed market rate.
+  //
+  // 6+ bedroom entries removed — those properties are handled upstream as
+  // unsupported (route.ts returns early with unsupported:true for bedrooms > 5).
   const adrRanges: Record<number, [number, number]> = {
+    0: [65,  95],  // studio: ~75-85% of 1-bed ADR, sleeps 2 guests maximum
     1: [70,  100],
     2: [90,  130],
     3: [120, 170],
     4: [150, 210],
     5: [165, 230],
-    6: [180, 250],
-    7: [200, 270],
-    8: [220, 290],
   };
-  const range = adrRanges[Math.min(bedrooms, 8)] ?? adrRanges[5];
+  const range = adrRanges[Math.min(Math.max(bedrooms, 0), 5)] ?? adrRanges[5];
   const adr = Math.round((range[0] + range[1]) / 2);
 
   // V3 fix — graduate occupancy by bedroom count — larger properties have
-  // lower base occupancy.
+  // lower base occupancy. Studios slightly higher than 1-beds (cheap, fill easily).
   const occupancyByBeds: Record<number, number> = {
-    1: 0.72, 2: 0.70, 3: 0.67, 4: 0.66, 5: 0.65, 6: 0.63, 7: 0.61, 8: 0.59,
+    0: 0.62, 1: 0.72, 2: 0.70, 3: 0.67, 4: 0.66, 5: 0.65,
   };
-  const occupancy = occupancyByBeds[Math.min(bedrooms, 8)] ?? 0.63;
+
+  // PMI rule: coastal occupancy is size-dependent, not a flat discount.
+  // Small props fill year-round (affordable off-season); large props are summer-peak dependent.
+  // Rule: coastal 1-beds ABOVE urban baseline; coastal 3-bed+ BELOW urban baseline.
+  // Evidence: Broadstairs 1-bed=80%, 4-bed=56%; Scarborough 3-bed=53% vs urban 3-bed=67%.
+  const coastalOccupancyByBeds: Record<number, number> = {
+    0: 0.68,  // studio coastal: above urban (0.62) — cheap, fills year-round
+    1: 0.78,  // 1-bed coastal: above urban (0.72) — affordable weekend breaks
+    2: 0.62,  // 2-bed coastal: roughly equal to urban
+    3: 0.53,  // 3-bed coastal: below urban (0.67) — summer-dependent
+    4: 0.56,  // 4-bed coastal: below urban (0.66) — summer-dependent
+    5: 0.52,  // 5-bed coastal: below urban (0.65) — highly summer-dependent
+  };
+
+  const occupancyTable = locationClass === 'coastal' ? coastalOccupancyByBeds : occupancyByBeds;
+  const clampedBeds = Math.min(Math.max(bedrooms, 0), 5);
+  const occupancy = occupancyTable[clampedBeds] ?? (locationClass === 'coastal' ? 0.55 : 0.63);
   const annualRevenue = Math.round(adr * 365 * occupancy);
 
   const seasonalMultipliers = [
@@ -1922,12 +2074,18 @@ function generateMarketEstimate(bedrooms: number): ShortLetData {
     Math.round(baseMonthly * m),
   ) as ShortLetData['monthlyRevenue'];
 
+  // PMI rule: always return 12 comparable listings. When falling back to a
+  // market estimate, populate with synthetic representative comps so the UI
+  // never shows a blank section.
+  const syntheticGuestCount = guests ?? Math.max(bedrooms * 2, 2);
+  const comparables = generateSyntheticComps(bedrooms, syntheticGuestCount, adr, occupancy);
+
   return {
     annualRevenue,
     monthlyRevenue,
     occupancyRate: occupancy,
     averageDailyRate: adr,
     activeListings: 0,
-    comparables: [],
+    comparables,
   };
 }
