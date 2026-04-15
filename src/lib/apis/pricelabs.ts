@@ -92,17 +92,35 @@ export async function fetchPriceLabsNeighborhood(
   url.searchParams.set('bedrooms', String(bedrooms));
   url.searchParams.set('country', 'GB');
 
+  // Auth header format. PriceLabs has used different schemes across product
+  // tiers; default to Bearer (newer Public API). Override via env var:
+  //   PRICELABS_AUTH_SCHEME = 'bearer' | 'x-api-key' | 'api-key' | 'pricelabsapi'
+  const authScheme = (process.env.PRICELABS_AUTH_SCHEME || 'bearer').toLowerCase();
+  const authHeaders: Record<string, string> = { Accept: 'application/json' };
+  switch (authScheme) {
+    case 'x-api-key':
+      authHeaders['X-API-Key'] = apiKey;
+      break;
+    case 'api-key':
+      authHeaders['API-Key'] = apiKey;
+      break;
+    case 'pricelabsapi':
+      authHeaders['Authorization'] = `PRICELABSAPI ${apiKey}`;
+      break;
+    case 'bearer':
+    default:
+      authHeaders['Authorization'] = `Bearer ${apiKey}`;
+      break;
+  }
+
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
   try {
-    console.log(`[PriceLabs] GET ${url.toString().replace(apiKey, '<redacted>')}`);
+    console.log(`[PriceLabs] GET ${url.toString().replace(apiKey, '<redacted>')} (auth=${authScheme})`);
     const response = await fetch(url.toString(), {
       method: 'GET',
-      headers: {
-        'X-API-Key': apiKey,
-        'Accept': 'application/json',
-      },
+      headers: authHeaders,
       signal: controller.signal,
       cache: 'no-store',
     });
@@ -111,7 +129,7 @@ export async function fetchPriceLabsNeighborhood(
     console.log(`[PriceLabs] HTTP ${response.status}`);
     if (!response.ok) {
       const body = await response.text().catch(() => '');
-      console.error(`[PriceLabs] non-200 response (${response.status}): ${body.slice(0, 300)}`);
+      console.error(`[PriceLabs] non-200 response (${response.status}, scheme=${authScheme}): ${body.slice(0, 300)}`);
       return null;
     }
 
