@@ -4,7 +4,7 @@ import { getShortLetData } from '@/lib/apis/airbtics';
 import { getLongLetData, getFloorArea } from '@/lib/apis/propertydata';
 import { getNearbyAmenities } from '@/lib/apis/google-places';
 import { getNearbyEvents } from '@/lib/apis/ticketmaster';
-import { fetchPriceLabsNeighborhood, crossValidate } from '@/lib/apis/pricelabs';
+import { fetchPriceLabsRevenueEstimate, buildCrossValidation } from '@/lib/apis/pricelabs';
 import { calculateFinancials, assessRisk, generateVerdict } from '@/lib/analysis';
 
 // ─── Rate Limiter (in-memory, per IP) ────────────────────────────
@@ -219,14 +219,17 @@ export async function POST(request: Request) {
             specialFeatures: validSpecialFeatures,  // V3
           },
         );
-        // PriceLabs cross-validation runs in parallel with Airbtics. Returns
-        // null if PRICELABS_API_KEY is not set or the API call fails — the
-        // analyse flow continues with the Airbtics result either way.
-        const priceLabsPromise = fetchPriceLabsNeighborhood(
-          coordinates.lat,
-          coordinates.lng,
-          property.bedrooms,
-        );
+        // PriceLabs Revenue Estimator runs in parallel with Airbtics+V4.
+        // When successful, its result will OVERRIDE the V4 headline below.
+        // When it fails (missing key, 401, 429 quota exhausted, 500), the
+        // analyse flow continues with the Airbtics V4 result unchanged.
+        const priceLabsPromise = fetchPriceLabsRevenueEstimate({
+          address: property.address,
+          bedrooms: property.bedrooms,
+          lat: coordinates.lat,
+          lng: coordinates.lng,
+          currency: 'GBP',
+        });
         const [shortLetResult, longLetResult, priceLabsResult] = await Promise.allSettled([
           shortLetPromise,
           longLetPromise,
@@ -309,20 +312,38 @@ export async function POST(request: Request) {
         // ── Final: Run analysis ──────────────────────────────────────
         send({ stage: 'analysis', progress: 90, message: 'Running financial analysis...' });
 
+        // PriceLabs Revenue Estimator override.
+        // If the trial/subscription returned a successful estimate, it
+        // becomes the primary headline source — we overwrite shortLet.* with
+        // PriceLabs values BEFORE running financials. The V4-on-Airbtics
+        // result is preserved in crossValidation.airbticsRevenue for
+        // transparency but no longer drives the headline.
+        const priceLabsData = priceLabsResult.status === 'fulfilled' ? priceLabsResult.value : null;
+        if (priceLabsResult.status === 'rejected') {
+          console.error('[PriceLabs RE] promise rejected:', priceLabsResult.reason);
+        }
+        const crossValidation = buildCrossValidation(shortLet.annualRevenue, priceLabsData);
+
+        if (priceLabsData) {
+          // Override headline: replace V4 numbers with PriceLabs RE numbers.
+          // Comparables stay as Airbtics-sourced (PriceLabs RE doesn't
+          // expose individual comp listings, only aggregates).
+          shortLet.annualRevenue = priceLabsData.annualRevenue;
+          shortLet.averageDailyRate = priceLabsData.adr;
+          shortLet.occupancyRate = priceLabsData.occupancy;
+          // PriceLabs gives us 12 monthly values — use directly.
+          // Cast required: ShortLetData expects a fixed-length tuple.
+          const padded: number[] = [...priceLabsData.monthlyRevenue];
+          while (padded.length < 12) padded.push(0);
+          shortLet.monthlyRevenue = padded.slice(0, 12) as ShortLetData['monthlyRevenue'];
+          console.log(`[PriceLabs RE] overrode headline: was £${crossValidation.airbticsRevenue}, now £${priceLabsData.annualRevenue} (range £${priceLabsData.rangeLow}-£${priceLabsData.rangeHigh})`);
+        }
+        console.log(`[PriceLabs RE] crossValidation: source=${crossValidation.source}, confidence=${crossValidation.confidence}, divergence=${crossValidation.divergencePct?.toFixed(1) ?? 'n/a'}%`);
+
+        // Re-run financials with the (possibly overridden) shortLet values
         const financials = calculateFinancials(shortLet, longLet);
         const risk = assessRisk(shortLet, longLet, demandDrivers, nearbyEvents);
         const verdict = generateVerdict(financials, risk);
-
-        // PriceLabs cross-validation — compute confidence label from the
-        // divergence between Airbtics-derived headline and PriceLabs
-        // neighborhood RevPAR. If PriceLabs returned null, this still works
-        // (yields confidence='unverified' with note explaining why).
-        const priceLabsData = priceLabsResult.status === 'fulfilled' ? priceLabsResult.value : null;
-        if (priceLabsResult.status === 'rejected') {
-          console.error('[PriceLabs] promise rejected:', priceLabsResult.reason);
-        }
-        const crossValidation = crossValidate(shortLet.annualRevenue, priceLabsData);
-        console.log(`[PriceLabs] crossValidation: confidence=${crossValidation.confidence}, divergence=${crossValidation.divergencePct?.toFixed(1) ?? 'n/a'}%`);
 
         const now = new Date().toISOString();
 

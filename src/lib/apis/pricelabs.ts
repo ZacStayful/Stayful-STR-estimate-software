@@ -1,254 +1,234 @@
 /**
- * PriceLabs Neighborhood Data API integration.
+ * PriceLabs Revenue Estimator API integration.
  *
- * Provides a secondary STR data source for cross-validating Airbtics
- * comp aggregations. The Airbtics pipeline (V4 in airbtics.ts) computes
- * the headline figure; PriceLabs is consulted in parallel and used only
- * as a "second opinion" / confidence indicator.
+ * Endpoint: GET https://api.pricelabs.co/v1/revenue/estimator
+ * Auth:     X-API-Key header
+ * Docs:     https://app.swaggerhub.com/apis-docs/PriceLabs/Revenue_Estimator/v1
  *
- * Behaviour:
- *  - If PRICELABS_API_KEY env var is missing → returns null (silent skip).
- *  - If the API call fails for any reason (HTTP error, timeout, parse
- *    error) → returns null with a console.error.
- *  - The analyse route MUST handle null gracefully — never block on
- *    PriceLabs failure.
+ * Returns a direct annual revenue estimate for a property based on
+ * PriceLabs' own scraped Airbnb dataset. When successful this becomes the
+ * PRIMARY headline source — the analyse route overrides shortLet.* with
+ * these values. On any failure (missing key, HTTP error, no data for the
+ * bedroom category) we return null and the route falls back to the
+ * existing V4-on-Airbtics pipeline.
  *
- * Endpoint defaults to https://api.pricelabs.co/v1/neighborhood_data.
- * Override via PRICELABS_API_URL env var if your subscription uses a
- * different base URL.
- *
- * Response parser is defensive: looks for common field names because
- * PriceLabs has shipped multiple response shapes over time.
+ * Trial subscription tier ships with a 20-call quota. After that the API
+ * returns 429 — we handle it gracefully like any other failure.
  */
 
-const DEFAULT_BASE_URL = 'https://api.pricelabs.co/v1/neighborhood_data';
-const REQUEST_TIMEOUT_MS = 10_000;
+const RE_ENDPOINT = 'https://api.pricelabs.co/v1/revenue/estimator';
+// PriceLabs docs say 6-8s for 350 listings; allow 30s for safety
+const REQUEST_TIMEOUT_MS = 30_000;
 
-export interface PriceLabsNeighborhoodResult {
-  medianAdr: number;       // GBP, may be 0 if not provided
-  medianOccupancy: number; // 0–1 fraction
-  medianRevpar: number;    // GBP per available day
-  source: string;          // e.g. 'pricelabs_neighborhood_data'
-  raw?: unknown;           // raw response for debugging
+export interface PriceLabsRevenueEstimate {
+  annualRevenue: number;
+  rangeLow: number;          // 25th percentile sum (lower bound)
+  rangeHigh: number;         // 75th percentile sum (upper bound)
+  adr: number;               // 50th percentile ADR average
+  occupancy: number;         // 0-1 fraction
+  monthlyRevenue: number[];  // 12 entries [Jan..Dec], £ rounded
+  listingsConsidered: number;
+  bedroomCategory: number;
+  source: 'pricelabs_revenue_estimator_v2';
 }
 
-/**
- * Coerce a value that might be a percentage (0-100) or a fraction (0-1)
- * into a 0-1 fraction. Mirrors normaliseOccupancy in airbtics.ts.
- */
-function toFraction(value: unknown): number {
-  const n = typeof value === 'number' ? value : Number(value);
-  if (!Number.isFinite(n) || n <= 0) return 0;
-  return n > 1 ? n / 100 : n;
+interface BedroomKPIs {
+  Revenue50PercentileSum?: number;
+  Revenue25PercentileSum?: number;
+  Revenue75PercentileSum?: number;
+  ADR50PercentileAvg?: number;
+  AvgAdjustedOccupancy?: number;
+  NoOfListings?: number;
+  MonthlyBreakup?: {
+    Revenue50Percentile?: Record<string, number>;
+  };
 }
 
-/**
- * Pull the first defined number from a list of candidate field paths.
- * PriceLabs docs have used different field names over time.
- */
-function pickNumber(obj: unknown, paths: string[]): number {
-  if (!obj || typeof obj !== 'object') return 0;
-  for (const path of paths) {
-    let cursor: unknown = obj;
-    for (const key of path.split('.')) {
-      if (cursor && typeof cursor === 'object' && key in (cursor as Record<string, unknown>)) {
-        cursor = (cursor as Record<string, unknown>)[key];
-      } else {
-        cursor = undefined;
-        break;
-      }
-    }
-    const n = typeof cursor === 'number' ? cursor : Number(cursor);
-    if (Number.isFinite(n) && n > 0) return n;
-  }
-  return 0;
+interface PriceLabsV2Response {
+  KPIsByBedroomCategory?: Record<string, BedroomKPIs>;
+  bedrooms_considered?: string[];
 }
 
-/**
- * Fetch neighborhood market stats for a UK property location.
- *
- * Returns null on any failure — caller MUST handle null without throwing.
- *
- * @param lat       Property latitude
- * @param lng       Property longitude
- * @param bedrooms  Subject bedroom count (used for bedroom-specific stats)
- */
-export async function fetchPriceLabsNeighborhood(
-  lat: number,
-  lng: number,
-  bedrooms: number,
-): Promise<PriceLabsNeighborhoodResult | null> {
+const MONTH_NAMES = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+];
+
+export async function fetchPriceLabsRevenueEstimate(params: {
+  address: string;
+  bedrooms: number;
+  lat?: number;
+  lng?: number;
+  currency?: string;
+}): Promise<PriceLabsRevenueEstimate | null> {
   const apiKey = process.env.PRICELABS_API_KEY;
   if (!apiKey) {
-    console.log('[PriceLabs] PRICELABS_API_KEY not set — skipping cross-validation');
+    console.log('[PriceLabs RE] PRICELABS_API_KEY not set — skipping');
+    return null;
+  }
+  if (!params.address || params.address.trim().length === 0) {
+    console.log('[PriceLabs RE] address required, skipping');
     return null;
   }
 
-  const baseUrl = process.env.PRICELABS_API_URL || DEFAULT_BASE_URL;
-  const url = new URL(baseUrl);
-  // Common parameter names — adjust if your subscription uses different keys.
-  url.searchParams.set('latitude', String(lat));
-  url.searchParams.set('longitude', String(lng));
-  url.searchParams.set('bedrooms', String(bedrooms));
-  url.searchParams.set('country', 'GB');
+  // PriceLabs uses 1-based bedroom categories. Treat studios as 1-bed for
+  // the lookup (separately our generateMarketEstimate handles studios).
+  const bedroomCat = Math.max(1, Math.round(params.bedrooms));
 
-  // Auth header format. PriceLabs has used different schemes across product
-  // tiers; default to Bearer (newer Public API). Override via env var:
-  //   PRICELABS_AUTH_SCHEME = 'bearer' | 'x-api-key' | 'api-key' | 'pricelabsapi'
-  const authScheme = (process.env.PRICELABS_AUTH_SCHEME || 'bearer').toLowerCase();
-  const authHeaders: Record<string, string> = { Accept: 'application/json' };
-  switch (authScheme) {
-    case 'x-api-key':
-      authHeaders['X-API-Key'] = apiKey;
-      break;
-    case 'api-key':
-      authHeaders['API-Key'] = apiKey;
-      break;
-    case 'pricelabsapi':
-      authHeaders['Authorization'] = `PRICELABSAPI ${apiKey}`;
-      break;
-    case 'bearer':
-    default:
-      authHeaders['Authorization'] = `Bearer ${apiKey}`;
-      break;
-  }
+  const url = new URL(RE_ENDPOINT);
+  url.searchParams.set('version', '2');
+  url.searchParams.set('address', params.address);
+  if (Number.isFinite(params.lat)) url.searchParams.set('latitude', String(params.lat));
+  if (Number.isFinite(params.lng)) url.searchParams.set('longitude', String(params.lng));
+  url.searchParams.set('currency', params.currency || 'GBP');
+  // NB: param name has a literal space — URL encoder handles it.
+  url.searchParams.set('Bedroom category', String(bedroomCat));
+  url.searchParams.set('Monthly', 'true');
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
   try {
-    console.log(`[PriceLabs] GET ${url.toString().replace(apiKey, '<redacted>')} (auth=${authScheme})`);
+    const safeUrl = url.toString().replace(apiKey, '<redacted>');
+    console.log(`[PriceLabs RE] GET ${safeUrl}`);
     const response = await fetch(url.toString(), {
       method: 'GET',
-      headers: authHeaders,
+      headers: {
+        'X-API-Key': apiKey,
+        'Accept': 'application/json',
+      },
       signal: controller.signal,
       cache: 'no-store',
     });
     clearTimeout(timer);
 
-    console.log(`[PriceLabs] HTTP ${response.status}`);
+    console.log(`[PriceLabs RE] HTTP ${response.status}`);
     if (!response.ok) {
       const body = await response.text().catch(() => '');
-      console.error(`[PriceLabs] non-200 response (${response.status}, scheme=${authScheme}): ${body.slice(0, 300)}`);
+      console.error(`[PriceLabs RE] non-200 (${response.status}): ${body.slice(0, 400)}`);
       return null;
     }
 
-    const data = await response.json().catch((err) => {
-      console.error('[PriceLabs] JSON parse error:', err);
+    const data = await response.json().catch((e) => {
+      console.error('[PriceLabs RE] JSON parse error:', e);
       return null;
-    });
+    }) as PriceLabsV2Response | null;
     if (!data) return null;
 
-    // Defensive parsing — try multiple known field names.
-    const adr = pickNumber(data, [
-      'median_adr',
-      'adr',
-      'data.median_adr',
-      'data.adr',
-      'neighborhood.median_adr',
-      'stats.median_adr',
-    ]);
-    const occupancyRaw = pickNumber(data, [
-      'median_occupancy',
-      'occupancy',
-      'data.median_occupancy',
-      'data.occupancy',
-      'neighborhood.median_occupancy',
-      'stats.median_occupancy',
-    ]);
-    const revparRaw = pickNumber(data, [
-      'median_revpar',
-      'revpar',
-      'data.median_revpar',
-      'data.revpar',
-      'neighborhood.median_revpar',
-      'stats.median_revpar',
-    ]);
-
-    const medianOccupancy = toFraction(occupancyRaw);
-    const medianRevpar = revparRaw > 0 ? revparRaw : (adr * medianOccupancy);
-
-    if (adr === 0 && medianRevpar === 0) {
-      console.error('[PriceLabs] response did not contain recognised median_adr / median_occupancy / median_revpar fields. Sample keys:', Object.keys(data || {}).slice(0, 10));
+    const categoryKey = String(bedroomCat);
+    const kpis = data.KPIsByBedroomCategory?.[categoryKey];
+    if (!kpis) {
+      const available = Object.keys(data.KPIsByBedroomCategory || {});
+      console.error(`[PriceLabs RE] no KPIs for bedroom category "${categoryKey}". Available: [${available.join(',')}]`);
       return null;
     }
 
-    const result: PriceLabsNeighborhoodResult = {
-      medianAdr: adr,
-      medianOccupancy,
-      medianRevpar,
-      source: 'pricelabs_neighborhood_data',
-      raw: data,
+    const annualRevenue = Number(kpis.Revenue50PercentileSum);
+    if (!Number.isFinite(annualRevenue) || annualRevenue <= 0) {
+      console.error(`[PriceLabs RE] Revenue50PercentileSum invalid for category ${categoryKey}: ${kpis.Revenue50PercentileSum}`);
+      return null;
+    }
+
+    const rangeLow = Number(kpis.Revenue25PercentileSum) || Math.round(annualRevenue * 0.7);
+    const rangeHigh = Number(kpis.Revenue75PercentileSum) || Math.round(annualRevenue * 1.3);
+    const adr = Number(kpis.ADR50PercentileAvg) || 0;
+    // AvgAdjustedOccupancy is 0-100 in V2 response
+    const occRaw = Number(kpis.AvgAdjustedOccupancy) || 0;
+    const occupancy = occRaw > 1 ? occRaw / 100 : occRaw;
+    const listingsConsidered = Number(kpis.NoOfListings) || 0;
+
+    const monthlyMap = kpis.MonthlyBreakup?.Revenue50Percentile || {};
+    const monthlyRevenue = MONTH_NAMES.map((m) => {
+      const v = Number(monthlyMap[m]);
+      return Number.isFinite(v) && v > 0 ? Math.round(v) : 0;
+    });
+
+    const result: PriceLabsRevenueEstimate = {
+      annualRevenue: Math.round(annualRevenue),
+      rangeLow: Math.round(rangeLow),
+      rangeHigh: Math.round(rangeHigh),
+      adr: Math.round(adr),
+      occupancy,
+      monthlyRevenue,
+      listingsConsidered,
+      bedroomCategory: bedroomCat,
+      source: 'pricelabs_revenue_estimator_v2',
     };
 
-    console.log(`[PriceLabs] parsed: adr=£${adr.toFixed(0)}, occ=${(medianOccupancy * 100).toFixed(0)}%, revpar=£${medianRevpar.toFixed(2)}`);
+    console.log(
+      `[PriceLabs RE] success: annual=£${result.annualRevenue} range=[£${result.rangeLow}, £${result.rangeHigh}] adr=£${result.adr} occ=${(result.occupancy*100).toFixed(0)}% listings=${result.listingsConsidered}`,
+    );
     return result;
   } catch (err) {
     clearTimeout(timer);
-    console.error('[PriceLabs] fetch failed:', err);
+    console.error('[PriceLabs RE] fetch failed:', err);
     return null;
   }
 }
 
 /**
- * Cross-validate an Airbtics-derived revenue against PriceLabs neighborhood data.
- * Returns a confidence label and divergence percentage.
+ * Build a CrossValidation result given both signals.
  *
- * Confidence rules:
- *   |divergence| <= 15%  → 'high'
- *   |divergence| <= 30%  → 'medium'
- *   |divergence| > 30%   → 'low'
- *
- * If PriceLabs result is null (skipped or failed), confidence defaults to
- * 'unverified' — meaning we have only the Airbtics signal.
+ * priceLabs is the primary if non-null. airbticsRevenue is always provided
+ * (V4 always runs). divergencePct measures agreement between the two.
  */
 export type CrossValidationConfidence = 'high' | 'medium' | 'low' | 'unverified';
 
-export interface CrossValidationResult {
+export interface CrossValidationOutcome {
+  source: 'pricelabs_revenue_estimator_v2' | 'airbtics_v4_aggregation';
   confidence: CrossValidationConfidence;
   airbticsRevenue: number;
   priceLabsRevenue: number | null;
+  rangeLow: number | null;
+  rangeHigh: number | null;
+  priceLabsListings: number | null;
   divergencePct: number | null;
   note: string;
 }
 
-export function crossValidate(
-  airbticsAnnualRevenue: number,
-  priceLabs: PriceLabsNeighborhoodResult | null,
-): CrossValidationResult {
-  if (!priceLabs || priceLabs.medianRevpar <= 0) {
+export function buildCrossValidation(
+  airbticsRevenue: number,
+  priceLabs: PriceLabsRevenueEstimate | null,
+): CrossValidationOutcome {
+  if (!priceLabs || priceLabs.annualRevenue <= 0) {
     return {
+      source: 'airbtics_v4_aggregation',
       confidence: 'unverified',
-      airbticsRevenue: airbticsAnnualRevenue,
+      airbticsRevenue,
       priceLabsRevenue: null,
+      rangeLow: null,
+      rangeHigh: null,
+      priceLabsListings: null,
       divergencePct: null,
-      note: 'PriceLabs cross-validation unavailable — single-source estimate.',
+      note: 'PriceLabs Revenue Estimator unavailable — using Airbtics-derived estimate.',
     };
   }
 
-  const priceLabsRevenue = Math.round(priceLabs.medianRevpar * 365);
-  const divergencePct = airbticsAnnualRevenue > 0
-    ? ((airbticsAnnualRevenue - priceLabsRevenue) / airbticsAnnualRevenue) * 100
+  const divergencePct = airbticsRevenue > 0
+    ? ((priceLabs.annualRevenue - airbticsRevenue) / airbticsRevenue) * 100
     : 0;
   const abs = Math.abs(divergencePct);
-
   let confidence: CrossValidationConfidence;
   let note: string;
   if (abs <= 15) {
     confidence = 'high';
-    note = `Both Airbtics and PriceLabs agree within ${abs.toFixed(1)}%.`;
+    note = `PriceLabs and Airbtics agree within ${abs.toFixed(1)}%. Using PriceLabs estimate.`;
   } else if (abs <= 30) {
     confidence = 'medium';
-    note = `Airbtics and PriceLabs differ by ${abs.toFixed(1)}% — moderate confidence.`;
+    note = `PriceLabs and Airbtics differ by ${abs.toFixed(1)}%. Using PriceLabs (more granular dataset).`;
   } else {
     confidence = 'low';
-    note = `Airbtics and PriceLabs differ by ${abs.toFixed(1)}% — low confidence, market may be volatile or thin.`;
+    note = `PriceLabs and Airbtics differ by ${abs.toFixed(1)}% — wide range. Using PriceLabs but treat as low-confidence.`;
   }
 
   return {
+    source: 'pricelabs_revenue_estimator_v2',
     confidence,
-    airbticsRevenue: airbticsAnnualRevenue,
-    priceLabsRevenue,
+    airbticsRevenue,
+    priceLabsRevenue: priceLabs.annualRevenue,
+    rangeLow: priceLabs.rangeLow,
+    rangeHigh: priceLabs.rangeHigh,
+    priceLabsListings: priceLabs.listingsConsidered,
     divergencePct,
     note,
   };

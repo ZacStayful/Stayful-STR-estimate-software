@@ -172,9 +172,16 @@ export interface DataQuality {
 export type CrossValidationConfidence = 'high' | 'medium' | 'low' | 'unverified';
 
 export interface CrossValidation {
+  // Which source produced the headline (shortLet.* values)
+  source: 'pricelabs_revenue_estimator_v2' | 'airbtics_v4_aggregation';
   confidence: CrossValidationConfidence;
+  // Both estimates if both ran successfully (for transparency)
   airbticsRevenue: number;
   priceLabsRevenue: number | null;
+  // PriceLabs 25th–75th percentile range
+  rangeLow: number | null;
+  rangeHigh: number | null;
+  priceLabsListings: number | null;
   divergencePct: number | null;
   note: string;
 }
