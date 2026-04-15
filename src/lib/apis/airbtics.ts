@@ -26,6 +26,18 @@ import type {
   AdrMultipliers,
   AnnualisationMeta,
 } from '../types';
+import {
+  BED_GAP_BOOST_PER_BED,
+  GUEST_GAP_SHRINK_THRESHOLD,
+  OUTLIER_ADR_MULTIPLIER,
+  OUTLIER_REVENUE_MULTIPLIER,
+  OUTLIER_DISTANCE_MULTIPLIER,
+  MIN_COMPS_FOR_AGGREGATION,
+  TOP_N_FOR_COMPRESSED_PREMIUM,
+  isCompressedPremium,
+  typicalOccupancyByBeds,
+  clampBedsForTable,
+} from './pmi-rules';
 
 // ─── V2 Filters & Tiering ───────────────────────────────────────
 // Non-residential types: deprioritised but not excluded
@@ -232,7 +244,7 @@ export async function getShortLetData(
     const reportResult = await fetchReportAll(lat, lng, bedrooms, guests, apiKey, postcode, options?.bathrooms);
     if (reportResult) {
       console.log(`[Airbtics] report/all returned ${reportResult.comps.length} raw comps`);
-      reportAllResult = buildDataFromReportComps(reportResult, bedrooms, guests, lat, lng, locationClass, options);
+      reportAllResult = buildDataFromReportComps(reportResult, bedrooms, guests, lat, lng, locationClass, postcode, options);
 
       // If we got 12+ quality comps, use the report result directly
       if (reportAllResult.quality.comparablesFound >= TARGET_COMPARABLES) {
@@ -955,6 +967,7 @@ function buildDataFromReportComps(
   lat: number,
   lng: number,
   locationClass: LocationClass,
+  postcode: string,
   options?: ShortLetOptions,
 ): { data: ShortLetData; quality: DataQuality } {
   const hasParking = options?.hasParking;
@@ -1078,46 +1091,153 @@ function buildDataFromReportComps(
     };
   });
 
-  // ── Step 5 (V3): Weighted ADR + weighted occupancy ──
-  // Replaces V2's median + outlier trimming. Distance, bedroom-match, property-type,
-  // and review-count all contribute to each comp's weight.
+  // ── Step 5 (V4): PMI-aligned target RevPAR + typical occupancy ──
+  // Derived from analysis of 33 PMI PDF reports. The core insight: PMI does
+  // NOT derive headline ADR directly from comp ADRs. Instead it:
+  //   1. Computes a target RevPAR (revenue per available day) from the 12 comps
+  //   2. Looks up / derives a "typical occupancy" for the market
+  //   3. Splits RevPAR into Occupancy (from lookup) and ADR (= RevPAR / Occ)
   //
-  // V3 fix — use Airbtics' own summary stats if available.
-  // These are more accurate than computing from the comp list because
-  // Airbtics' internal calculation uses all listings in their dataset,
-  // not just the 12 displayed comps. Verified as root cause of Sheffield
-  // S1 returning £10,239 vs PMI's £24,421 for the same property.
+  // See docs/PMI_ALGORITHM_REWRITE_PLAN.md and src/lib/apis/pmi-rules.ts for
+  // the rule tables (thresholds, multipliers, occupancy tables) and their
+  // derivation from PMI samples.
+
+  // Fetch Airbtics' own summary stats — kept for logging only now, not used
+  // for the actual computation (V3 path was too noisy across large properties).
   const summaryADR = report.median_adr ?? report.summary?.median_adr ?? 0;
   const summaryOcc = report.median_occupancy ?? report.summary?.median_occupancy ?? 0;
+  void normaliseOccupancy; // imported helper may be unused after V4 cutover
+  void calculateWeightedADR;
+  void calculateWeightedOccupancy;
+  void enrichment;
 
-  // PMI rule: market-level summary stats are not representative for large properties.
-  // For 7+ guest properties the market median reflects mostly smaller properties
-  // and severely undervalues premium large-format properties like Edinburgh Old Town.
-  // Verified: EH1 4-bed/9-guest returns £119 ADR from summary vs £671 ADR from comps.
-  const targetGuests = guests;
-  const summaryStatsReliable = summaryADR > 0 && targetGuests < 7;
+  // 5a. Pool statistics for outlier filter.
+  const poolAdrs = enrichedComps
+    .map(c => c.avg_booked_daily_rate_ltm ?? 0)
+    .filter(v => v > 0);
+  const poolRevenues = enrichedComps
+    .map(c => c.annual_revenue_ltm ?? 0)
+    .filter(v => v > 0);
+  const poolDistances = enrichedComps.map(c => haversineKm(lat, lng, c.latitude, c.longitude));
+  const poolMedianADR = calculateMedian(poolAdrs);
+  const poolMedianRev = calculateMedian(poolRevenues);
+  const poolMedianDist = calculateMedian(poolDistances);
 
-  let base_ADR: number;
-  let base_occ: number;
+  // 5b. Outlier filter — drop comps that are both high-ADR AND high-revenue
+  // outliers (catches lodge/luxury comps that dominate the pool but don't
+  // reflect the subject property's realistic performance). Also drop comps
+  // whose distance is pathologically above the pool median (non-UK geocode
+  // bug — Barrow LA14 saw comps in Connecticut and Pacific).
+  const filteredComps = enrichedComps.filter(c => {
+    const adr = c.avg_booked_daily_rate_ltm ?? 0;
+    const rev = c.annual_revenue_ltm ?? 0;
+    const dist = haversineKm(lat, lng, c.latitude, c.longitude);
+    const isAdrOutlier = poolMedianADR > 0 && adr > OUTLIER_ADR_MULTIPLIER * poolMedianADR
+      && poolMedianRev > 0 && rev > OUTLIER_REVENUE_MULTIPLIER * poolMedianRev;
+    const isDistOutlier = poolMedianDist > 0 && dist > OUTLIER_DISTANCE_MULTIPLIER * poolMedianDist;
+    return !isAdrOutlier && !isDistOutlier;
+  });
+  const droppedByFilter = enrichedComps.length - filteredComps.length;
+  console.log(`[V4] outlier filter: dropped ${droppedByFilter} of ${enrichedComps.length} comps`);
 
-  if (summaryStatsReliable) {
-    base_ADR = summaryADR;
-    base_occ = summaryOcc > 0
-      ? normaliseOccupancy(summaryOcc)
-      : calculateWeightedOccupancy(enrichedComps, enrichment, lat, lng);
-    console.log('[V3] base_ADR: summary_stats', { summaryADR, targetGuests });
-  } else {
-    console.log('[V3] base_ADR: weighted_comp_calc', {
-      reason: targetGuests >= 7 ? 'large_property' : 'no_summary_stats',
-      summaryADR,
-      targetGuests,
-    });
-    base_ADR = calculateWeightedADR(enrichedComps, enrichment, bedrooms, lat, lng);
-    base_occ = calculateWeightedOccupancy(enrichedComps, enrichment, lat, lng);
+  // If filtering left too few comps, fall back to the unfiltered pool.
+  const effectiveComps = filteredComps.length >= MIN_COMPS_FOR_AGGREGATION
+    ? filteredComps
+    : enrichedComps;
+  if (effectiveComps !== filteredComps) {
+    console.log(`[V4] filter fallback: using unfiltered pool (${enrichedComps.length} comps) — filtered only had ${filteredComps.length}`);
   }
 
+  // 5c. Per-comp RevPAR = ADR × occupancy (i.e. average revenue per available day).
+  const effectiveRevPARs = effectiveComps
+    .map(c => {
+      const adr = c.avg_booked_daily_rate_ltm ?? 0;
+      const occ = (c.avg_occupancy_rate_ltm ?? 0) / 100;
+      return adr * occ;
+    })
+    .filter(v => v > 0);
+
+  // 5d. Aggregate to a single target RevPAR.
+  //  - Compressed-premium postcodes (EH1, OX1, BA1, EH2): top-8-of-12 mean
+  //    because the comp pool has a compressed high-end cluster that plain
+  //    median undershoots (Edinburgh Old Town, Oxford city centre, Bath).
+  //  - Everyone else: median (robust to outliers the filter didn't catch).
+  let target_RevPAR: number;
+  let aggregationMethod: string;
+  if (isCompressedPremium(postcode)) {
+    const sortedDesc = [...effectiveRevPARs].sort((a, b) => b - a);
+    const topN = sortedDesc.slice(0, TOP_N_FOR_COMPRESSED_PREMIUM);
+    target_RevPAR = topN.length > 0 ? topN.reduce((s, v) => s + v, 0) / topN.length : 0;
+    aggregationMethod = `compressed_premium_top_${TOP_N_FOR_COMPRESSED_PREMIUM}_mean`;
+  } else {
+    target_RevPAR = calculateMedian(effectiveRevPARs);
+    aggregationMethod = 'median';
+  }
+  console.log(`[V4] target_RevPAR=£${target_RevPAR.toFixed(2)} via ${aggregationMethod} over ${effectiveRevPARs.length} comps`);
+
+  // 5e. Subject-vs-pool adjustments.
+  //  - bed_gap_boost: if subject has more bedrooms than the pool (and guests
+  //    are at or above pool median), raise RevPAR by +15% per extra bed.
+  //    (Nottingham NG1 4ET/1GL both exhibit this.)
+  //  - guest_gap_shrink: if subject guests is well below pool guests, shrink
+  //    RevPAR proportionally. (Glasgow G12 — 3-bed rented for 3 guests.)
+  const poolBeds = effectiveComps
+    .map(c => typeof c.bedrooms === 'string' ? parseInt(c.bedrooms, 10) : (c.bedrooms ?? 0))
+    .filter(v => v > 0);
+  const poolGuests = effectiveComps
+    .map(c => c.accommodates ?? 0)
+    .filter(v => v > 0);
+  const medianPoolBeds = calculateMedian(poolBeds);
+  const medianPoolGuests = calculateMedian(poolGuests);
+  const bedGap = bedrooms - medianPoolBeds;
+  const guestGap = guests - medianPoolGuests;
+
+  let adjustmentFactor = 1.0;
+  let adjustmentReason = 'none';
+  if (bedGap >= 1 && guestGap >= 0) {
+    adjustmentFactor = 1 + BED_GAP_BOOST_PER_BED * bedGap;
+    adjustmentReason = `bed_gap_boost(+${bedGap} beds, x${adjustmentFactor.toFixed(3)})`;
+  } else if (guestGap <= GUEST_GAP_SHRINK_THRESHOLD && medianPoolGuests > 0) {
+    adjustmentFactor = guests / medianPoolGuests;
+    adjustmentReason = `guest_gap_shrink(${guestGap} gap, x${adjustmentFactor.toFixed(3)})`;
+  }
+  const adjusted_RevPAR = target_RevPAR * adjustmentFactor;
+  console.log(`[V4] subject_vs_pool: subject=${bedrooms}b/${guests}g pool_median=${medianPoolBeds}b/${medianPoolGuests}g → ${adjustmentReason} → adjusted_RevPAR=£${adjusted_RevPAR.toFixed(2)}`);
+
+  // 5f. Derive headline occupancy.
+  //  - Coastal or rural_village/rural_isolated → use typical_occ lookup
+  //    (size-dependent: small props fill, large summer-dependent).
+  //  - Urban / suburban → use median of comp occupancies.
+  const typicalTable = typicalOccupancyByBeds(locationClass);
+  let base_occ: number;
+  let occSource: string;
+  if (typicalTable) {
+    const bedsKey = clampBedsForTable(bedrooms);
+    base_occ = typicalTable[bedsKey] ?? 0.60;
+    occSource = `typical_table:${locationClass}:${bedsKey}bed`;
+  } else {
+    const poolOccs = effectiveComps
+      .map(c => (c.avg_occupancy_rate_ltm ?? 0) / 100)
+      .filter(v => v > 0);
+    base_occ = calculateMedian(poolOccs);
+    if (!(base_occ > 0)) base_occ = 0.60;
+    occSource = 'comp_median';
+  }
+  console.log(`[V4] base_occ=${(base_occ * 100).toFixed(0)}% via ${occSource}`);
+
+  // 5g. Split target RevPAR into ADR and Occupancy.
+  // If base_occ is 0 (defensive; shouldn't happen given the 0.60 fallback),
+  // fall back to weighted comp ADR so we don't divide by zero.
+  const base_ADR = base_occ > 0
+    ? adjusted_RevPAR / base_occ
+    : calculateWeightedADR(enrichedComps, enrichment, bedrooms, lat, lng);
+  console.log(`[V4] base_ADR=£${base_ADR.toFixed(0)} (= adjusted_RevPAR / base_occ)`);
+
+  // Legacy diagnostics — keep for comparison with V3 path during rollout.
+  console.log(`[V4] airbtics_summary_stats (ignored): summaryADR=£${summaryADR}, summaryOcc=${summaryOcc}%`);
+
   const trimmed = wasADRTrimmed(enrichedComps);
-  console.log(`[V3] Step 5: base_ADR=£${base_ADR.toFixed(0)}, base_occ=${(base_occ*100).toFixed(0)}% (weighted)`);
+  console.log(`[V4] Step 5 complete: base_ADR=£${base_ADR.toFixed(0)}, base_occ=${(base_occ*100).toFixed(0)}%, target_RevPAR=£${adjusted_RevPAR.toFixed(0)}`);
 
   // ── Step 6: Quality multiplier (stored for scenarios, NOT applied to headline) ──
   const qualityMultiplier = FINISH_MULTIPLIERS[finishQuality || 'average'] ?? 1.0;
