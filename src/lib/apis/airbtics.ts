@@ -29,6 +29,8 @@ import type {
 import {
   BED_GAP_BOOST_PER_BED,
   GUEST_GAP_SHRINK_THRESHOLD,
+  GUEST_GAP_SHRINK_DAMP,
+  COASTAL_SMALL_BED_THRESHOLD,
   OUTLIER_ADR_MULTIPLIER,
   OUTLIER_REVENUE_MULTIPLIER,
   OUTLIER_DISTANCE_MULTIPLIER,
@@ -1161,6 +1163,8 @@ function buildDataFromReportComps(
   //  - Compressed-premium postcodes (EH1, OX1, BA1, EH2): top-8-of-12 mean
   //    because the comp pool has a compressed high-end cluster that plain
   //    median undershoots (Edinburgh Old Town, Oxford city centre, Bath).
+  //  - Coastal + small (≤2 bed): mean — right-skewed distribution, median
+  //    under-predicts (Broadstairs 1b).
   //  - Everyone else: median (robust to outliers the filter didn't catch).
   let target_RevPAR: number;
   let aggregationMethod: string;
@@ -1169,6 +1173,11 @@ function buildDataFromReportComps(
     const topN = sortedDesc.slice(0, TOP_N_FOR_COMPRESSED_PREMIUM);
     target_RevPAR = topN.length > 0 ? topN.reduce((s, v) => s + v, 0) / topN.length : 0;
     aggregationMethod = `compressed_premium_top_${TOP_N_FOR_COMPRESSED_PREMIUM}_mean`;
+  } else if (locationClass === 'coastal' && bedrooms <= COASTAL_SMALL_BED_THRESHOLD) {
+    target_RevPAR = effectiveRevPARs.length > 0
+      ? effectiveRevPARs.reduce((s, v) => s + v, 0) / effectiveRevPARs.length
+      : 0;
+    aggregationMethod = 'coastal_small_mean';
   } else {
     target_RevPAR = calculateMedian(effectiveRevPARs);
     aggregationMethod = 'median';
@@ -1197,9 +1206,21 @@ function buildDataFromReportComps(
   if (bedGap >= 1 && guestGap >= 0) {
     adjustmentFactor = 1 + BED_GAP_BOOST_PER_BED * bedGap;
     adjustmentReason = `bed_gap_boost(+${bedGap} beds, x${adjustmentFactor.toFixed(3)})`;
-  } else if (guestGap <= GUEST_GAP_SHRINK_THRESHOLD && medianPoolGuests > 0) {
-    adjustmentFactor = guests / medianPoolGuests;
-    adjustmentReason = `guest_gap_shrink(${guestGap} gap, x${adjustmentFactor.toFixed(3)})`;
+  } else if (
+    guestGap <= GUEST_GAP_SHRINK_THRESHOLD
+    && medianPoolGuests > 0
+    && !isCompressedPremium(postcode)
+  ) {
+    // Damped shrink: pull the raw ratio halfway back toward 1.0 so mild
+    // under-specs don't collapse the estimate. factor = 1 - DAMP × (1 - ratio)
+    const rawRatio = guests / medianPoolGuests;
+    adjustmentFactor = 1 - GUEST_GAP_SHRINK_DAMP * (1 - rawRatio);
+    adjustmentReason = `guest_gap_shrink_damped(${guestGap} gap, rawRatio=${rawRatio.toFixed(3)}, damped=x${adjustmentFactor.toFixed(3)})`;
+  } else if (guestGap <= GUEST_GAP_SHRINK_THRESHOLD && isCompressedPremium(postcode)) {
+    // Don't shrink compressed-premium postcodes on guest gap — their comp
+    // pools are already constrained to the target tier. Shrinking on top of
+    // the top-8-mean aggregation double-discounts and undershoots PMI.
+    adjustmentReason = `guest_gap_skipped(compressed_premium)`;
   }
   const adjusted_RevPAR = target_RevPAR * adjustmentFactor;
   console.log(`[V4] subject_vs_pool: subject=${bedrooms}b/${guests}g pool_median=${medianPoolBeds}b/${medianPoolGuests}g → ${adjustmentReason} → adjusted_RevPAR=£${adjusted_RevPAR.toFixed(2)}`);

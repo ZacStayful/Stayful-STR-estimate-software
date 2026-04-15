@@ -21,6 +21,8 @@
 // ─── Constants (MUST MATCH src/lib/apis/pmi-rules.ts) ──────────────
 const BED_GAP_BOOST_PER_BED = 0.15;
 const GUEST_GAP_SHRINK_THRESHOLD = -1;
+const GUEST_GAP_SHRINK_DAMP = 0.5;
+const COASTAL_SMALL_BED_THRESHOLD = 2;
 const OUTLIER_ADR_MULTIPLIER = 3.0;
 const OUTLIER_REVENUE_MULTIPLIER = 2.0;
 const OUTLIER_DISTANCE_MULTIPLIER = 5.0;
@@ -65,12 +67,15 @@ function predictV4(subject, comps) {
   // 5c: per-comp RevPAR
   const revpars = effective.map(c => c.adr * (c.occ / 100)).filter(v => v > 0);
 
-  // 5d: aggregate (top-8 if compressed premium, else median)
+  // 5d: aggregate (top-8 if compressed premium, mean if coastal-small, else median)
   let target, method;
   if (isPremium(subject.postcode)) {
     const topN = [...revpars].sort((a, b) => b - a).slice(0, TOP_N_FOR_COMPRESSED_PREMIUM);
     target = topN.length ? topN.reduce((s, v) => s + v, 0) / topN.length : 0;
     method = `top${TOP_N_FOR_COMPRESSED_PREMIUM}mean`;
+  } else if (subject.locationClass === 'coastal' && subject.bedrooms <= COASTAL_SMALL_BED_THRESHOLD) {
+    target = revpars.length ? revpars.reduce((s, v) => s + v, 0) / revpars.length : 0;
+    method = 'coastalSmallMean';
   } else {
     target = median(revpars);
     method = 'median';
@@ -85,9 +90,13 @@ function predictV4(subject, comps) {
   if (bedGap >= 1 && guestGap >= 0) {
     factor = 1 + BED_GAP_BOOST_PER_BED * bedGap;
     reason = `bed+${bedGap}`;
-  } else if (guestGap <= GUEST_GAP_SHRINK_THRESHOLD && mGuests > 0) {
-    factor = subject.guests / mGuests;
-    reason = `guest${guestGap}`;
+  } else if (guestGap <= GUEST_GAP_SHRINK_THRESHOLD && mGuests > 0 && !isPremium(subject.postcode)) {
+    // Damped shrink: 1 - DAMP × (1 - ratio). Pulls half-way back toward 1.0.
+    const rawRatio = subject.guests / mGuests;
+    factor = 1 - GUEST_GAP_SHRINK_DAMP * (1 - rawRatio);
+    reason = `guest${guestGap}_damped`;
+  } else if (guestGap <= GUEST_GAP_SHRINK_THRESHOLD && isPremium(subject.postcode)) {
+    reason = `guest${guestGap}_skipped(premium)`;
   }
   const adjusted = target * factor;
 

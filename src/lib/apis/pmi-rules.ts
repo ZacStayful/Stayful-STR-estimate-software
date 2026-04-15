@@ -49,14 +49,28 @@ export const TOP_N_FOR_COMPRESSED_PREMIUM = 8;
 export const BED_GAP_BOOST_PER_BED = 0.15;
 
 // Trigger point for subject-is-under-spec'd adjustment. If subject guests is
-// at least this much below comp median guests, shrink RevPAR by the ratio
-// subject_guests / comp_median_guests.
+// at least this much below comp median guests, shrink RevPAR by the damped
+// ratio (see GUEST_GAP_SHRINK_DAMP below).
 //
 // Derived from Glasgow G12 (subject guests=3, comp median guests=4; gap=−1):
-// raw median overshoots by +13%; shrink to 0.75× overshoots other way, so a
-// milder shrink may be appropriate. Only one confirmed sample — revisit when
-// more under-spec'd cases are in the dataset.
+// raw median overshoots by +13%; straight-ratio shrink (0.75×) overshoots the
+// other way, so the shrink is damped — see GUEST_GAP_SHRINK_DAMP.
 export const GUEST_GAP_SHRINK_THRESHOLD = -1;
+
+// Damping coefficient for the guest-gap shrink. The raw ratio
+// subject.guests / comp.median_guests is pulled halfway back toward 1.0:
+//   factor = 1 - DAMP × (1 - ratio)
+// With DAMP = 0.5, Glasgow 3/4=0.75 → factor 0.875 (not 0.75).
+// Derived from Glasgow: softened factor produces <2% error vs PMI.
+export const GUEST_GAP_SHRINK_DAMP = 0.5;
+
+// When to use mean instead of median for coastal markets. Coastal small
+// properties (≤2 bed) have right-skewed RevPAR distributions (several very
+// high performers + median baseline of typical performers); median under-
+// predicts. Mean fits within 1% for Broadstairs 1-bed.
+// Derived from Broadstairs CT10 1-bed/2-guest — median −13% vs PMI;
+// mean within 0.2%.
+export const COASTAL_SMALL_BED_THRESHOLD = 2;
 
 // ─── Outlier filters ───────────────────────────────────────────────
 
