@@ -72,6 +72,25 @@ const COASTAL_POSTCODE_PREFIXES = new Set<string>([
   'PH', 'KW', 'TD', 'DG', 'PA', 'KA', 'ZE', 'HS', 'IV',
 ]);
 
+// Outward-code-level overrides for mixed regions where the 1-2 letter prefix
+// is too coarse. Checked BEFORE the prefix sets so they take precedence.
+//
+// YO covers York city (urban: YO1/YO10/YO19/YO23/YO24/YO26/YO30/YO31/YO32),
+// Scarborough/Whitby coast (coastal: YO11/YO12/YO13/YO14/YO21/YO22), and
+// rural North Yorkshire (the rest defaults to rural_village).
+//
+// Discovered from production test: YO31 was classifying as rural_village
+// → 60-65% typical occupancy → undervalued by ~30% vs PMI which uses
+// urban-tier (median comp occ).
+const URBAN_OUTWARD_CODES = new Set<string>([
+  // York city + suburbs
+  'YO1', 'YO10', 'YO19', 'YO23', 'YO24', 'YO26', 'YO30', 'YO31', 'YO32',
+]);
+const COASTAL_OUTWARD_CODES = new Set<string>([
+  // North Yorkshire coast (Scarborough, Filey, Whitby)
+  'YO11', 'YO12', 'YO13', 'YO14', 'YO21', 'YO22',
+]);
+
 // Default radius steps (km) per location class — rural properties start wider
 const RADIUS_BY_CLASS: Record<LocationClass, number[]> = {
   urban:          [0.4, 0.8, 1.6],
@@ -554,14 +573,26 @@ const DAYS_IN_MONTH = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
 /** V3 — Classify location from UK postcode outward code. Defaults to 'suburban'. */
 function classifyLocation(postcode: string | undefined): LocationClass {
   if (!postcode) return 'suburban';
-  // Extract outward code letters (e.g. "SW1A 1AA" → "SW")
-  const match = postcode.toUpperCase().match(/^([A-Z]{1,2})/);
-  if (!match) return 'suburban';
-  const prefix = match[1];
+  const upper = postcode.toUpperCase();
+
+  // Step 1: Full outward-code overrides (e.g. YO31 = urban, YO22 = coastal).
+  // Outward code = letters + digits before the space, e.g. "YO31 1AA" → "YO31".
+  const outwardMatch = upper.match(/^([A-Z]{1,2}\d{1,2}[A-Z]?)/);
+  if (outwardMatch) {
+    const outward = outwardMatch[1];
+    if (URBAN_OUTWARD_CODES.has(outward)) return 'urban';
+    if (COASTAL_OUTWARD_CODES.has(outward)) return 'coastal';
+  }
+
+  // Step 2: Letter-prefix fallback (covers blanket-classifiable cities like
+  // M = all Manchester, B = all Birmingham, etc.).
+  const prefixMatch = upper.match(/^([A-Z]{1,2})/);
+  if (!prefixMatch) return 'suburban';
+  const prefix = prefixMatch[1];
   if (URBAN_POSTCODE_PREFIXES.has(prefix)) return 'urban';
   if (COASTAL_POSTCODE_PREFIXES.has(prefix)) return 'coastal';
-  // Unknown prefix = likely rural/smaller town — be conservative with 'rural_village'
-  // Urban prefixes cover all major cities so anything else is probably rural/smalltown
+
+  // Unknown — default to rural_village (conservative).
   return 'rural_village';
 }
 
