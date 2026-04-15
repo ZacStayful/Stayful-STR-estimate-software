@@ -168,6 +168,17 @@ export interface DataQuality {
   disclaimer: string | null;
 }
 
+// ─── Cross-validation against secondary STR data source ───────────
+export type CrossValidationConfidence = 'high' | 'medium' | 'low' | 'unverified';
+
+export interface CrossValidation {
+  confidence: CrossValidationConfidence;
+  airbticsRevenue: number;
+  priceLabsRevenue: number | null;
+  divergencePct: number | null;
+  note: string;
+}
+
 // ─── Full Analysis Result ────────────────────────────────────────
 export interface AnalysisResult {
   property: PropertyInput;
@@ -182,4 +193,7 @@ export interface AnalysisResult {
   verdict: PropertyVerdict;
   createdAt: string;
   updatedAt: string;
+  // PriceLabs cross-validation, if available. confidence='unverified'
+  // means PriceLabs was not consulted (key missing or call failed).
+  crossValidation?: CrossValidation;
 }

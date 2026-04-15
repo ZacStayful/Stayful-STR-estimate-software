@@ -4,6 +4,7 @@ import { getShortLetData } from '@/lib/apis/airbtics';
 import { getLongLetData, getFloorArea } from '@/lib/apis/propertydata';
 import { getNearbyAmenities } from '@/lib/apis/google-places';
 import { getNearbyEvents } from '@/lib/apis/ticketmaster';
+import { fetchPriceLabsNeighborhood, crossValidate } from '@/lib/apis/pricelabs';
 import { calculateFinancials, assessRisk, generateVerdict } from '@/lib/analysis';
 
 // ─── Rate Limiter (in-memory, per IP) ────────────────────────────
@@ -218,7 +219,19 @@ export async function POST(request: Request) {
             specialFeatures: validSpecialFeatures,  // V3
           },
         );
-        const [shortLetResult, longLetResult] = await Promise.allSettled([shortLetPromise, longLetPromise]);
+        // PriceLabs cross-validation runs in parallel with Airbtics. Returns
+        // null if PRICELABS_API_KEY is not set or the API call fails — the
+        // analyse flow continues with the Airbtics result either way.
+        const priceLabsPromise = fetchPriceLabsNeighborhood(
+          coordinates.lat,
+          coordinates.lng,
+          property.bedrooms,
+        );
+        const [shortLetResult, longLetResult, priceLabsResult] = await Promise.allSettled([
+          shortLetPromise,
+          longLetPromise,
+          priceLabsPromise,
+        ]);
 
         const shortLetRaw = shortLetResult.status === 'fulfilled'
           ? shortLetResult.value
@@ -300,6 +313,17 @@ export async function POST(request: Request) {
         const risk = assessRisk(shortLet, longLet, demandDrivers, nearbyEvents);
         const verdict = generateVerdict(financials, risk);
 
+        // PriceLabs cross-validation — compute confidence label from the
+        // divergence between Airbtics-derived headline and PriceLabs
+        // neighborhood RevPAR. If PriceLabs returned null, this still works
+        // (yields confidence='unverified' with note explaining why).
+        const priceLabsData = priceLabsResult.status === 'fulfilled' ? priceLabsResult.value : null;
+        if (priceLabsResult.status === 'rejected') {
+          console.error('[PriceLabs] promise rejected:', priceLabsResult.reason);
+        }
+        const crossValidation = crossValidate(shortLet.annualRevenue, priceLabsData);
+        console.log(`[PriceLabs] crossValidation: confidence=${crossValidation.confidence}, divergence=${crossValidation.divergencePct?.toFixed(1) ?? 'n/a'}%`);
+
         const now = new Date().toISOString();
 
         const result: AnalysisResult = {
@@ -315,6 +339,7 @@ export async function POST(request: Request) {
           verdict,
           createdAt: now,
           updatedAt: now,
+          crossValidation,
         };
 
         send({ stage: 'complete', progress: 100, message: 'Analysis complete', data: result });
