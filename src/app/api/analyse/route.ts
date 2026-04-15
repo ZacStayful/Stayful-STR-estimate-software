@@ -219,17 +219,28 @@ export async function POST(request: Request) {
             specialFeatures: validSpecialFeatures,  // V3
           },
         );
-        // PriceLabs Revenue Estimator runs in parallel with Airbtics+V4.
-        // When successful, its result will OVERRIDE the V4 headline below.
-        // When it fails (missing key, 401, 429 quota exhausted, 500), the
-        // analyse flow continues with the Airbtics V4 result unchanged.
-        const priceLabsPromise = fetchPriceLabsRevenueEstimate({
-          address: property.address,
-          bedrooms: property.bedrooms,
-          lat: coordinates.lat,
-          lng: coordinates.lng,
-          currency: 'GBP',
-        });
+        // PriceLabs Revenue Estimator is gated behind PRICELABS_AS_PRIMARY
+        // env var. When unset (the default), PriceLabs is NOT called at all
+        // — saves trial credits and keeps the existing Airbtics-V4 pipeline
+        // as the sole headline source. To re-enable PriceLabs as primary,
+        // set PRICELABS_AS_PRIMARY=true in Vercel and redeploy.
+        //
+        // When enabled and successful, PriceLabs RE OVERRIDES the V4
+        // headline below. When it fails (missing key, 401, 429 quota
+        // exhausted, 500), V4 result stays unchanged.
+        const priceLabsEnabled = process.env.PRICELABS_AS_PRIMARY === 'true';
+        const priceLabsPromise: Promise<Awaited<ReturnType<typeof fetchPriceLabsRevenueEstimate>>> = priceLabsEnabled
+          ? fetchPriceLabsRevenueEstimate({
+              address: property.address,
+              bedrooms: property.bedrooms,
+              lat: coordinates.lat,
+              lng: coordinates.lng,
+              currency: 'GBP',
+            })
+          : Promise.resolve(null);
+        if (!priceLabsEnabled) {
+          console.log('[PriceLabs RE] disabled (PRICELABS_AS_PRIMARY not set) — using Airbtics-V4 only');
+        }
         const [shortLetResult, longLetResult, priceLabsResult] = await Promise.allSettled([
           shortLetPromise,
           longLetPromise,
