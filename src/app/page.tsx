@@ -1095,6 +1095,13 @@ export default function HomePage() {
                       <p className="text-xs text-primary-foreground/60 mt-1">Book a call with Stayful for a personalised estimate</p>
                     </div>
                   )}
+                  {r.propertyValuation && (
+                    <div>
+                      <p className="text-xs text-primary-foreground/70 uppercase tracking-wider">Est. Property Value</p>
+                      <p className="text-2xl font-bold">{gbp(r.propertyValuation.estimatedValue)}</p>
+                      <p className="text-[11px] text-primary-foreground/60">Source: PropertyData</p>
+                    </div>
+                  )}
                   <p className="text-[11px] text-primary-foreground/60">
                     After booking platform fees, cleaning, laundry and property management
                   </p>

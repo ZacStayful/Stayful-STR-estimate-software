@@ -168,6 +168,14 @@ export interface DataQuality {
   disclaimer: string | null;
 }
 
+// ─── PropertyData Sale Valuation ─────────────────────────────────
+export interface PropertyDataValuation {
+  estimatedValue: number;       // point estimate (median)
+  valuationRangeLow: number;    // lower bound (approx. 25th percentile)
+  valuationRangeHigh: number;   // upper bound (approx. 75th percentile)
+  source: 'propertydata';
+}
+
 // ─── Cross-validation against secondary STR data source ───────────
 export type CrossValidationConfidence = 'high' | 'medium' | 'low' | 'unverified';
 
@@ -203,4 +211,6 @@ export interface AnalysisResult {
   // PriceLabs cross-validation, if available. confidence='unverified'
   // means PriceLabs was not consulted (key missing or call failed).
   crossValidation?: CrossValidation;
+  // PropertyData estimated sale value. null if the call failed or key is missing.
+  propertyValuation?: PropertyDataValuation | null;
 }

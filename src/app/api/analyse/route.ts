@@ -1,7 +1,7 @@
 import type { PropertyInput, AnalysisResult, ShortLetData, LongLetData, DemandDrivers, NearbyEvent, DataQuality } from '@/lib/types';
 import { geocodePostcode } from '@/lib/apis/geocode';
 import { getShortLetData } from '@/lib/apis/airbtics';
-import { getLongLetData, getFloorArea } from '@/lib/apis/propertydata';
+import { getLongLetData, getFloorArea, fetchPropertyValuation } from '@/lib/apis/propertydata';
 import { getNearbyAmenities } from '@/lib/apis/google-places';
 import { getNearbyEvents } from '@/lib/apis/ticketmaster';
 import { fetchPriceLabsRevenueEstimate, buildCrossValidation } from '@/lib/apis/pricelabs';
@@ -241,10 +241,19 @@ export async function POST(request: Request) {
         if (!priceLabsEnabled) {
           console.log('[PriceLabs RE] disabled (PRICELABS_AS_PRIMARY not set) — using Airbtics-V4 only');
         }
-        const [shortLetResult, longLetResult, priceLabsResult] = await Promise.allSettled([
+
+        // Sale valuation runs in parallel — never blocks or throws
+        const saleValuationPromise = fetchPropertyValuation(
+          property.postcode,
+          property.bedrooms,
+          mappedPropertyType,
+        );
+
+        const [shortLetResult, longLetResult, priceLabsResult, saleValuationResult] = await Promise.allSettled([
           shortLetPromise,
           longLetPromise,
           priceLabsPromise,
+          saleValuationPromise,
         ]);
 
         const shortLetRaw = shortLetResult.status === 'fulfilled'
@@ -333,6 +342,13 @@ export async function POST(request: Request) {
         if (priceLabsResult.status === 'rejected') {
           console.error('[PriceLabs RE] promise rejected:', priceLabsResult.reason);
         }
+
+        const propertyValuation = saleValuationResult.status === 'fulfilled'
+          ? saleValuationResult.value
+          : null;
+        if (saleValuationResult.status === 'rejected') {
+          console.error('[PropertyData] sale valuation promise rejected:', (saleValuationResult as PromiseRejectedResult).reason);
+        }
         const crossValidation = buildCrossValidation(shortLet.annualRevenue, priceLabsData);
 
         if (priceLabsData) {
@@ -372,6 +388,7 @@ export async function POST(request: Request) {
           createdAt: now,
           updatedAt: now,
           crossValidation,
+          propertyValuation,
         };
 
         send({ stage: 'complete', progress: 100, message: 'Analysis complete', data: result });
