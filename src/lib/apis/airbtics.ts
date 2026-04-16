@@ -1812,6 +1812,9 @@ async function fetchNearbyListings(
   const latOffset = radiusKm / 111;
   const lngOffset = radiusKm / 65;
 
+  // `page` is required by listings/search/bounds — omitting it causes the
+  // AWS gateway to reject the request with HTTP 403. The endpoint paginates
+  // 50 listings per page; page 1 is enough for the comp set we need.
   const body = {
     bounds: {
       ne_lat: lat + latOffset,
@@ -1819,7 +1822,7 @@ async function fetchNearbyListings(
       sw_lat: lat - latOffset,
       sw_lng: lng - lngOffset,
     },
-    currency: 'GBP',
+    page: 1,
   };
 
   const radiusMetres = Math.round(radiusKm * 1000);
@@ -1853,14 +1856,21 @@ async function fetchNearbyListings(
 
   const totalCount = data.message?.total_count ?? 0;
 
-  // The listings field is a JSON string that needs double-parsing
+  // The listings field is a JSON string that needs double-parsing. The
+  // parsed payload itself is wrapped in a `{ message: [...] }` object — not
+  // a bare array — so unwrap one more level before checking shape.
   let listings: AirbticsListing[] = [];
   if (data.message?.listings) {
     try {
       const parsed = typeof data.message.listings === 'string'
         ? JSON.parse(data.message.listings)
         : data.message.listings;
-      listings = Array.isArray(parsed) ? parsed : [];
+      const inner = Array.isArray(parsed)
+        ? parsed
+        : Array.isArray(parsed?.message)
+          ? parsed.message
+          : [];
+      listings = inner;
     } catch (e) {
       console.error('[DEBUG] Airbtics: failed to parse listings JSON:', e);
     }
