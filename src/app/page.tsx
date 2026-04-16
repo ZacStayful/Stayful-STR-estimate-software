@@ -171,6 +171,20 @@ function roundReviewRating(rating: number): string {
   return (Math.round(rating * 10) / 10).toFixed(1);
 }
 
+function formatRelativeTime(iso: string): string {
+  const now = Date.now();
+  const then = new Date(iso).getTime();
+  if (!Number.isFinite(then)) return "just now";
+  const diffSec = Math.max(0, Math.round((now - then) / 1000));
+  if (diffSec < 60) return "just now";
+  const diffMin = Math.round(diffSec / 60);
+  if (diffMin < 60) return `${diffMin}m ago`;
+  const diffHr = Math.round(diffMin / 60);
+  if (diffHr < 24) return `${diffHr}h ago`;
+  const diffDay = Math.round(diffHr / 24);
+  return `${diffDay}d ago`;
+}
+
 function Badge({
   children,
   className = "",
@@ -1088,6 +1102,17 @@ export default function HomePage() {
                           <span className="text-base font-normal text-primary-foreground/80">({gbp(Math.round(stlNetAnnual / 12))}/mo)</span>
                         </p>
                       </div>
+                      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm lg:justify-end">
+                        <span>
+                          <span className="text-[11px] text-primary-foreground/70 uppercase tracking-wider mr-1.5">ADR</span>
+                          <span className="text-base font-semibold">{gbp(r.shortLet.averageDailyRate)}</span>
+                        </span>
+                        <span className="text-primary-foreground/40">·</span>
+                        <span>
+                          <span className="text-[11px] text-primary-foreground/70 uppercase tracking-wider mr-1.5">Occupancy</span>
+                          <span className="text-base font-semibold">{pct(r.shortLet.occupancyRate)}</span>
+                        </span>
+                      </div>
                     </>
                   ) : (
                     <div className="text-right">
@@ -1200,6 +1225,29 @@ export default function HomePage() {
               </div>
             )}
 
+            {/* ─ Methodology snapshot + source attribution ─ */}
+            {r.shortLet.comparables.length > 0 && (
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+                <p className="text-xs text-muted-foreground">
+                  Based on{" "}
+                  <span className="font-semibold text-foreground">{r.dataQuality?.comparablesFound ?? r.shortLet.comparables.length}</span>
+                  {r.shortLet.activeListings > 0 && (
+                    <> of <span className="font-semibold text-foreground">{r.shortLet.activeListings}</span></>
+                  )}
+                  {" "}active Airbnb listings
+                  {r.dataQuality?.searchRadiusKm ? <> within <span className="font-semibold text-foreground">{r.dataQuality.searchRadiusKm} km</span></> : null}
+                  {" "}· Median-aggregated · Updated {formatRelativeTime(r.updatedAt)}
+                  {r.dataQuality?.searchBroadened && (
+                    <span className="text-muted-foreground/80"> (search radius broadened)</span>
+                  )}
+                </p>
+                <span className="inline-flex items-center gap-1 rounded-full bg-muted/60 px-2 py-0.5 text-[11px] text-muted-foreground whitespace-nowrap">
+                  <Home className="h-3 w-3" aria-hidden="true" />
+                  Sourced from Airbnb · via Airbtics
+                </span>
+              </div>
+            )}
+
             {/* ─ PMI-style comp cards + Decision Engine ─ */}
             {r.shortLet.comparables.length > 0 ? (
               <>
@@ -1248,40 +1296,84 @@ export default function HomePage() {
                             </div>
                           </div>
 
-                          {/* Secondary: rating + link */}
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-1.5 flex-wrap">
-                              {ratingDisplay ? (
-                                <>
-                                  <Star className="h-3.5 w-3.5 fill-warning text-warning" />
-                                  <span className="text-sm font-medium">{ratingDisplay}</span>
-                                  {comp.reviewCount > 0 && (
-                                    <span className="text-[11px] text-muted-foreground">({comp.reviewCount})</span>
-                                  )}
-                                  {ratingAboveAvg && (
-                                    <span className="rounded-full bg-success/10 px-1.5 py-0.5 text-[10px] font-medium text-success">↑ above avg</span>
-                                  )}
-                                  {ratingBelowAvg && (
-                                    <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">↓ below avg</span>
-                                  )}
-                                </>
-                              ) : (
-                                <span className="text-xs text-muted-foreground">No rating</span>
-                              )}
-                            </div>
-                            {comp.url ? (
+                          {/* Secondary: rating + review count */}
+                          <div className="mb-2 flex items-center gap-1.5 flex-wrap">
+                            {ratingDisplay ? (
+                              <>
+                                <Star className="h-3.5 w-3.5 fill-warning text-warning" />
+                                <span className="text-sm font-medium">{ratingDisplay}</span>
+                                {comp.reviewCount > 0 && (
+                                  <>
+                                    <span className="text-[11px] text-muted-foreground">·</span>
+                                    <span className="text-xs text-muted-foreground">{comp.reviewCount} review{comp.reviewCount === 1 ? "" : "s"}</span>
+                                  </>
+                                )}
+                                {ratingAboveAvg && (
+                                  <span className="rounded-full bg-success/10 px-1.5 py-0.5 text-[10px] font-medium text-success">↑ above avg</span>
+                                )}
+                                {ratingBelowAvg && (
+                                  <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">↓ below avg</span>
+                                )}
+                              </>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">No rating yet</span>
+                            )}
+                          </div>
+
+                          {/* Listing activity: days available + listing age */}
+                          {(() => {
+                            const daysEff = comp.daysAvailable > 0
+                              ? comp.daysAvailable
+                              : Math.round(comp.occupancyRate * 365);
+                            const hasAge = comp.listingAge > 0;
+                            if (daysEff <= 0 && !hasAge) return null;
+                            return (
+                              <div className="mb-3 flex items-center gap-2 text-[11px] text-muted-foreground">
+                                {daysEff > 0 && (
+                                  <span className="inline-flex items-center gap-1">
+                                    <Calendar className="h-3 w-3" aria-hidden="true" />
+                                    {daysEff} days/yr
+                                  </span>
+                                )}
+                                {daysEff > 0 && hasAge && <span className="text-muted-foreground/60">·</span>}
+                                {hasAge && (
+                                  <span className="inline-flex items-center gap-1">
+                                    <Clock className="h-3 w-3" aria-hidden="true" />
+                                    {comp.listingAge} yr{comp.listingAge === 1 ? "" : "s"} old
+                                  </span>
+                                )}
+                              </div>
+                            );
+                          })()}
+
+                          {/* Airbnb-branded action button */}
+                          {comp.url ? (
+                            comp.url.startsWith("https://www.airbnb.") ? (
                               <a
                                 href={comp.url}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="shrink-0 text-xs font-medium text-primary hover:underline"
+                                className="flex w-full items-center justify-center gap-1.5 rounded-md bg-[#FF385C]/10 px-3 py-1.5 text-xs font-semibold text-[#FF385C] transition-colors hover:bg-[#FF385C]/20"
                               >
-                                View ↗
+                                View on Airbnb
+                                <ExternalLink className="h-3 w-3" aria-hidden="true" />
                               </a>
                             ) : (
-                              <span className="shrink-0 text-xs text-muted-foreground">—</span>
-                            )}
-                          </div>
+                              <a
+                                href={comp.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="flex w-full items-center justify-center gap-1.5 rounded-md bg-primary/10 px-3 py-1.5 text-xs font-semibold text-primary transition-colors hover:bg-primary/20"
+                              >
+                                View listing
+                                <ExternalLink className="h-3 w-3" aria-hidden="true" />
+                              </a>
+                            )
+                          ) : (
+                            <div className="flex w-full items-center justify-center rounded-md bg-muted/40 px-3 py-1.5 text-xs text-muted-foreground">
+                              Listing URL unavailable
+                            </div>
+                          )}
                         </CardContent>
                       </Card>
                     );
