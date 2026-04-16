@@ -167,6 +167,10 @@ function riskTextColor(level: RiskLevel): string {
   return "text-destructive";
 }
 
+function roundReviewRating(rating: number): string {
+  return (Math.round(rating * 10) / 10).toFixed(1);
+}
+
 function Badge({
   children,
   className = "",
@@ -835,17 +839,24 @@ export default function HomePage() {
     const top5Set = new Set(top5Comps);
     const hasTop5 = top5Comps.length >= 5;
 
-    // Calculate averages from top 5 performers (or all if < 5)
-    const avgSource = hasTop5 ? top5Comps : comps;
-    const compAvgNightlyRate = hasComparables ? Math.round(avgSource.reduce((s, c) => s + c.averageDailyRate, 0) / avgSource.length) : r.shortLet.averageDailyRate;
-    const compAvgOccupancy = hasComparables ? avgSource.reduce((s, c) => s + c.occupancyRate, 0) / avgSource.length : r.shortLet.occupancyRate;
-    const compAvgRevenue = hasComparables ? Math.round(avgSource.reduce((s, c) => s + c.annualRevenue, 0) / avgSource.length) : r.shortLet.annualRevenue;
     const compsWithRating = comps.filter((c) => c.rating > 0);
     const avgRating = compsWithRating.length > 0 ? Math.floor(compsWithRating.reduce((s, c) => s + c.rating, 0) / compsWithRating.length * 10) / 10 : 0;
     const compsWithReviews = comps.filter((c) => c.reviewCount > 0);
     const avgReviews = compsWithReviews.length > 0 ? Math.round(compsWithReviews.reduce((s, c) => s + c.reviewCount, 0) / compsWithReviews.length) : 0;
     const compsWithAge = comps.filter((c) => c.listingAge > 0);
     const avgListingAge = compsWithAge.length > 0 ? Math.round(compsWithAge.reduce((s, c) => s + c.listingAge, 0) / compsWithAge.length * 10) / 10 : 0;
+
+    // Full pool averages (all comps) for Decision Engine "Match" box
+    const poolAvgAdr = hasComparables ? Math.round(comps.reduce((s, c) => s + c.averageDailyRate, 0) / comps.length) : r.shortLet.averageDailyRate;
+    const poolAvgOccupancy = hasComparables ? comps.reduce((s, c) => s + c.occupancyRate, 0) / comps.length : r.shortLet.occupancyRate;
+    const poolAvgRevenue = hasComparables ? Math.round(comps.reduce((s, c) => s + c.annualRevenue, 0) / comps.length) : r.shortLet.annualRevenue;
+
+    // Top 25% comps for Decision Engine "Beat" box
+    const top25PctCount = hasComparables ? Math.max(1, Math.ceil(comps.length * 0.25)) : 0;
+    const top25Comps = compsSortedByRevenue.slice(0, top25PctCount);
+    const beatAvgAdr = top25Comps.length > 0 ? Math.round(top25Comps.reduce((s, c) => s + c.averageDailyRate, 0) / top25Comps.length) : 0;
+    const beatAvgOccupancy = top25Comps.length > 0 ? top25Comps.reduce((s, c) => s + c.occupancyRate, 0) / top25Comps.length : 0;
+    const beatAvgRevenue = top25Comps.length > 0 ? Math.round(top25Comps.reduce((s, c) => s + c.annualRevenue, 0) / top25Comps.length) : 0;
 
     // 36-month growth chart data
     const growthData = Array.from({ length: 36 }, (_, i) => {
@@ -1128,135 +1139,208 @@ export default function HomePage() {
               </p>
             )}
 
-            {/* Stat cards — always show core 3, conditionally show rating/reviews/age */}
-            <div className={`mb-6 grid gap-3 grid-cols-2 sm:grid-cols-3 ${hasComparables ? "lg:grid-cols-6" : "lg:grid-cols-3"}`}>
+            {/* ─ Financial summary row ─ */}
+            <div className="mb-4 grid grid-cols-3 gap-3">
               <div className="rounded-lg bg-muted/50 p-3">
-                <p className="text-[11px] text-muted-foreground">{hasTop5 ? "Top 5 Avg. Nightly Rate" : "Avg. Nightly Rate"}</p>
-                <p className="mt-1 text-xl font-bold text-foreground">{gbp(compAvgNightlyRate)}</p>
+                <p className="text-[11px] text-muted-foreground">Avg. Nightly Rate</p>
+                <p className="mt-1 text-xl font-bold text-foreground">{gbp(poolAvgAdr)}</p>
               </div>
               <div className="rounded-lg bg-muted/50 p-3">
-                <p className="text-[11px] text-muted-foreground">{hasTop5 ? "Top 5 Avg. Occupancy" : "Avg. Occupancy"}</p>
-                <p className="mt-1 text-xl font-bold text-foreground">{pct(compAvgOccupancy)}</p>
+                <p className="text-[11px] text-muted-foreground">Avg. Occupancy</p>
+                <p className="mt-1 text-xl font-bold text-foreground">{pct(poolAvgOccupancy)}</p>
               </div>
               <div className="rounded-lg bg-muted/50 p-3">
-                <p className="text-[11px] text-muted-foreground">{hasTop5 ? "Top 5 Avg. Revenue" : "Avg. Annual Revenue"}</p>
-                <p className="mt-1 text-xl font-bold text-foreground">{gbp(compAvgRevenue)}</p>
+                <p className="text-[11px] text-muted-foreground">Avg. Annual Revenue</p>
+                <p className="mt-1 text-xl font-bold text-foreground">{gbp(poolAvgRevenue)}</p>
               </div>
-              {hasComparables && (
-                <>
+            </div>
+
+            {/* ─ Comp Set Benchmarks banner ─ */}
+            {hasComparables && (
+              <div className="mb-6 rounded-lg border border-border bg-card p-4">
+                <div className="mb-3">
+                  <p className="text-sm font-semibold text-foreground">Comp Set Benchmarks</p>
+                  <p className="text-xs text-muted-foreground">What your listing needs to match the market</p>
+                </div>
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                   <div className="rounded-lg bg-muted/50 p-3">
                     <p className="text-[11px] text-muted-foreground">Avg. Rating</p>
                     <p className="mt-1 text-xl font-bold text-foreground flex items-center gap-1">
-                      {avgRating > 0 ? <><Star className="h-4 w-4 text-warning fill-warning" />{avgRating} / 5</> : "N/A"}
+                      {avgRating > 0 ? (
+                        <><Star className="h-4 w-4 text-warning fill-warning" />{roundReviewRating(avgRating)}</>
+                      ) : (
+                        <span className="text-base font-semibold text-muted-foreground/50">N/A</span>
+                      )}
                     </p>
                   </div>
                   <div className="rounded-lg bg-muted/50 p-3">
                     <p className="text-[11px] text-muted-foreground">Avg. Reviews</p>
-                    <p className="mt-1 text-xl font-bold text-foreground">{avgReviews > 0 ? avgReviews : "N/A"}</p>
+                    <p className="mt-1 text-xl font-bold text-foreground">
+                      {avgReviews > 0 ? avgReviews : <span className="text-base font-semibold text-muted-foreground/50">N/A</span>}
+                    </p>
                   </div>
                   <div className="rounded-lg bg-muted/50 p-3">
                     <p className="text-[11px] text-muted-foreground">Avg. Listing Age</p>
-                    <p className="mt-1 text-xl font-bold text-foreground">{avgListingAge > 0 ? `${avgListingAge} yrs` : "N/A"}</p>
+                    <p className="mt-1 text-xl font-bold text-foreground">
+                      {avgListingAge > 0 ? `${avgListingAge} yrs` : <span className="text-base font-semibold text-muted-foreground/50">N/A</span>}
+                    </p>
                   </div>
-                </>
-              )}
-            </div>
+                  <div className="rounded-lg bg-muted/50 p-3">
+                    <p className="text-[11px] text-muted-foreground">Avg. Amenities</p>
+                    <p className="mt-1 text-base font-semibold text-muted-foreground/50">N/A</p>
+                  </div>
+                </div>
+              </div>
+            )}
 
-            {/* Property table */}
+            {/* ─ PMI-style comp cards + Decision Engine ─ */}
             {r.shortLet.comparables.length > 0 ? (
-              <Card>
-                <CardContent className="py-4">
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="border-b border-border text-left text-xs text-muted-foreground">
-                          <th className="pb-2 font-medium">Property</th>
-                          <th className="pb-2 font-medium text-center">Beds</th>
-                          <th className="pb-2 font-medium text-center">Guests</th>
-                          <th className="pb-2 font-medium">Nightly Rate</th>
-                          <th className="pb-2 font-medium">Occupancy</th>
-                          <th className="pb-2 font-medium">Days Available</th>
-                          <th className="pb-2 font-medium">Est. Revenue</th>
-                          <th className="pb-2 font-medium">Rating</th>
-                          <th className="pb-2 font-medium">View</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {r.shortLet.comparables.map((comp, i) => {
-                          const isTopPerformer = hasTop5 && top5Set.has(comp);
-                          return (
-                          <tr
-                            key={i}
-                            className={`border-b border-border/50 last:border-0 ${isTopPerformer ? "border-l-2 border-l-success bg-success/5" : i % 2 === 1 ? "bg-muted/20" : ""}`}
-                          >
-                            <td className="py-2.5 pr-4">
-                              <div className="flex items-center gap-2">
-                                <p className="font-medium truncate max-w-[180px]">
-                                  {comp.title || `Listing ${i + 1}`}
-                                </p>
-                                {isTopPerformer && (
-                                  <span className="inline-flex items-center rounded-full bg-success/15 px-1.5 py-0.5 text-[10px] font-semibold text-success whitespace-nowrap">Top performer</span>
-                                )}
-                              </div>
-                              <p className="text-[11px] text-muted-foreground">
-                                {comp.distance != null ? `${comp.distance} km away` : ""}
+              <>
+                <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  {r.shortLet.comparables.map((comp, i) => {
+                    const isTopPerformer = hasTop5 && top5Set.has(comp);
+                    const ratingDisplay = comp.rating > 0 ? roundReviewRating(comp.rating) : null;
+                    const ratingAboveAvg = avgRating > 0 && comp.rating > 0 && comp.rating > avgRating + 0.05;
+                    const ratingBelowAvg = avgRating > 0 && comp.rating > 0 && comp.rating < avgRating - 0.05;
+                    return (
+                      <Card key={i} className={`relative overflow-hidden transition-all ${isTopPerformer ? "ring-1 ring-success" : ""}`}>
+                        {isTopPerformer && (
+                          <div className="absolute left-0 right-0 top-0 h-0.5 bg-success" />
+                        )}
+                        <CardContent className="p-4">
+                          {/* Header */}
+                          <div className="mb-3 flex items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-semibold leading-tight text-foreground">
+                                {comp.title || `Listing ${i + 1}`}
                               </p>
-                            </td>
-                            <td className="py-2.5 text-center">
-                              <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-success/15 text-xs font-semibold text-success">
-                                {comp.bedrooms}
+                              <p className="mt-0.5 text-[11px] text-muted-foreground">
+                                {comp.bedrooms}b · {comp.accommodates}g{comp.distance != null ? ` · ${comp.distance} km` : ""}
+                              </p>
+                            </div>
+                            {isTopPerformer && (
+                              <span className="inline-flex shrink-0 items-center rounded-full bg-success/15 px-1.5 py-0.5 text-[10px] font-semibold text-success whitespace-nowrap">
+                                Top
                               </span>
-                            </td>
-                            <td className="py-2.5 text-center">
-                              <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-success/15 text-xs font-semibold text-success">
-                                {comp.accommodates}
-                              </span>
-                            </td>
-                            <td className="py-2.5 pr-4 font-semibold">
-                              {gbp(comp.averageDailyRate)}
-                            </td>
-                            <td className="py-2.5 pr-4">{pct(comp.occupancyRate)}</td>
-                            <td className="py-2.5 pr-4 text-muted-foreground">
-                              {comp.daysAvailable > 0 ? comp.daysAvailable : Math.round(comp.occupancyRate * 365)}
-                            </td>
-                            <td className="py-2.5 pr-4 font-semibold">
-                              {gbp(comp.annualRevenue)}
-                            </td>
-                            <td className="py-2.5 pr-4">
-                              {comp.rating > 0 ? (
-                                <div className="flex items-center gap-1">
-                                  <Star className="h-3 w-3 text-warning fill-warning" />
-                                  <span className="text-sm">{comp.rating.toFixed(1)}</span>
+                            )}
+                          </div>
+
+                          {/* Primary metrics */}
+                          <div className="mb-3 grid grid-cols-3 divide-x divide-border/50 rounded-lg bg-muted/40 px-2 py-2.5">
+                            <div className="px-1 text-center">
+                              <p className="text-[10px] text-muted-foreground">Nightly</p>
+                              <p className="mt-0.5 text-sm font-bold text-foreground">{gbp(comp.averageDailyRate)}</p>
+                            </div>
+                            <div className="px-1 text-center">
+                              <p className="text-[10px] text-muted-foreground">Occupancy</p>
+                              <p className="mt-0.5 text-sm font-bold text-foreground">{pct(comp.occupancyRate)}</p>
+                            </div>
+                            <div className="px-1 text-center">
+                              <p className="text-[10px] text-muted-foreground">Annual</p>
+                              <p className="mt-0.5 text-sm font-bold text-foreground">{gbp(comp.annualRevenue)}</p>
+                            </div>
+                          </div>
+
+                          {/* Secondary: rating + link */}
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              {ratingDisplay ? (
+                                <>
+                                  <Star className="h-3.5 w-3.5 fill-warning text-warning" />
+                                  <span className="text-sm font-medium">{ratingDisplay}</span>
                                   {comp.reviewCount > 0 && (
                                     <span className="text-[11px] text-muted-foreground">({comp.reviewCount})</span>
                                   )}
-                                </div>
+                                  {ratingAboveAvg && (
+                                    <span className="rounded-full bg-success/10 px-1.5 py-0.5 text-[10px] font-medium text-success">↑ above avg</span>
+                                  )}
+                                  {ratingBelowAvg && (
+                                    <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">↓ below avg</span>
+                                  )}
+                                </>
                               ) : (
-                                <span className="text-xs text-muted-foreground">N/A</span>
+                                <span className="text-xs text-muted-foreground">No rating</span>
                               )}
-                            </td>
-                            <td className="py-2.5">
-                              {comp.url ? (
-                                <a
-                                  href={comp.url}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="text-primary hover:underline text-xs font-medium"
-                                >
-                                  View
-                                </a>
-                              ) : (
-                                <span className="text-muted-foreground text-xs">-</span>
-                              )}
-                            </td>
-                          </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
+                            </div>
+                            {comp.url ? (
+                              <a
+                                href={comp.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="shrink-0 text-xs font-medium text-primary hover:underline"
+                              >
+                                View ↗
+                              </a>
+                            ) : (
+                              <span className="shrink-0 text-xs text-muted-foreground">—</span>
+                            )}
+                          </div>
+                        </CardContent>
+                      </Card>
+                    );
+                  })}
+                </div>
+
+                {/* ─ Decision Engine ─ */}
+                <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  {/* To Match the Market */}
+                  <div className="rounded-xl border border-primary/20 bg-primary/5 p-4">
+                    <div className="mb-3">
+                      <p className="text-sm font-semibold text-foreground">To Match the Market</p>
+                      <p className="text-xs text-muted-foreground">
+                        Benchmark from all {comps.length} comparable propert{comps.length === 1 ? "y" : "ies"}
+                      </p>
+                    </div>
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs text-muted-foreground">Target Nightly Rate</span>
+                        <span className="text-sm font-bold text-foreground">{gbp(poolAvgAdr)}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs text-muted-foreground">Target Occupancy</span>
+                        <span className="text-sm font-bold text-foreground">{pct(poolAvgOccupancy)}</span>
+                      </div>
+                      {avgRating > 0 && (
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs text-muted-foreground">Target Rating</span>
+                          <span className="flex items-center gap-1 text-sm font-bold text-foreground">
+                            <Star className="h-3.5 w-3.5 fill-warning text-warning" />
+                            {roundReviewRating(avgRating)}
+                          </span>
+                        </div>
+                      )}
+                      <div className="flex items-center justify-between border-t border-primary/20 pt-2">
+                        <span className="text-xs font-medium text-muted-foreground">Target Annual Revenue</span>
+                        <span className="text-base font-bold text-foreground">{gbp(poolAvgRevenue)}</span>
+                      </div>
+                    </div>
                   </div>
-                </CardContent>
-              </Card>
+
+                  {/* To Beat the Market */}
+                  <div className="rounded-xl border border-success/30 bg-success/5 p-4">
+                    <div className="mb-3">
+                      <p className="text-sm font-semibold text-foreground">To Beat the Market</p>
+                      <p className="text-xs text-muted-foreground">
+                        Based on top {top25PctCount} propert{top25PctCount === 1 ? "y" : "ies"} (top 25%)
+                      </p>
+                    </div>
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs text-muted-foreground">Target Nightly Rate</span>
+                        <span className="text-sm font-bold text-success">{gbp(beatAvgAdr)}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs text-muted-foreground">Target Occupancy</span>
+                        <span className="text-sm font-bold text-success">{pct(beatAvgOccupancy)}</span>
+                      </div>
+                      <div className="flex items-center justify-between border-t border-success/20 pt-2">
+                        <span className="text-xs font-medium text-muted-foreground">Target Annual Revenue</span>
+                        <span className="text-base font-bold text-success">{gbp(beatAvgRevenue)}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </>
             ) : (
               <Card className="border-l-4 border-l-primary">
                 <CardContent className="py-6">
