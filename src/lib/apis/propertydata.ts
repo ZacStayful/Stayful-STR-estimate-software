@@ -328,28 +328,51 @@ export async function fetchPropertyValuation(
       url.searchParams.set('key', apiKey!);
       for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
 
+      const safeUrl = url.toString().replace(apiKey!, '<redacted>');
+      console.log(`[PropertyData] GET ${safeUrl}`);
+
       const response = await fetch(url.toString(), { cache: 'no-store' });
       if (!response.ok) {
-        console.log(`[PropertyData] /valuation-sale HTTP ${response.status}`);
+        const body = await response.text().catch(() => '');
+        console.log(`[PropertyData] /valuation-sale HTTP ${response.status}: ${body.slice(0, 300)}`);
         return null;
       }
 
       const data = await response.json().catch(() => null);
-      if (!data || data.status === 'error') {
-        console.log(`[PropertyData] /valuation-sale API error: ${data?.message ?? 'unknown'}`);
+      if (!data) {
+        console.log('[PropertyData] /valuation-sale JSON parse failed');
+        return null;
+      }
+      if (data.status === 'error') {
+        console.log(`[PropertyData] /valuation-sale API error: ${data.message ?? 'unknown'}`);
         return null;
       }
 
-      const estimate = Number(data.result?.estimate ?? 0);
+      // PropertyData may return the estimate under various keys depending on
+      // API version/endpoint. Check all known fields.
+      const result = data.result ?? data;
+      const estimate = Number(
+        result?.estimate
+        ?? result?.estimate_value
+        ?? result?.valuation
+        ?? result?.price
+        ?? result?.value
+        ?? 0,
+      );
+
       if (!Number.isFinite(estimate) || estimate <= 0) {
-        console.log('[PropertyData] /valuation-sale: invalid or zero estimate');
+        console.log(`[PropertyData] /valuation-sale: no usable estimate. Raw result keys: [${Object.keys(result || {}).join(',')}]`);
         return null;
       }
 
-      const rangeLow = Number(data.result?.range_low ?? 0) || Math.round(estimate * 0.85);
-      const rangeHigh = Number(data.result?.range_high ?? 0) || Math.round(estimate * 1.15);
+      const rangeLow = Number(
+        result?.range_low ?? result?.estimate_low ?? result?.low ?? 0,
+      ) || Math.round(estimate * 0.85);
+      const rangeHigh = Number(
+        result?.range_high ?? result?.estimate_high ?? result?.high ?? 0,
+      ) || Math.round(estimate * 1.15);
 
-      console.log(`[PropertyData] /valuation-sale: £${estimate} (£${rangeLow}–£${rangeHigh})`);
+      console.log(`[PropertyData] /valuation-sale success: £${estimate} (£${rangeLow}–£${rangeHigh})`);
       return {
         estimatedValue: Math.round(estimate),
         valuationRangeLow: Math.round(rangeLow),
