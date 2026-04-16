@@ -462,7 +462,10 @@ async function fetchReportAll(
   console.log(`[DEBUG] report/all HTTP status: ${createRes.status}`);
 
   if (!createRes.ok) {
-    console.error(`[DEBUG] Airbtics report/all POST failed HTTP ${createRes.status}`);
+    const errBody = await createRes.text().catch(() => '<unreadable body>');
+    console.error(
+      `[DEBUG] Airbtics report/all POST failed HTTP ${createRes.status} body: ${errBody.slice(0, 500)}`,
+    );
     return null;
   }
 
@@ -1842,7 +1845,14 @@ async function fetchNearbyListings(
   console.log(`[DEBUG] listings/search/bounds HTTP status: ${response.status}`);
 
   if (!response.ok) {
-    console.error(`[DEBUG] Airbtics bounds search failed HTTP ${response.status}`);
+    // Capture the response body so we can see Airbtics' actual rejection
+    // reason (Forbidden, Limit Exceeded, Missing Authentication Token, etc.)
+    // instead of just the HTTP status. Helps diagnose per-endpoint auth
+    // when the same key works from other origins (e.g. local curl).
+    const errBody = await response.text().catch(() => '<unreadable body>');
+    console.error(
+      `[DEBUG] Airbtics bounds search failed HTTP ${response.status} body: ${errBody.slice(0, 500)}`,
+    );
     return null;
   }
 
@@ -2047,7 +2057,13 @@ async function fetchMetric(
 
   console.log(`[DEBUG] markets/metrics/${metric} HTTP status: ${response.status}`);
 
-  if (!response.ok) return [];
+  if (!response.ok) {
+    const errBody = await response.text().catch(() => '<unreadable body>');
+    console.error(
+      `[DEBUG] markets/metrics/${metric} failed HTTP ${response.status} body: ${errBody.slice(0, 500)}`,
+    );
+    return [];
+  }
 
   const data = await response.json();
   console.log(`[DEBUG] Market monthly (${metric}) raw:`, JSON.stringify(data).slice(0, 1000));
