@@ -328,6 +328,19 @@ export default function HomePage() {
   const [calcMortgage, setCalcMortgage] = useState(0);
   const [calcBills, setCalcBills] = useState(400);
 
+  // User-curated comp exclusions — keyed by comp index in r.shortLet.comparables.
+  // Excluded comps are dimmed in the grid and removed from all aggregate stats
+  // (avg ADR/Occ/Revenue, Top 5, Decision Engine, Filtered Estimate). The V4
+  // PMI "Top Market Potential" headline is unaffected — it shows what a top-
+  // performer in the full market pool can earn.
+  const [excludedComps, setExcludedComps] = useState<Set<number>>(new Set());
+
+  // Reset exclusions whenever a fresh analysis result arrives so users don't
+  // accidentally carry filters from a previous property into a new one.
+  useEffect(() => {
+    setExcludedComps(new Set());
+  }, [result]);
+
   const setSectionRef = useCallback((id: string) => (el: HTMLElement | null) => {
     sectionRefs.current[id] = el;
   }, []);
@@ -843,8 +856,14 @@ export default function HomePage() {
     const sidebarWidth = sidebarCollapsed ? 48 : 200;
 
     // Average rating and reviews from comparables
-    const hasComparables = r.shortLet.comparables.length > 0;
-    const comps = r.shortLet.comparables;
+    const allComps = r.shortLet.comparables;
+    const hasComparables = allComps.length > 0;
+    // User-filtered subset: all comps minus the ones the user excluded via
+    // the per-card Exclude button. Every aggregate below derives from this
+    // subset so the UI updates live as the user curates.
+    const includedComps = allComps.filter((_, i) => !excludedComps.has(i));
+    const hasIncluded = includedComps.length > 0;
+    const comps = includedComps;
 
     // Sort comparables by annual revenue descending (highest first)
     const compsSortedByRevenue = [...comps].sort((a, b) => b.annualRevenue - a.annualRevenue);
@@ -860,17 +879,32 @@ export default function HomePage() {
     const compsWithAge = comps.filter((c) => c.listingAge > 0);
     const avgListingAge = compsWithAge.length > 0 ? Math.round(compsWithAge.reduce((s, c) => s + c.listingAge, 0) / compsWithAge.length * 10) / 10 : 0;
 
-    // Full pool averages (all comps) for Decision Engine "Match" box
-    const poolAvgAdr = hasComparables ? Math.round(comps.reduce((s, c) => s + c.averageDailyRate, 0) / comps.length) : r.shortLet.averageDailyRate;
-    const poolAvgOccupancy = hasComparables ? comps.reduce((s, c) => s + c.occupancyRate, 0) / comps.length : r.shortLet.occupancyRate;
-    const poolAvgRevenue = hasComparables ? Math.round(comps.reduce((s, c) => s + c.annualRevenue, 0) / comps.length) : r.shortLet.annualRevenue;
+    // Full pool averages (filtered comps) for Decision Engine "Match" box
+    const poolAvgAdr = hasIncluded ? Math.round(comps.reduce((s, c) => s + c.averageDailyRate, 0) / comps.length) : r.shortLet.averageDailyRate;
+    const poolAvgOccupancy = hasIncluded ? comps.reduce((s, c) => s + c.occupancyRate, 0) / comps.length : r.shortLet.occupancyRate;
+    const poolAvgRevenue = hasIncluded ? Math.round(comps.reduce((s, c) => s + c.annualRevenue, 0) / comps.length) : r.shortLet.annualRevenue;
 
     // Top 25% comps for Decision Engine "Beat" box
-    const top25PctCount = hasComparables ? Math.max(1, Math.ceil(comps.length * 0.25)) : 0;
+    const top25PctCount = hasIncluded ? Math.max(1, Math.ceil(comps.length * 0.25)) : 0;
     const top25Comps = compsSortedByRevenue.slice(0, top25PctCount);
     const beatAvgAdr = top25Comps.length > 0 ? Math.round(top25Comps.reduce((s, c) => s + c.averageDailyRate, 0) / top25Comps.length) : 0;
     const beatAvgOccupancy = top25Comps.length > 0 ? top25Comps.reduce((s, c) => s + c.occupancyRate, 0) / top25Comps.length : 0;
     const beatAvgRevenue = top25Comps.length > 0 ? Math.round(top25Comps.reduce((s, c) => s + c.annualRevenue, 0) / top25Comps.length) : 0;
+
+    // "Your Filtered Estimate" = median annual revenue of the user-selected
+    // comp subset. Transparent and explainable: it's literally the middle
+    // value of what the comps you kept are earning. Sits next to the V4 PMI
+    // "Top Market Potential" so the delta is visible.
+    const filteredRevenues = [...comps].map((c) => c.annualRevenue).filter((v) => v > 0).sort((a, b) => a - b);
+    const filteredEstimate = filteredRevenues.length === 0
+      ? 0
+      : filteredRevenues.length % 2 === 1
+        ? filteredRevenues[(filteredRevenues.length - 1) / 2]
+        : Math.round((filteredRevenues[filteredRevenues.length / 2 - 1] + filteredRevenues[filteredRevenues.length / 2]) / 2);
+    const excludedCount = allComps.length - includedComps.length;
+    const hasFilters = excludedCount > 0;
+    const topMarketPotential = r.shortLet.annualRevenue;
+    const potentialUpside = Math.max(0, topMarketPotential - filteredEstimate);
 
     // 36-month growth chart data
     const growthData = Array.from({ length: 36 }, (_, i) => {
@@ -1088,13 +1122,41 @@ export default function HomePage() {
                 <div className="flex flex-col gap-3 lg:items-end">
                   {grossAnnual > 0 ? (
                     <>
+                      {/* Top Market Potential — V4 PMI headline (unaffected by exclusions) */}
                       <div>
-                        <p className="text-xs text-primary-foreground/70 uppercase tracking-wider">Gross Revenue</p>
+                        <p className="text-xs text-primary-foreground/70 uppercase tracking-wider">Top Market Potential</p>
+                        <p className="text-[11px] text-primary-foreground/60 leading-tight mb-0.5 max-w-xs lg:text-right">
+                          What a top-performer in this area can earn
+                        </p>
                         <p className="text-2xl font-bold">
                           {gbp(grossAnnual)}{" "}
                           <span className="text-base font-normal text-primary-foreground/80">({gbp(Math.round(grossAnnual / 12))}/mo)</span>
                         </p>
                       </div>
+                      {/* Your Filtered Estimate — median of user-selected comps (live) */}
+                      {hasComparables && (
+                        <div>
+                          <p className="text-xs text-primary-foreground/70 uppercase tracking-wider">Your Filtered Estimate</p>
+                          <p className="text-[11px] text-primary-foreground/60 leading-tight mb-0.5 max-w-xs lg:text-right">
+                            {!hasIncluded
+                              ? `All ${allComps.length} comps excluded · Reset to restore estimate`
+                              : hasFilters
+                              ? `Median of the ${includedComps.length} of ${allComps.length} comps you kept`
+                              : `Median of all ${allComps.length} comps · exclude any that don't match to refine`}
+                          </p>
+                          <p className="text-2xl font-bold">
+                            {gbp(filteredEstimate)}{" "}
+                            {filteredEstimate > 0 && (
+                              <span className="text-base font-normal text-primary-foreground/80">({gbp(Math.round(filteredEstimate / 12))}/mo)</span>
+                            )}
+                          </p>
+                          {hasFilters && potentialUpside > 0 && (
+                            <p className="text-[11px] text-primary-foreground/70 mt-1">
+                              Potential missed opportunity: <span className="font-semibold text-primary-foreground">{gbp(potentialUpside)}/yr</span>
+                            </p>
+                          )}
+                        </div>
+                      )}
                       <div>
                         <p className="text-xs text-primary-foreground/70 uppercase tracking-wider">Net Revenue</p>
                         <p className="text-2xl font-bold">
@@ -1248,17 +1310,57 @@ export default function HomePage() {
               </div>
             )}
 
+            {/* ─ Filter banner (always visible when comps exist) ─ */}
+            {r.shortLet.comparables.length > 0 && (
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-primary/20 bg-primary/5 px-4 py-3">
+                <div className="flex items-center gap-2 text-sm">
+                  <Info className="h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
+                  {hasFilters ? (
+                    <span className="text-foreground">
+                      Showing <span className="font-semibold">{includedComps.length} of {allComps.length}</span> comparables ·
+                      {" "}Filtered Estimate: <span className="font-semibold">{gbp(filteredEstimate)}/yr</span>
+                    </span>
+                  ) : (
+                    <span className="text-foreground">
+                      Refine your estimate: exclude any comparable that doesn&apos;t match your property (wrong size, luxury outlier, sparse listing) to see a tailored figure.
+                    </span>
+                  )}
+                </div>
+                {hasFilters && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setExcludedComps(new Set())}
+                    className="shrink-0"
+                  >
+                    <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
+                    Reset filters
+                  </Button>
+                )}
+              </div>
+            )}
+
             {/* ─ PMI-style comp cards + Decision Engine ─ */}
             {r.shortLet.comparables.length > 0 ? (
               <>
                 <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  {r.shortLet.comparables.map((comp, i) => {
-                    const isTopPerformer = hasTop5 && top5Set.has(comp);
+                  {[...r.shortLet.comparables.entries()]
+                    .sort(([a], [b]) => {
+                      const aEx = excludedComps.has(a);
+                      const bEx = excludedComps.has(b);
+                      return aEx === bEx ? 0 : aEx ? 1 : -1;
+                    })
+                    .map(([i, comp]) => {
+                    const isExcluded = excludedComps.has(i);
+                    const isTopPerformer = !isExcluded && hasTop5 && top5Set.has(comp);
                     const ratingDisplay = comp.rating > 0 ? roundReviewRating(comp.rating) : null;
-                    const ratingAboveAvg = avgRating > 0 && comp.rating > 0 && comp.rating > avgRating + 0.05;
-                    const ratingBelowAvg = avgRating > 0 && comp.rating > 0 && comp.rating < avgRating - 0.05;
+                    const ratingAboveAvg = !isExcluded && avgRating > 0 && comp.rating > 0 && comp.rating > avgRating + 0.05;
+                    const ratingBelowAvg = !isExcluded && avgRating > 0 && comp.rating > 0 && comp.rating < avgRating - 0.05;
                     return (
-                      <Card key={i} className={`relative overflow-hidden transition-all ${isTopPerformer ? "ring-1 ring-success" : ""}`}>
+                      <Card
+                        key={i}
+                        className={`relative overflow-hidden transition-all ${isTopPerformer ? "ring-1 ring-success" : ""} ${isExcluded ? "opacity-50 grayscale" : ""}`}
+                      >
                         {isTopPerformer && (
                           <div className="absolute left-0 right-0 top-0 h-0.5 bg-success" />
                         )}
@@ -1266,18 +1368,22 @@ export default function HomePage() {
                           {/* Header */}
                           <div className="mb-3 flex items-start justify-between gap-2">
                             <div className="min-w-0">
-                              <p className="truncate text-sm font-semibold leading-tight text-foreground">
+                              <p className={`truncate text-sm font-semibold leading-tight text-foreground ${isExcluded ? "line-through" : ""}`}>
                                 {comp.title || `Listing ${i + 1}`}
                               </p>
                               <p className="mt-0.5 text-[11px] text-muted-foreground">
                                 {comp.bedrooms}b · {comp.accommodates}g{comp.distance != null ? ` · ${comp.distance} km` : ""}
                               </p>
                             </div>
-                            {isTopPerformer && (
+                            {isExcluded ? (
+                              <span className="inline-flex shrink-0 items-center rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground whitespace-nowrap">
+                                Excluded
+                              </span>
+                            ) : isTopPerformer ? (
                               <span className="inline-flex shrink-0 items-center rounded-full bg-success/15 px-1.5 py-0.5 text-[10px] font-semibold text-success whitespace-nowrap">
                                 Top
                               </span>
-                            )}
+                            ) : null}
                           </div>
 
                           {/* Primary metrics */}
@@ -1374,6 +1480,38 @@ export default function HomePage() {
                               Listing URL unavailable
                             </div>
                           )}
+
+                          {/* Exclude / Include toggle */}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setExcludedComps((prev) => {
+                                const next = new Set(prev);
+                                if (next.has(i)) next.delete(i);
+                                else next.add(i);
+                                return next;
+                              });
+                            }}
+                            className={
+                              isExcluded
+                                ? "mt-2 flex w-full items-center justify-center gap-1.5 rounded-md border border-border bg-card px-3 py-1.5 text-xs font-semibold text-foreground transition-colors hover:bg-muted"
+                                : "mt-2 flex w-full items-center justify-center gap-1.5 rounded-md border border-border bg-background px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground"
+                            }
+                            aria-pressed={isExcluded}
+                            aria-label={isExcluded ? "Include this comp in your estimate" : "Exclude this comp from your estimate"}
+                          >
+                            {isExcluded ? (
+                              <>
+                                <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" />
+                                Include
+                              </>
+                            ) : (
+                              <>
+                                <XCircle className="h-3.5 w-3.5" aria-hidden="true" />
+                                Exclude from estimate
+                              </>
+                            )}
+                          </button>
                         </CardContent>
                       </Card>
                     );
@@ -2691,6 +2829,35 @@ export default function HomePage() {
               short-term rental potential against traditional letting with real
               market data.
             </p>
+          </div>
+        </div>
+      </section>
+
+      {/* How It Works — compact 3-step explainer */}
+      <section className="relative z-10 -mt-4 pb-4">
+        <div className="mx-auto max-w-4xl px-4 sm:px-6 lg:px-8">
+          <div className="rounded-xl border border-border bg-card p-5 shadow-sm">
+            <p className="mb-3 text-sm font-semibold text-foreground">How this works</p>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <div className="flex gap-3">
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">1</span>
+                <p className="text-xs leading-relaxed text-muted-foreground">
+                  <span className="font-semibold text-foreground">Enter your property.</span> Address, bedrooms, guest capacity, parking and outdoor space.
+                </p>
+              </div>
+              <div className="flex gap-3">
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">2</span>
+                <p className="text-xs leading-relaxed text-muted-foreground">
+                  <span className="font-semibold text-foreground">We pull live Airbnb data.</span> Up to 12 comparable properties near you with their actual 12-month earnings, via Airbtics.
+                </p>
+              </div>
+              <div className="flex gap-3">
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">3</span>
+                <p className="text-xs leading-relaxed text-muted-foreground">
+                  <span className="font-semibold text-foreground">Refine with your judgement.</span> Exclude any comp that doesn&apos;t match your property — the estimate updates instantly so you see your realistic figure alongside the market&apos;s top potential.
+                </p>
+              </div>
+            </div>
           </div>
         </div>
       </section>
