@@ -158,7 +158,10 @@ function directBookingScoreFromSignals(result: AnalysisResult): number {
 }
 
 export function deriveReportData(result: AnalysisResult): PdfReportData {
-  const { property, shortLet, longLet, financials, risk, demandDrivers, nearbyEvents, propertyValuation, dataQuality } = result;
+  const { property, shortLet, financials, risk, demandDrivers, nearbyEvents, dataQuality } = result;
+  const propertyValuation = (result as AnalysisResult & {
+    propertyValuation?: { valuationRangeLow?: number | null; valuationRangeHigh?: number | null };
+  }).propertyValuation;
 
   // ── Overview ──
   const grossAnnual = financials.shortLetGrossAnnual;
