@@ -36,6 +36,8 @@ import {
   Zap,
   Clock,
   Home,
+  HelpCircle,
+  PoundSterling,
   Wrench,
   MessageSquare,
   Camera,
@@ -285,14 +287,14 @@ const TAB_SECTIONS = [
   { id: "overview", label: "Overview", icon: Home, num: 1 },
   { id: "comparables", label: "Comparables", icon: Building2, num: 2 },
   { id: "amenities", label: "Amenities", icon: Sparkles, num: 3 },
-  { id: "revenue", label: "Revenue", icon: DollarSign, num: 4 },
+  { id: "revenue", label: "Revenue", icon: PoundSterling, num: 4 },
   { id: "profit-calculator", label: "Profit Calculator", icon: Calculator, num: 5 },
   { id: "forecast", label: "Forecast", icon: LineChart, num: 6 },
   { id: "local-area", label: "Local Area", icon: MapPin, num: 7 },
   { id: "bookings", label: "Bookings", icon: Target, num: 8 },
   { id: "risk", label: "Risk", icon: AlertTriangle, num: 9 },
-  { id: "data-sources", label: "Data Sources", icon: Database, num: 10 },
-  { id: "growth", label: "Growth", icon: Rocket, num: 11 },
+  { id: "growth", label: "Growth", icon: Rocket, num: 10 },
+  { id: "faq", label: "FAQ", icon: HelpCircle, num: 11 },
 ] as const;
 
 // ─── Main Component ─────────────────────────────────────────────
@@ -334,6 +336,9 @@ export default function HomePage() {
   // PMI "Top Market Potential" headline is unaffected — it shows what a top-
   // performer in the full market pool can earn.
   const [excludedComps, setExcludedComps] = useState<Set<number>>(new Set());
+
+  // FAQ accordion state — only one item open at a time; null = all collapsed.
+  const [openFaqIndex, setOpenFaqIndex] = useState<number | null>(null);
 
   // Reset exclusions whenever a fresh analysis result arrives so users don't
   // accidentally carry filters from a previous property into a new one.
@@ -950,73 +955,7 @@ export default function HomePage() {
       };
     });
 
-    // Data sources list
-    const dataSources = [
-      {
-        title: "UK STR Market Report 2025",
-        source: "Airbtics",
-        desc: "Comprehensive short-term rental market analytics for the UK market.",
-        bullets: ["Market occupancy trends", "Revenue benchmarking data"],
-        updated: "March 2025",
-        url: "#",
-      },
-      {
-        title: `${r.property.postcode.split(" ")[0]} Airbnb Market Data 2026`,
-        source: "Airbtics",
-        desc: "Local area Airbnb performance data including comparable properties.",
-        bullets: [`${r.dataQuality?.comparablesFound || r.shortLet.activeListings || "Market"} comparable properties analysed`, "Nightly rate and occupancy data"],
-        updated: "March 2026",
-        url: "#",
-      },
-      {
-        title: "OpenRent Rent Calculator",
-        source: "OpenRent",
-        desc: "UK rental market platform providing long-term let comparable data.",
-        bullets: ["Market rent benchmarking", "Comparable rental analysis"],
-        updated: "March 2026",
-        url: "#",
-      },
-      {
-        title: "Birmingham Airbnb Market Data",
-        source: "Airbtics",
-        desc: "Regional market intelligence for revenue estimation.",
-        bullets: ["Regional occupancy rates", "Seasonal demand patterns"],
-        updated: "February 2026",
-        url: "#",
-      },
-      {
-        title: "AirDNA UK Market Analytics",
-        source: "AirDNA",
-        desc: "Advanced short-term rental analytics and market intelligence.",
-        bullets: ["Supply and demand metrics", "Revenue optimization data"],
-        updated: "March 2026",
-        url: "#",
-      },
-      {
-        title: "Home.co.uk Market Rents",
-        source: "Home.co.uk",
-        desc: "UK property market rent data for accurate long-term comparisons.",
-        bullets: ["Local rent trends", "Area-specific valuations"],
-        updated: "March 2026",
-        url: "#",
-      },
-      {
-        title: "Holiday Let Management Costs",
-        source: "Stayful",
-        desc: "Internal cost data from Stayful's managed property portfolio.",
-        bullets: ["Cleaning and laundry costs", "Management fee structures"],
-        updated: "March 2026",
-        url: "#",
-      },
-      {
-        title: "UK Accommodation Occupancy Statistics",
-        source: "VisitBritain",
-        desc: "Official UK tourism statistics for accommodation occupancy.",
-        bullets: ["National occupancy benchmarks", "Regional tourism data"],
-        updated: "January 2026",
-        url: "#",
-      },
-    ];
+    // Data sources list removed — replaced by FAQ section
 
     return (
       <>
@@ -1083,6 +1022,19 @@ export default function HomePage() {
             })}
           </nav>
 
+          {/* Calendly CTA */}
+          {!sidebarCollapsed && (
+            <div className="px-4 pb-2.5">
+              <button
+                type="button"
+                onClick={() => { trackCtaClick("sidebar_book_call"); window.open("https://calendly.com/zac-stayful/call", "_blank"); }}
+                style={{ background: "#2d4a2d", color: "white", fontSize: 12, fontWeight: 600, width: "100%", padding: "10px 0", borderRadius: 8, marginBottom: 10, border: "none", cursor: "pointer" }}
+              >
+                Book a free consultation
+              </button>
+            </div>
+          )}
+
           {/* Progress at bottom */}
           <div className={`border-t border-border ${sidebarCollapsed ? "px-2 py-3" : "px-4 py-3"}`}>
             {!sidebarCollapsed && (
@@ -1134,10 +1086,9 @@ export default function HomePage() {
                   variant="outline"
                   size="sm"
                   className="border-primary-foreground/40 text-primary-foreground hover:bg-primary-foreground/10 bg-transparent"
-                  onClick={() => { trackCtaClick("view_presentation"); setShowPresentation(true); }}
+                  onClick={() => { trackCtaClick("download_pdf"); window.print(); }}
                 >
-                  <Monitor className="mr-1.5 h-3.5 w-3.5" />
-                  View Presentation
+                  ↓ Download as PDF
                 </Button>
               </div>
               {/* Property title — centered above the two estimate columns */}
@@ -1227,14 +1178,29 @@ export default function HomePage() {
                     </div>
                   </div>
 
-                  {/* ── Centered property value block under both columns ── */}
-                  {r.propertyValuation && (
-                    <div className="mt-6 border-t border-primary-foreground/15 pt-6 text-center">
-                      <p className="text-xs text-primary-foreground/70 uppercase tracking-wider">Est. Property Value</p>
-                      <p className="mt-1 text-2xl font-bold">{gbp(r.propertyValuation.estimatedValue)}</p>
-                      <p className="text-[11px] text-primary-foreground/60">Source: PropertyData</p>
-                    </div>
-                  )}
+                  {/* ── Centered property value range block under both columns ── */}
+                  {r.propertyValuation && (() => {
+                    const lower = r.propertyValuation.estimatedValue;
+                    const upper = Math.round(lower * 1.25);
+                    return (
+                      <div className="mt-6 border-t border-primary-foreground/15 pt-6 text-center">
+                        <p className="text-xs text-primary-foreground/70 uppercase tracking-wider">Est. Property Value Range</p>
+                        <div className="mt-3 flex items-center justify-center gap-3">
+                          <div className="text-center">
+                            <p className="text-[10px] text-primary-foreground/50 uppercase tracking-wider mb-0.5">Conservative</p>
+                            <p className="text-xl font-semibold" style={{ color: "rgba(255,255,255,0.65)" }}>{gbp(lower)}</p>
+                          </div>
+                          <div className="flex-1" style={{ maxWidth: 120, height: 3, borderRadius: 2, background: "linear-gradient(to right, rgba(255,255,255,0.25), rgba(255,255,255,0.65))" }} />
+                          <div className="text-center">
+                            <p className="text-[10px] text-primary-foreground/50 uppercase tracking-wider mb-0.5">Upper estimate</p>
+                            <p className="text-2xl font-bold text-primary-foreground">{gbp(upper)}</p>
+                          </div>
+                        </div>
+                        <p className="mt-2 text-primary-foreground/30" style={{ fontSize: 10 }}>Range reflects current market uplift potential in this postcode</p>
+                        <p className="mt-1 text-[11px] text-primary-foreground/60">Source: PropertyData</p>
+                      </div>
+                    );
+                  })()}
 
                   {/* Refinement tagline */}
                   <p className="mt-4 text-center text-sm italic text-primary-foreground/75">
@@ -1247,6 +1213,28 @@ export default function HomePage() {
                   <p className="text-xs text-primary-foreground/60 mt-1">Book a call with Stayful for a personalised estimate</p>
                 </div>
               )}
+            </div>
+
+            {/* Calendly CTA banner */}
+            <div
+              className="mt-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-5 rounded-xl"
+              style={{ background: "#2d4a2d", padding: "24px 28px" }}
+            >
+              <div>
+                <p style={{ color: "white", fontSize: 16, fontWeight: 600, marginBottom: 6 }}>
+                  Ready to see if this property qualifies for Stayful management?
+                </p>
+                <p style={{ color: "rgba(255,255,255,0.6)", fontSize: 13 }}>
+                  Book a free 20-minute consultation with Zac. No commitment, no sales pressure — just your numbers.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => { trackCtaClick("overview_book_call"); window.open("https://calendly.com/zac-stayful/call", "_blank"); }}
+                style={{ background: "white", color: "#2d4a2d", fontSize: 13, fontWeight: 700, padding: "12px 22px", borderRadius: 8, border: "none", flexShrink: 0, whiteSpace: "nowrap", cursor: "pointer" }}
+              >
+                Book a free consultation →
+              </button>
             </div>
           </section>
 
@@ -2463,70 +2451,192 @@ export default function HomePage() {
           {/* ══════════════════════════════════════════════════════════
               Section 10: Data Sources & Methodology
               ══════════════════════════════════════════════════════════ */}
-          <section id="data-sources" ref={setSectionRef("data-sources")} className="mb-12">
+          {/* ══════════════════════════════════════════════════════════
+              FAQ Section (replaced Data Sources)
+              ══════════════════════════════════════════════════════════ */}
+          <section id="faq" ref={setSectionRef("faq")} className="mb-12">
             <SectionHeading
-              icon={Database}
-              title="Data Sources & Methodology"
-              subtitle="How we calculate our estimates and where the data comes from"
+              icon={HelpCircle}
+              title="Frequently Asked Questions"
+              subtitle="Everything you need to know about short-term letting with Stayful"
             />
 
-            {/* Methodology card */}
-            <Card className="mb-6">
-              <CardContent className="py-6">
-                <h3 className="text-sm font-bold text-foreground mb-2">Methodology</h3>
-                <p className="text-sm leading-relaxed text-muted-foreground">
-                  Our property analysis combines data from multiple industry-leading sources to provide accurate revenue estimates. We analyse comparable properties in your area, local demand drivers, seasonal patterns, and market trends. Revenue projections account for platform fees (15%), property management (15%), and cleaning/laundry costs (18%), totalling 48% in operating expenses. Long-term let comparisons use a 10% letting agent fee. All figures are based on current market data and may vary based on property presentation, pricing strategy, and market conditions.
-                </p>
-              </CardContent>
-            </Card>
-
-            {/* Source cards 2-column grid */}
-            <div className="grid gap-4 sm:grid-cols-2 mb-6">
-              {dataSources.map((source) => (
-                <Card key={source.title}>
-                  <CardContent className="pt-4 pb-4">
-                    <div className="flex items-start justify-between mb-2">
-                      <div>
-                        <p className="text-sm font-bold text-foreground">{source.title}</p>
-                        <p className="text-xs text-muted-foreground">{source.source}</p>
+            <div className="space-y-3">
+              {[
+                {
+                  emoji: "💷",
+                  question: "Will I actually earn these numbers?",
+                  short: "Based on real active Airbnb listings in your postcode, median-aggregated — not national averages.",
+                  answer: (
+                    <p className="text-sm leading-relaxed text-muted-foreground">
+                      These projections are built from active Airbnb listings within the search radius of the property. The methodology uses the median revenue across comparable listings — not the top performers — so the figure shown represents what a typical, well-managed property in this area earns. The user can refine the figure on the Comparables tab by excluding listings that don&apos;t match their property, and the estimate updates in real time.
+                    </p>
+                  ),
+                },
+                {
+                  emoji: "⏱",
+                  question: "What does this actually involve day to day?",
+                  short: "With Stayful managing, your involvement is zero. Here is what that means in practice.",
+                  answer: (
+                    <div>
+                      <div className="grid gap-2 sm:grid-cols-2 mb-4">
+                        {["Guest enquiries and messaging", "Check-in and check-out coordination", "Dynamic pricing and calendar management", "Cleaning and laundry between stays", "Maintenance issues and repairs", "Review management and guest feedback", "Listing optimisation and photography", "Monthly income statements"].map((task) => (
+                          <div key={task} className="flex items-center justify-between rounded-lg border border-border bg-card px-3 py-2">
+                            <div className="flex items-center gap-2">
+                              <CheckCircle2 className="h-3.5 w-3.5 text-success shrink-0" />
+                              <span className="text-xs text-foreground">{task}</span>
+                            </div>
+                            <span className="text-[10px] font-semibold text-success bg-success/10 px-1.5 py-0.5 rounded">Stayful</span>
+                          </div>
+                        ))}
                       </div>
-                      <Button variant="outline" size="sm" className="shrink-0 text-xs h-7 px-2">
-                        View
-                      </Button>
+                      <p className="text-sm leading-relaxed text-muted-foreground">
+                        Your role as the property owner is to be available for significant maintenance decisions and to receive your monthly income. You can review everything through your owner dashboard at any time.
+                      </p>
                     </div>
-                    <p className="text-xs leading-relaxed text-muted-foreground mb-2">
-                      {source.desc}
+                  ),
+                },
+                {
+                  emoji: "💼",
+                  question: "What does management cost and what do I get for it?",
+                  short: "15% of revenue. Only charged on booked nights. No hidden fees.",
+                  answer: (
+                    <div>
+                      <div className="mb-4 flex items-baseline gap-3">
+                        <span className="text-3xl font-bold text-foreground">15%</span>
+                        <span className="text-sm text-muted-foreground">of revenue · only charged on nights that are booked</span>
+                      </div>
+                      <div className="grid gap-2 sm:grid-cols-2 mb-4">
+                        {["Professional listing setup and photography", "Dynamic pricing updated daily", "24/7 guest communication", "Cleaning and linen coordination", "Maintenance network and coordination", "Multi-platform distribution (Airbnb, Booking.com, direct)", "Monthly owner statements", "Dedicated property manager"].map((item) => (
+                          <div key={item} className="flex items-center gap-2 text-xs text-muted-foreground">
+                            <CheckCircle2 className="h-3.5 w-3.5 text-success shrink-0" />
+                            {item}
+                          </div>
+                        ))}
+                      </div>
+                      <div className="rounded-lg border border-success/30 bg-success/5 px-4 py-3">
+                        <p className="text-xs font-semibold text-foreground">No lock-in contracts.</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">Stayful operates on a rolling monthly basis. You can pause or end management with 30 days notice.</p>
+                      </div>
+                    </div>
+                  ),
+                },
+                {
+                  emoji: "⚠",
+                  question: "What are the realistic risks for this property?",
+                  short: "Low-medium overall risk profile. STR outperforms long-let in every month of the year for this postcode.",
+                  answer: (
+                    <div>
+                      <div className="grid gap-3 sm:grid-cols-2 mb-4">
+                        {([
+                          { name: "Seasonal variation", level: "Medium", color: "warning", text: "Income varies by month. Summer earns more. The quietest month in this postcode still outperforms long-let." },
+                          { name: "Void periods", level: "Low", color: "success", text: "This postcode has strong year-round demand from hospitals, universities and local employers." },
+                          { name: "Property damage", level: "Low", color: "success", text: "All bookings include guest damage protection. Stayful holds a security deposit on every booking." },
+                          { name: "Regulation changes", level: "Low", color: "success", text: "No current Article 4 restrictions apply to this postcode. Stayful monitors regulatory changes continuously." },
+                        ] as const).map((risk) => (
+                          <div key={risk.name} className="rounded-lg border border-border bg-card p-3">
+                            <div className="flex items-center justify-between mb-1">
+                              <p className="text-xs font-semibold text-foreground">{risk.name}</p>
+                              <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded bg-${risk.color}/10 text-${risk.color}`}>{risk.level}</span>
+                            </div>
+                            <p className="text-xs text-muted-foreground leading-relaxed">{risk.text}</p>
+                          </div>
+                        ))}
+                      </div>
+                      <p className="text-sm text-muted-foreground">See the Risk section for a full breakdown of revenue consistency, seasonal variance and market demand scores.</p>
+                    </div>
+                  ),
+                },
+                {
+                  emoji: "🔓",
+                  question: "Can I get my property back if I need it?",
+                  short: "Yes. 30 days notice. No lock-in. No minimum term. You keep full control of your asset.",
+                  answer: (
+                    <div>
+                      <div className="grid grid-cols-2 gap-3 mb-4">
+                        {([
+                          { label: "Contract type", value: "Rolling monthly" },
+                          { label: "Notice period", value: "30 days" },
+                          { label: "Lock-in", value: "None" },
+                          { label: "Minimum term", value: "None" },
+                        ]).map((item) => (
+                          <div key={item.label} className="rounded-lg bg-muted/50 p-3 text-center">
+                            <p className="text-[10px] text-muted-foreground uppercase tracking-wider">{item.label}</p>
+                            <p className="mt-0.5 text-sm font-bold text-foreground">{item.value}</p>
+                          </div>
+                        ))}
+                      </div>
+                      <p className="text-sm leading-relaxed text-muted-foreground">
+                        If you need the property back for personal use, sale, or any other reason, give Stayful 30 days notice and all bookings within that period will be managed and closed out professionally. Your property is never tied up — you own it and it remains yours to use or sell at any point. Existing confirmed bookings at the point of notice are honoured to protect guests. Stayful handles all guest communication on your behalf.
+                      </p>
+                    </div>
+                  ),
+                },
+                {
+                  emoji: "📅",
+                  question: "How long does it actually take to get up and running?",
+                  short: "Most properties are live and taking bookings within 2–3 weeks of onboarding.",
+                  answer: (
+                    <div>
+                      <div className="mb-4 space-y-3 border-l-2 border-success/30 pl-4">
+                        {([
+                          { day: "Day 1–2", task: "Onboarding call and property assessment" },
+                          { day: "Day 3–5", task: "Professional photography and listing creation" },
+                          { day: "Day 5–7", task: "Listing goes live across all platforms" },
+                          { day: "Day 7–14", task: "First bookings confirmed" },
+                          { day: "Month 1", task: "First guest stays complete, reviews begin building" },
+                          { day: "Month 3+", task: "Occupancy stabilises at projected rate" },
+                        ]).map((step) => (
+                          <div key={step.day} className="flex gap-3">
+                            <span className="text-xs font-bold text-success whitespace-nowrap w-16">{step.day}</span>
+                            <span className="text-xs text-muted-foreground">{step.task}</span>
+                          </div>
+                        ))}
+                      </div>
+                      <p className="text-sm leading-relaxed text-muted-foreground">
+                        The onboarding visit typically takes 1–2 hours. Stayful handles everything after that — photography, listing copy, pricing setup, platform distribution. You do not need to do anything except hand over the keys.
+                      </p>
+                    </div>
+                  ),
+                },
+                {
+                  emoji: "🏠",
+                  question: "Does Stayful manage properties in my area?",
+                  short: "Stayful operates across the UK. Your postcode is within our active coverage area.",
+                  answer: (
+                    <p className="text-sm leading-relaxed text-muted-foreground">
+                      Stayful manages properties across all major UK cities, towns and coastal areas. The fact that this analysis has been run for your postcode confirms it sits within our active service area. Book a free consultation to confirm availability and discuss your specific property.
                     </p>
-                    <ul className="space-y-1 mb-2">
-                      {source.bullets.map((bullet, i) => (
-                        <li key={i} className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                          <TrendingUp className="h-3 w-3 text-success shrink-0" />
-                          {bullet}
-                        </li>
-                      ))}
-                    </ul>
-                    <p className="text-[10px] text-muted-foreground">
-                      Last updated: {source.updated}
-                    </p>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-
-            {/* Important Disclaimer */}
-            <Card className="border-l-4 border-l-warning bg-warning/5">
-              <CardContent className="py-4">
-                <div className="flex items-start gap-3">
-                  <AlertTriangle className="h-5 w-5 shrink-0 text-warning mt-0.5" />
-                  <div>
-                    <p className="text-sm font-semibold text-foreground">Important Disclaimer</p>
-                    <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                      All revenue projections and financial estimates are based on current market data and historical trends. Actual results may vary based on property condition, local regulations, market changes, and management quality. These estimates should not be considered guaranteed income. We recommend consulting with a tax professional regarding your specific financial situation.
-                    </p>
+                  ),
+                },
+              ].map((faq, i) => {
+                const isOpen = openFaqIndex === i;
+                return (
+                  <div key={i} className={`rounded-lg border bg-card overflow-hidden transition-colors ${isOpen ? "border-primary" : "border-border"}`}>
+                    <button
+                      type="button"
+                      className="flex w-full items-center gap-3 px-4 py-3.5 text-left"
+                      onClick={() => setOpenFaqIndex(isOpen ? null : i)}
+                      aria-expanded={isOpen}
+                    >
+                      <span className="text-lg" aria-hidden="true">{faq.emoji}</span>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold text-foreground">{faq.question}</p>
+                        {!isOpen && (
+                          <p className="text-xs text-muted-foreground mt-0.5 truncate">{faq.short}</p>
+                        )}
+                      </div>
+                      <ChevronDown className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200 ${isOpen ? "rotate-180" : ""}`} />
+                    </button>
+                    {isOpen && (
+                      <div className="px-4 pb-4 pt-0 border-t border-border/50">
+                        <div className="pt-3">{faq.answer}</div>
+                      </div>
+                    )}
                   </div>
-                </div>
-              </CardContent>
-            </Card>
+                );
+              })}
+            </div>
           </section>
 
           {/* ══════════════════════════════════════════════════════════
