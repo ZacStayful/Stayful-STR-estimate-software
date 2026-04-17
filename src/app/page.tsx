@@ -891,20 +891,48 @@ export default function HomePage() {
     const beatAvgOccupancy = top25Comps.length > 0 ? top25Comps.reduce((s, c) => s + c.occupancyRate, 0) / top25Comps.length : 0;
     const beatAvgRevenue = top25Comps.length > 0 ? Math.round(top25Comps.reduce((s, c) => s + c.annualRevenue, 0) / top25Comps.length) : 0;
 
-    // "Your Filtered Estimate" = median annual revenue of the user-selected
-    // comp subset. Transparent and explainable: it's literally the middle
-    // value of what the comps you kept are earning. Sits next to the V4 PMI
-    // "Top Market Potential" so the delta is visible.
-    const filteredRevenues = [...comps].map((c) => c.annualRevenue).filter((v) => v > 0).sort((a, b) => a - b);
-    const filteredEstimate = filteredRevenues.length === 0
-      ? 0
-      : filteredRevenues.length % 2 === 1
-        ? filteredRevenues[(filteredRevenues.length - 1) / 2]
-        : Math.round((filteredRevenues[filteredRevenues.length / 2 - 1] + filteredRevenues[filteredRevenues.length / 2]) / 2);
+    // "Your Filtered Estimate" — mirrors the V4 PMI "Top Market Potential"
+    // when no comps are excluded (snap behaviour, so the first impression
+    // shows identical numbers in both columns). As soon as the user removes
+    // any comp it switches to the arithmetic MEAN of the kept comps across
+    // annualRevenue / ADR / occupancy. If the user excludes every comp, all
+    // filtered values collapse to 0.
+    //
+    // Net revenue uses the same 48%-of-gross operating-cost ratio applied to
+    // the Top Market headline (platform fees 15% + management 15% + cleaning/
+    // laundry 18% — see page.tsx:648-650 — so the retained share is 52%).
+    const FILTERED_NET_RATIO = 0.52;
     const excludedCount = allComps.length - includedComps.length;
     const hasFilters = excludedCount > 0;
-    const topMarketPotential = r.shortLet.annualRevenue;
-    const potentialUpside = Math.max(0, topMarketPotential - filteredEstimate);
+    const topGross = r.shortLet.annualRevenue;
+    const topAdr = r.shortLet.averageDailyRate;
+    const topOcc = r.shortLet.occupancyRate;
+    const topNet = Math.round(topGross * FILTERED_NET_RATIO);
+
+    let filteredGross: number;
+    let filteredAdr: number;
+    let filteredOcc: number;
+    if (!hasIncluded) {
+      // All comps excluded (or no comps at all).
+      filteredGross = 0;
+      filteredAdr = 0;
+      filteredOcc = 0;
+    } else if (!hasFilters) {
+      // No user filter yet — snap to V4 PMI Top Market Potential values so
+      // both columns read identically on first load.
+      filteredGross = topGross;
+      filteredAdr = topAdr;
+      filteredOcc = topOcc;
+    } else {
+      // At least one comp excluded — recompute from the kept-comps mean.
+      // Mean of 1 kept comp = that single comp's values (matches user spec).
+      filteredGross = Math.round(includedComps.reduce((s, c) => s + c.annualRevenue, 0) / includedComps.length);
+      filteredAdr = Math.round(includedComps.reduce((s, c) => s + c.averageDailyRate, 0) / includedComps.length);
+      filteredOcc = includedComps.reduce((s, c) => s + c.occupancyRate, 0) / includedComps.length;
+    }
+    const filteredNet = Math.round(filteredGross * FILTERED_NET_RATIO);
+    // Kept for the Section 2 banner wording that references it downstream.
+    const filteredEstimate = filteredGross;
 
     // 36-month growth chart data
     const growthData = Array.from({ length: 36 }, (_, i) => {
@@ -1112,88 +1140,113 @@ export default function HomePage() {
                   View Presentation
                 </Button>
               </div>
-              <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-6">
-                <div>
-                  <h1 className="text-2xl font-bold">{r.property.address}</h1>
-                  <p className="mt-1 text-sm text-primary-foreground/80">
-                    {r.property.bedrooms} bed, bath &middot; Sleeps {r.property.guests}
-                  </p>
-                </div>
-                <div className="flex flex-col gap-3 lg:items-end">
-                  {grossAnnual > 0 ? (
-                    <>
-                      {/* Top Market Potential — V4 PMI headline (unaffected by exclusions) */}
-                      <div>
-                        <p className="text-xs text-primary-foreground/70 uppercase tracking-wider">Top Market Potential</p>
-                        <p className="text-[11px] text-primary-foreground/60 leading-tight mb-0.5 max-w-xs lg:text-right">
-                          What a top-performer in this area can earn
-                        </p>
-                        <p className="text-2xl font-bold">
-                          {gbp(grossAnnual)}{" "}
-                          <span className="text-base font-normal text-primary-foreground/80">({gbp(Math.round(grossAnnual / 12))}/mo)</span>
-                        </p>
-                      </div>
-                      {/* Your Filtered Estimate — median of user-selected comps (live) */}
-                      {hasComparables && (
+              {/* Property title — centered above the two estimate columns */}
+              <div className="mb-6 text-center">
+                <h1 className="text-2xl font-bold">{r.property.address}</h1>
+                <p className="mt-1 text-sm text-primary-foreground/80">
+                  {r.property.bedrooms} bed &middot; bath &middot; Sleeps {r.property.guests}
+                </p>
+              </div>
+
+              {grossAnnual > 0 ? (
+                <>
+                  {/* Two estimate columns — side-by-side on lg, stacked on mobile.
+                      Mobile: natural vertical stack (Top, then Filtered, then EPV).
+                      Desktop: grid with a vertical divider between the two columns. */}
+                  <div className="grid grid-cols-1 gap-6 lg:grid-cols-2 lg:gap-0 lg:divide-x lg:divide-primary-foreground/15">
+                    {/* ── Top Market Potential (V4 PMI headline — unaffected by exclusions) ── */}
+                    <div className="lg:pr-8">
+                      <p className="text-xs text-primary-foreground/70 uppercase tracking-wider">Top Market Potential</p>
+                      <p className="text-sm text-primary-foreground/80 mb-3">
+                        What a top-performer in this area can earn
+                      </p>
+                      <p className="text-3xl font-bold leading-tight">
+                        {gbp(topGross)}{" "}
+                        <span className="text-base font-normal text-primary-foreground/80">{gbp(Math.round(topGross / 12))}/mo</span>
+                      </p>
+                      <p className="mt-4 text-xs text-primary-foreground/70 uppercase tracking-wider">Net Revenue</p>
+                      <p className="text-3xl font-bold leading-tight">
+                        {gbp(topNet)}{" "}
+                        <span className="text-base font-normal text-primary-foreground/80">{gbp(Math.round(topNet / 12))}/mo</span>
+                      </p>
+                      <p className="mt-2 text-[11px] text-primary-foreground/70 leading-relaxed max-w-xs">
+                        After booking platform fees, cleaning, laundry and property management
+                      </p>
+                      <div className="mt-4 flex items-start gap-6">
                         <div>
-                          <p className="text-xs text-primary-foreground/70 uppercase tracking-wider">Your Filtered Estimate</p>
-                          <p className="text-[11px] text-primary-foreground/60 leading-tight mb-0.5 max-w-xs lg:text-right">
-                            {!hasIncluded
-                              ? `All ${allComps.length} comps excluded · Reset to restore estimate`
-                              : hasFilters
-                              ? `Median of the ${includedComps.length} of ${allComps.length} comps you kept`
-                              : `Median of all ${allComps.length} comps · exclude any that don't match to refine`}
-                          </p>
-                          <p className="text-2xl font-bold">
-                            {gbp(filteredEstimate)}{" "}
-                            {filteredEstimate > 0 && (
-                              <span className="text-base font-normal text-primary-foreground/80">({gbp(Math.round(filteredEstimate / 12))}/mo)</span>
-                            )}
-                          </p>
-                          {hasFilters && potentialUpside > 0 && (
-                            <p className="text-[11px] text-primary-foreground/70 mt-1">
-                              Potential missed opportunity: <span className="font-semibold text-primary-foreground">{gbp(potentialUpside)}/yr</span>
-                            </p>
-                          )}
+                          <p className="text-[11px] text-primary-foreground/70 uppercase tracking-wider">ADR</p>
+                          <p className="mt-0.5 text-xl font-bold">{gbp(topAdr)}</p>
                         </div>
-                      )}
-                      <div>
-                        <p className="text-xs text-primary-foreground/70 uppercase tracking-wider">Net Revenue</p>
-                        <p className="text-2xl font-bold">
-                          {gbp(stlNetAnnual)}{" "}
-                          <span className="text-base font-normal text-primary-foreground/80">({gbp(Math.round(stlNetAnnual / 12))}/mo)</span>
-                        </p>
+                        <div>
+                          <p className="text-[11px] text-primary-foreground/70 uppercase tracking-wider">Occupancy</p>
+                          <p className="mt-0.5 text-xl font-bold">{pct(topOcc)}</p>
+                        </div>
                       </div>
-                      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm lg:justify-end">
-                        <span>
-                          <span className="text-[11px] text-primary-foreground/70 uppercase tracking-wider mr-1.5">ADR</span>
-                          <span className="text-base font-semibold">{gbp(r.shortLet.averageDailyRate)}</span>
-                        </span>
-                        <span className="text-primary-foreground/40">·</span>
-                        <span>
-                          <span className="text-[11px] text-primary-foreground/70 uppercase tracking-wider mr-1.5">Occupancy</span>
-                          <span className="text-base font-semibold">{pct(r.shortLet.occupancyRate)}</span>
-                        </span>
-                      </div>
-                    </>
-                  ) : (
-                    <div className="text-right">
-                      <p className="text-sm text-primary-foreground/80">Limited market data available</p>
-                      <p className="text-xs text-primary-foreground/60 mt-1">Book a call with Stayful for a personalised estimate</p>
                     </div>
-                  )}
+
+                    {/* ── Your Filtered Estimate (mean of kept comps; snaps to Top at 0 excluded) ── */}
+                    <div className="lg:pl-8">
+                      <p className="text-xs text-primary-foreground/70 uppercase tracking-wider">Your Filtered Estimate</p>
+                      <p className="text-sm text-primary-foreground/80 mb-3">
+                        {!hasIncluded
+                          ? `All ${allComps.length} comps excluded — reset filters to restore`
+                          : "Average of comps you kept"}
+                      </p>
+                      <p className="text-3xl font-bold leading-tight">
+                        {gbp(filteredGross)}
+                        {filteredGross > 0 && (
+                          <>
+                            {" "}
+                            <span className="text-base font-normal text-primary-foreground/80">{gbp(Math.round(filteredGross / 12))}/mo</span>
+                          </>
+                        )}
+                      </p>
+                      <p className="mt-4 text-xs text-primary-foreground/70 uppercase tracking-wider">Net Revenue</p>
+                      <p className="text-3xl font-bold leading-tight">
+                        {gbp(filteredNet)}
+                        {filteredNet > 0 && (
+                          <>
+                            {" "}
+                            <span className="text-base font-normal text-primary-foreground/80">{gbp(Math.round(filteredNet / 12))}/mo</span>
+                          </>
+                        )}
+                      </p>
+                      <p className="mt-2 text-[11px] text-primary-foreground/70 leading-relaxed max-w-xs">
+                        After booking platform fees, cleaning, laundry and property management
+                      </p>
+                      <div className="mt-4 flex items-start gap-6">
+                        <div>
+                          <p className="text-[11px] text-primary-foreground/70 uppercase tracking-wider">ADR</p>
+                          <p className="mt-0.5 text-xl font-bold">{gbp(filteredAdr)}</p>
+                        </div>
+                        <div>
+                          <p className="text-[11px] text-primary-foreground/70 uppercase tracking-wider">Occupancy</p>
+                          <p className="mt-0.5 text-xl font-bold">{pct(filteredOcc)}</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* ── Centered property value block under both columns ── */}
                   {r.propertyValuation && (
-                    <div>
+                    <div className="mt-6 border-t border-primary-foreground/15 pt-6 text-center">
                       <p className="text-xs text-primary-foreground/70 uppercase tracking-wider">Est. Property Value</p>
-                      <p className="text-2xl font-bold">{gbp(r.propertyValuation.estimatedValue)}</p>
+                      <p className="mt-1 text-2xl font-bold">{gbp(r.propertyValuation.estimatedValue)}</p>
                       <p className="text-[11px] text-primary-foreground/60">Source: PropertyData</p>
                     </div>
                   )}
-                  <p className="text-[11px] text-primary-foreground/60">
-                    After booking platform fees, cleaning, laundry and property management
+
+                  {/* Refinement tagline */}
+                  <p className="mt-4 text-center text-sm italic text-primary-foreground/75">
+                    Refine your competition data for a more direct, accurate analysis of this property&apos;s income potential
                   </p>
+                </>
+              ) : (
+                <div className="text-center">
+                  <p className="text-sm text-primary-foreground/80">Limited market data available</p>
+                  <p className="text-xs text-primary-foreground/60 mt-1">Book a call with Stayful for a personalised estimate</p>
                 </div>
-              </div>
+              )}
             </div>
           </section>
 
