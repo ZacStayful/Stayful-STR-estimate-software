@@ -2708,15 +2708,15 @@ export default function HomePage() {
                 {
                   emoji: "🔓",
                   question: "Can I get my property back if I need it?",
-                  short: "Yes. 30 days notice. No lock-in. No minimum term. You keep full control of your asset.",
+                  short: "6-month fixed term with 3 months notice. Block out any dates in your calendar anytime you want to use the property yourself.",
                   answer: (
                     <div>
                       <div className="grid grid-cols-2 gap-3 mb-4">
                         {([
-                          { label: "Contract type", value: "Rolling monthly" },
-                          { label: "Notice period", value: "30 days" },
-                          { label: "Lock-in", value: "None" },
-                          { label: "Minimum term", value: "None" },
+                          { label: "Contract type", value: "6-month fixed term" },
+                          { label: "Notice period", value: "3 months" },
+                          { label: "Owner calendar access", value: "Anytime" },
+                          { label: "Block-out days", value: "Unlimited" },
                         ]).map((item) => (
                           <div key={item.label} className="rounded-lg bg-muted/50 p-3 text-center">
                             <p className="text-[10px] text-muted-foreground uppercase tracking-wider">{item.label}</p>
@@ -2725,7 +2725,7 @@ export default function HomePage() {
                         ))}
                       </div>
                       <p className="text-sm leading-relaxed text-muted-foreground">
-                        If you need the property back for personal use, sale, or any other reason, give Stayful 30 days notice and all bookings within that period will be managed and closed out professionally. Your property is never tied up — you own it and it remains yours to use or sell at any point. Existing confirmed bookings at the point of notice are honoured to protect guests. Stayful handles all guest communication on your behalf.
+                        You have full access to the property&apos;s calendar at any time through your owner dashboard — block out any dates you want to stay yourself, host family, or take the property offline temporarily. The management agreement is a 6-month fixed term with 3 months notice after that, so your income and guest experience are stable while you retain full control of when you want to use the property. Existing confirmed bookings at the point of notice are honoured to protect guests, and Stayful handles all guest communication throughout.
                       </p>
                     </div>
                   ),
@@ -2733,17 +2733,14 @@ export default function HomePage() {
                 {
                   emoji: "📅",
                   question: "How long does it actually take to get up and running?",
-                  short: "Most properties are live and taking bookings within 2–3 weeks of onboarding.",
+                  short: "Kick-off call once the agreement is signed, then 7–21 days before your property is live.",
                   answer: (
                     <div>
                       <div className="mb-4 space-y-3 border-l-2 border-success/30 pl-4">
                         {([
-                          { day: "Day 1–2", task: "Onboarding call and property assessment" },
-                          { day: "Day 3–5", task: "Professional photography and listing creation" },
-                          { day: "Day 5–7", task: "Listing goes live across all platforms" },
-                          { day: "Day 7–14", task: "First bookings confirmed" },
-                          { day: "Month 1", task: "First guest stays complete, reviews begin building" },
-                          { day: "Month 3+", task: "Occupancy stabilises at projected rate" },
+                          { day: "Day 0", task: "Management agreement signed" },
+                          { day: "Day 1", task: "Kick-off call with your dedicated property manager" },
+                          { day: "Day 7–21", task: "Property goes live and starts taking bookings" },
                         ]).map((step) => (
                           <div key={step.day} className="flex gap-3">
                             <span className="text-xs font-bold text-success whitespace-nowrap w-16">{step.day}</span>
@@ -2752,7 +2749,7 @@ export default function HomePage() {
                         ))}
                       </div>
                       <p className="text-sm leading-relaxed text-muted-foreground">
-                        The onboarding visit typically takes 1–2 hours. Stayful handles everything after that — photography, listing copy, pricing setup, platform distribution. You do not need to do anything except hand over the keys.
+                        The 7–21 day window depends on the current condition of the property, access availability, cleaning team scheduling, and any snagging that needs addressing before launch. Stayful keeps you informed at every stage — you&apos;ll always know what&apos;s happening, what&apos;s next, and when your listing is expected to go live.
                       </p>
                     </div>
                   ),
