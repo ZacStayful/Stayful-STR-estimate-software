@@ -1390,8 +1390,8 @@ export default function HomePage() {
               <button
                 type="button"
                 onClick={() => { trackCtaClick("overview_book_call"); window.open("https://calendly.com/zac-stayful/call", "_blank"); }}
-                className="shrink-0 whitespace-nowrap rounded-lg bg-primary-foreground px-5 py-3 text-[13px] font-bold text-primary"
-                style={{ border: "none", cursor: "pointer" }}
+                className="shrink-0 whitespace-nowrap rounded-lg px-5 py-3 text-[13px] font-bold text-primary"
+                style={{ background: "#B9D5C6", border: "none", cursor: "pointer" }}
               >
                 Book your plan →
               </button>
