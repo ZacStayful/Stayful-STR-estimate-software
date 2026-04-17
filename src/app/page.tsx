@@ -57,6 +57,7 @@ import {
   Sparkles,
   Car,
   Monitor,
+  Download,
   Coffee,
   Database,
   Calculator,
@@ -80,6 +81,7 @@ import HeatmapOverlay from "@/components/HeatmapOverlay";
 import type { AnalysisResult, RiskLevel, VerdictFit } from "@/lib/types";
 import { DEMO_MAP } from "@/lib/demo-data";
 import { initTracker, endSession, trackCtaClick } from "@/lib/tracker";
+import { sanitiseAddressForFilename } from "@/lib/pdf/derive";
 import {
   BarChart,
   Bar,
@@ -295,6 +297,7 @@ export default function HomePage() {
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [showPresentation, setShowPresentation] = useState(false);
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
   const [progress, setProgress] = useState(0);
   const [completedStages, setCompletedStages] = useState<Set<string>>(new Set());
   const [currentMessage, setCurrentMessage] = useState("");
@@ -525,6 +528,34 @@ export default function HomePage() {
   const handleReset = () => {
     setResult(null);
     setError(null);
+  };
+
+  const handleDownloadPdf = async () => {
+    if (!result || downloadingPdf) return;
+    trackCtaClick("download_pdf");
+    setDownloadingPdf(true);
+    try {
+      const response = await fetch("/api/generate-pdf", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(result),
+      });
+      if (!response.ok) throw new Error(`PDF generation failed: ${response.status}`);
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `Stayful_Property_Analysis_${sanitiseAddressForFilename(result.property.address)}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error(err);
+      alert("Sorry, we couldn't generate your PDF. Please try again.");
+    } finally {
+      setDownloadingPdf(false);
+    }
   };
 
   // ─── Loading State ──────────────────────────────────────────────
@@ -1043,15 +1074,36 @@ export default function HomePage() {
                   <CheckCircle2 className="h-5 w-5" />
                   <span className="text-sm font-medium">Analysis Complete</span>
                 </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="border-primary-foreground/40 text-primary-foreground hover:bg-primary-foreground/10 bg-transparent"
-                  onClick={() => { trackCtaClick("view_presentation"); setShowPresentation(true); }}
-                >
-                  <Monitor className="mr-1.5 h-3.5 w-3.5" />
-                  View Presentation
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="border-primary-foreground/40 text-primary-foreground hover:bg-primary-foreground/10 bg-transparent disabled:opacity-60"
+                    onClick={handleDownloadPdf}
+                    disabled={downloadingPdf}
+                  >
+                    {downloadingPdf ? (
+                      <>
+                        <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                        Generating report…
+                      </>
+                    ) : (
+                      <>
+                        <Download className="mr-1.5 h-3.5 w-3.5" />
+                        Download as PDF
+                      </>
+                    )}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="border-primary-foreground/40 text-primary-foreground hover:bg-primary-foreground/10 bg-transparent"
+                    onClick={() => { trackCtaClick("view_presentation"); setShowPresentation(true); }}
+                  >
+                    <Monitor className="mr-1.5 h-3.5 w-3.5" />
+                    View Presentation
+                  </Button>
+                </div>
               </div>
               <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-6">
                 <div>
