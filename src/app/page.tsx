@@ -320,6 +320,17 @@ export default function HomePage() {
   const [entryMode, setEntryMode] = useState<"auto" | "manual">("auto");
   const [selectedAutoAddress, setSelectedAutoAddress] = useState<{ address: string; postcode: string } | null>(null);
 
+  // User-adjustable expense formula. null means "use default".
+  //   Platform default: 15 %
+  //   Management default: 15 %
+  //   Cleaning default: 18 % of gross, per month → seeded from Top Market gross
+  // These inputs feed BOTH hero net-revenue columns and downstream sections
+  // (Revenue Breakdown, Profit Calculator). Reset on every fresh analysis.
+  const [expensesExpanded, setExpensesExpanded] = useState(false);
+  const [platformFeePct, setPlatformFeePct] = useState<number | null>(null);
+  const [mgmtFeePct, setMgmtFeePct] = useState<number | null>(null);
+  const [cleaningMonthly, setCleaningMonthly] = useState<number | null>(null);
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<AnalysisResult | null>(null);
@@ -349,10 +360,15 @@ export default function HomePage() {
   // FAQ accordion state — only one item open at a time; null = all collapsed.
   const [openFaqIndex, setOpenFaqIndex] = useState<number | null>(null);
 
-  // Reset exclusions whenever a fresh analysis result arrives so users don't
-  // accidentally carry filters from a previous property into a new one.
+  // Reset exclusions + expense overrides whenever a fresh analysis result
+  // arrives so users don't accidentally carry filters or cost inputs from
+  // a previous property into a new one.
   useEffect(() => {
     setExcludedComps(new Set());
+    setPlatformFeePct(null);
+    setMgmtFeePct(null);
+    setCleaningMonthly(null);
+    setExpensesExpanded(false);
   }, [result]);
 
   const setSectionRef = useCallback((id: string) => (el: HTMLElement | null) => {
@@ -657,13 +673,34 @@ export default function HomePage() {
       "Long Let": Math.round(r.longLet.monthlyRent),
     }));
 
-    // Revenue cost breakdown calculations
+    // Revenue cost breakdown — user-adjustable via the "Customise expenses"
+    // panel in the hero. Each override is null until the user edits that row,
+    // at which point the typed value sticks. Defaults:
+    //   platform 15 % · management 15 % · cleaning 18 % of gross (per month)
+    // The cleaning default is seeded off the V4 PMI Top Market gross so it
+    // doesn't jump when the user excludes comps (Filtered gross moves).
     const grossAnnual = f.shortLetGrossAnnual;
-    const platformFees = Math.round(grossAnnual * 0.15);
-    const managementFees = Math.round(grossAnnual * 0.15);
-    const cleaningLaundry = Math.round(grossAnnual * 0.18);
+    const DEFAULT_PLATFORM_PCT = 15;
+    const DEFAULT_MGMT_PCT = 15;
+    const DEFAULT_CLEANING_PCT_OF_GROSS = 0.18;
+    const effPlatformPct = platformFeePct ?? DEFAULT_PLATFORM_PCT;
+    const effMgmtPct = mgmtFeePct ?? DEFAULT_MGMT_PCT;
+    const effCleaningMonthly = cleaningMonthly
+      ?? Math.max(0, Math.round((grossAnnual / 12) * DEFAULT_CLEANING_PCT_OF_GROSS));
+    const cleaningAnnual = effCleaningMonthly * 12;
+
+    // Central helper — every Net Revenue figure on the page flows through this.
+    const computeNet = (gross: number): number => {
+      const platformAnnual = gross * (effPlatformPct / 100);
+      const mgmtAnnual = gross * (effMgmtPct / 100);
+      return Math.max(0, Math.round(gross - platformAnnual - mgmtAnnual - cleaningAnnual));
+    };
+
+    const platformFees = Math.round(grossAnnual * (effPlatformPct / 100));
+    const managementFees = Math.round(grossAnnual * (effMgmtPct / 100));
+    const cleaningLaundry = cleaningAnnual;
     const totalOperatingCosts = platformFees + managementFees + cleaningLaundry;
-    const stlNetAnnual = grossAnnual - totalOperatingCosts;
+    const stlNetAnnual = computeNet(grossAnnual);
 
     const ltlGrossAnnual = f.longLetGrossAnnual;
     const ltlAgentFees = Math.round(ltlGrossAnnual * 0.10);
@@ -685,8 +722,14 @@ export default function HomePage() {
       Math.min(1, (avgOcc * 12 * w) / totalWeight)
     );
 
-    // Net monthly for STL (after 48% costs)
-    const stlMonthlyNet = r.shortLet.monthlyRevenue.map((rev) => Math.round(rev * 0.52));
+    // Net monthly for STL — apply the user's adjustable expense formula per
+    // month. Cleaning is a flat monthly figure (not % of month's revenue) so
+    // it deducts equally across all months.
+    const stlMonthlyNet = r.shortLet.monthlyRevenue.map((rev) => {
+      const platform = rev * (effPlatformPct / 100);
+      const mgmt = rev * (effMgmtPct / 100);
+      return Math.max(0, Math.round(rev - platform - mgmt - effCleaningMonthly));
+    });
     const ltlMonthlyNet = Math.round(ltlNetAnnual / 12);
 
     // Peak months = top 3 by STL revenue, Low = bottom 3, Below LTL = months where STL < LTL
@@ -912,16 +955,15 @@ export default function HomePage() {
     // annualRevenue / ADR / occupancy. If the user excludes every comp, all
     // filtered values collapse to 0.
     //
-    // Net revenue uses the same 48%-of-gross operating-cost ratio applied to
-    // the Top Market headline (platform fees 15% + management 15% + cleaning/
-    // laundry 18% — see page.tsx:648-650 — so the retained share is 52%).
-    const FILTERED_NET_RATIO = 0.52;
+    // Net revenue is now user-adjustable — see computeNet helper above, which
+    // subtracts platform %, management % and cleaning £/month from gross.
+    // Both hero columns and every downstream section share the same helper.
     const excludedCount = allComps.length - includedComps.length;
     const hasFilters = excludedCount > 0;
     const topGross = r.shortLet.annualRevenue;
     const topAdr = r.shortLet.averageDailyRate;
     const topOcc = r.shortLet.occupancyRate;
-    const topNet = Math.round(topGross * FILTERED_NET_RATIO);
+    const topNet = computeNet(topGross);
 
     let filteredGross: number;
     let filteredAdr: number;
@@ -944,7 +986,7 @@ export default function HomePage() {
       filteredAdr = Math.round(includedComps.reduce((s, c) => s + c.averageDailyRate, 0) / includedComps.length);
       filteredOcc = includedComps.reduce((s, c) => s + c.occupancyRate, 0) / includedComps.length;
     }
-    const filteredNet = Math.round(filteredGross * FILTERED_NET_RATIO);
+    const filteredNet = computeNet(filteredGross);
     // Kept for the Section 2 banner wording that references it downstream.
     const filteredEstimate = filteredGross;
 
@@ -1215,6 +1257,108 @@ export default function HomePage() {
                   <p className="mt-4 text-center text-sm italic text-primary-foreground/75">
                     Refine your competition data for a more direct, accurate analysis of this property&apos;s income potential
                   </p>
+
+                  {/* ── Customise expenses — user-adjustable net-revenue formula ── */}
+                  <div className="mt-5 border-t border-primary-foreground/15 pt-4">
+                    <button
+                      type="button"
+                      onClick={() => setExpensesExpanded((v) => !v)}
+                      className="flex w-full items-center justify-center gap-2 text-xs font-medium text-primary-foreground/80 hover:text-primary-foreground transition-colors"
+                      aria-expanded={expensesExpanded}
+                    >
+                      {expensesExpanded ? "Hide" : "Customise"} expenses
+                      <ChevronDown className={`h-3.5 w-3.5 transition-transform ${expensesExpanded ? "rotate-180" : ""}`} aria-hidden="true" />
+                    </button>
+                    {expensesExpanded && (
+                      <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+                        {/* Platform fee % */}
+                        <div>
+                          <label className="block text-[11px] font-semibold uppercase tracking-wider text-primary-foreground/70">
+                            Booking platform fees
+                          </label>
+                          <div className="mt-1 flex items-center gap-1">
+                            <input
+                              type="number"
+                              min={0}
+                              max={100}
+                              step={0.5}
+                              value={platformFeePct ?? effPlatformPct}
+                              onChange={(e) => {
+                                const v = e.target.value.trim();
+                                if (v === "") { setPlatformFeePct(null); return; }
+                                const n = Number(v);
+                                if (Number.isFinite(n) && n >= 0 && n <= 100) setPlatformFeePct(n);
+                              }}
+                              className="w-16 rounded-md border border-primary-foreground/30 bg-primary-foreground/10 px-2 py-1 text-sm font-semibold text-primary-foreground outline-none focus:border-primary-foreground/60"
+                            />
+                            <span className="text-sm text-primary-foreground/80">%</span>
+                          </div>
+                          <p className="mt-1 text-[11px] text-primary-foreground/60">
+                            {gbp(Math.round(grossAnnual * (effPlatformPct / 100) / 12))}/mo · {gbp(Math.round(grossAnnual * (effPlatformPct / 100)))}/yr
+                          </p>
+                        </div>
+
+                        {/* Management fee % */}
+                        <div>
+                          <label className="block text-[11px] font-semibold uppercase tracking-wider text-primary-foreground/70">
+                            Management fees
+                          </label>
+                          <div className="mt-1 flex items-center gap-1">
+                            <input
+                              type="number"
+                              min={0}
+                              max={100}
+                              step={0.5}
+                              value={mgmtFeePct ?? effMgmtPct}
+                              onChange={(e) => {
+                                const v = e.target.value.trim();
+                                if (v === "") { setMgmtFeePct(null); return; }
+                                const n = Number(v);
+                                if (Number.isFinite(n) && n >= 0 && n <= 100) setMgmtFeePct(n);
+                              }}
+                              className="w-16 rounded-md border border-primary-foreground/30 bg-primary-foreground/10 px-2 py-1 text-sm font-semibold text-primary-foreground outline-none focus:border-primary-foreground/60"
+                            />
+                            <span className="text-sm text-primary-foreground/80">%</span>
+                          </div>
+                          <p className="mt-1 text-[11px] text-primary-foreground/60">
+                            {gbp(Math.round(grossAnnual * (effMgmtPct / 100) / 12))}/mo · {gbp(Math.round(grossAnnual * (effMgmtPct / 100)))}/yr
+                          </p>
+                        </div>
+
+                        {/* Cleaning & laundry £ per month */}
+                        <div>
+                          <label className="block text-[11px] font-semibold uppercase tracking-wider text-primary-foreground/70">
+                            Cleaning &amp; laundry
+                          </label>
+                          <div className="mt-1 flex items-center gap-1">
+                            <span className="text-sm text-primary-foreground/80">£</span>
+                            <input
+                              type="number"
+                              min={0}
+                              step={10}
+                              value={cleaningMonthly ?? effCleaningMonthly}
+                              onChange={(e) => {
+                                const v = e.target.value.trim();
+                                if (v === "") { setCleaningMonthly(null); return; }
+                                const n = Number(v);
+                                if (Number.isFinite(n) && n >= 0) setCleaningMonthly(Math.round(n));
+                              }}
+                              className="w-24 rounded-md border border-primary-foreground/30 bg-primary-foreground/10 px-2 py-1 text-sm font-semibold text-primary-foreground outline-none focus:border-primary-foreground/60"
+                            />
+                            <span className="text-sm text-primary-foreground/80">/mo</span>
+                          </div>
+                          <p className="mt-1 text-[11px] text-primary-foreground/60">
+                            × 12 = {gbp(cleaningAnnual)}/yr
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                    {expensesExpanded && (
+                      <p className="mt-3 text-center text-[11px] text-primary-foreground/60">
+                        Your inputs flow through to both Net Revenue figures and the Revenue Breakdown &amp; Profit Calculator sections.
+                      </p>
+                    )}
+                  </div>
                 </>
               ) : (
                 <div className="text-center">
