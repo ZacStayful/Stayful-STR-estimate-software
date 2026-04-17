@@ -9,7 +9,7 @@ import { Loader2, MapPin } from "lucide-react";
 // Split into a clean address (no postcode, no trailing UK) and the postcode.
 const UK_POSTCODE_RE = /([A-Z]{1,2}\d{1,2}[A-Z]?)\s*(\d[A-Z]{2})/i;
 
-function splitAddressAndPostcode(description: string): { address: string; postcode: string } {
+export function splitAddressAndPostcode(description: string): { address: string; postcode: string } {
   const cleaned = description.replace(/,\s*UK\s*$/i, "").trim();
   const m = cleaned.match(UK_POSTCODE_RE);
   if (!m) return { address: cleaned, postcode: "" };
@@ -42,7 +42,7 @@ interface Suggestion {
 
 interface AddressAutocompleteProps {
   onSelect: (result: { address: string; postcode: string }) => void;
-  onUseManual: () => void;
+  onUseManual: (typedQuery: string) => void;
   disabled?: boolean;
 }
 
@@ -223,7 +223,7 @@ export function AddressAutocomplete({ onSelect, onUseManual, disabled }: Address
         )}
         <button
           type="button"
-          onClick={onUseManual}
+          onClick={() => onUseManual(query)}
           className="font-medium text-primary hover:underline"
         >
           Can&apos;t find it? Enter manually

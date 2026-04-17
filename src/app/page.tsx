@@ -79,7 +79,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import Presentation from "@/components/Presentation";
 import HeatmapOverlay from "@/components/HeatmapOverlay";
-import { AddressAutocomplete } from "@/components/AddressAutocomplete";
+import { AddressAutocomplete, splitAddressAndPostcode } from "@/components/AddressAutocomplete";
 import { AccuracyPanel } from "@/components/AccuracyPanel";
 import type { AnalysisResult, RiskLevel, VerdictFit } from "@/lib/types";
 import { DEMO_MAP } from "@/lib/demo-data";
@@ -215,8 +215,8 @@ function SectionHeading({
   subtitle?: string;
 }) {
   return (
-    <div className="mb-6">
-      <div className="flex items-center gap-2">
+    <div className="mb-6 text-center">
+      <div className="flex items-center justify-center gap-2">
         <Icon className="h-5 w-5 text-primary" aria-hidden="true" />
         <h2 className="text-xl font-bold text-foreground">{title}</h2>
       </div>
@@ -586,6 +586,10 @@ export default function HomePage() {
   const handleReset = () => {
     setResult(null);
     setError(null);
+    setAddress("");
+    setPostcode("");
+    setEntryMode("auto");
+    setSelectedAutoAddress(null);
   };
 
   // ─── Loading State ──────────────────────────────────────────────
@@ -3205,36 +3209,66 @@ export default function HomePage() {
                         setPostcode(r.postcode);
                         setSelectedAutoAddress(r);
                       }}
-                      onUseManual={() => setEntryMode("manual")}
+                      onUseManual={(typedQuery) => {
+                        const parsed = splitAddressAndPostcode(typedQuery);
+                        setAddress(parsed.address || typedQuery);
+                        setPostcode(parsed.postcode);
+                        setEntryMode("manual");
+                      }}
                     />
                   </div>
                 )}
 
                 {entryMode === "auto" && selectedAutoAddress && (
-                  <div className="flex items-center justify-between gap-3 rounded-lg border border-border bg-muted/30 px-3 py-2.5">
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
-                        <CheckCircle2 className="h-4 w-4 shrink-0 text-success" aria-hidden="true" />
-                        <p className="text-sm font-medium text-foreground truncate">
-                          {selectedAutoAddress.address}
-                        </p>
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between gap-3 rounded-lg border border-border bg-muted/30 px-3 py-2.5">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <CheckCircle2 className="h-4 w-4 shrink-0 text-success" aria-hidden="true" />
+                          <p className="text-sm font-medium text-foreground truncate">
+                            {selectedAutoAddress.address}
+                          </p>
+                        </div>
+                        {selectedAutoAddress.postcode && (
+                          <p className="mt-0.5 pl-6 text-xs text-muted-foreground">
+                            {selectedAutoAddress.postcode}
+                          </p>
+                        )}
                       </div>
-                      <p className="mt-0.5 pl-6 text-xs text-muted-foreground">
-                        {selectedAutoAddress.postcode || "Postcode not detected — please enter manually"}
-                      </p>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          setSelectedAutoAddress(null);
+                          setAddress("");
+                          setPostcode("");
+                        }}
+                      >
+                        Change
+                      </Button>
                     </div>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        setSelectedAutoAddress(null);
-                        setAddress("");
-                        setPostcode("");
-                      }}
-                    >
-                      Change
-                    </Button>
+                    {/* If postcode wasn't detected, show an inline input so the user can supply it */}
+                    {!selectedAutoAddress.postcode && (
+                      <div className="rounded-lg border border-warning/50 bg-warning/5 px-3 py-2.5 space-y-1.5">
+                        <p className="text-xs font-medium text-foreground">
+                          We couldn&apos;t detect the postcode from the selected address.
+                        </p>
+                        <div className="flex items-center gap-2">
+                          <Label htmlFor="postcode-fallback" className="text-xs text-muted-foreground shrink-0">
+                            Postcode:
+                          </Label>
+                          <Input
+                            id="postcode-fallback"
+                            placeholder="e.g. M4 7FE"
+                            required
+                            value={postcode}
+                            onChange={(e) => setPostcode(e.target.value)}
+                            className="max-w-[140px]"
+                          />
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -3253,7 +3287,7 @@ export default function HomePage() {
                     />
                     <button
                       type="button"
-                      onClick={() => setEntryMode("auto")}
+                      onClick={() => { setEntryMode("auto"); setSelectedAutoAddress(null); }}
                       className="text-xs font-medium text-primary hover:underline"
                     >
                       Use address search instead
@@ -3261,7 +3295,7 @@ export default function HomePage() {
                   </div>
                 )}
 
-                {/* Row 2: Postcode (manual only) | Property Type */}
+                {/* Row 2: Postcode (manual or auto-with-missing-postcode) | Property Type */}
                 <div className="grid grid-cols-2 gap-4">
                   {entryMode === "manual" ? (
                     <div className="space-y-2">
