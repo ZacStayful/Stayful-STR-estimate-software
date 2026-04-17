@@ -79,6 +79,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import Presentation from "@/components/Presentation";
 import HeatmapOverlay from "@/components/HeatmapOverlay";
+import { AddressAutocomplete } from "@/components/AddressAutocomplete";
 import type { AnalysisResult, RiskLevel, VerdictFit } from "@/lib/types";
 import { DEMO_MAP } from "@/lib/demo-data";
 import { initTracker, endSession, trackCtaClick } from "@/lib/tracker";
@@ -310,6 +311,13 @@ export default function HomePage() {
   const [outdoorSpace, setOutdoorSpace] = useState("none");
   const [monthlyMortgage, setMonthlyMortgage] = useState("");
   const [monthlyBills, setMonthlyBills] = useState("");
+
+  // Address input mode: "auto" uses Google Places autocomplete (default),
+  // "manual" falls back to the original two freeform fields. selectedAutoAddress
+  // tracks the last picked suggestion so we can render a compact confirmation
+  // row with a Change button instead of the search input.
+  const [entryMode, setEntryMode] = useState<"auto" | "manual">("auto");
+  const [selectedAutoAddress, setSelectedAutoAddress] = useState<{ address: string; postcode: string } | null>(null);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -3037,36 +3045,94 @@ export default function HomePage() {
             </CardHeader>
             <CardContent>
               <form onSubmit={handleSubmit} className="space-y-6">
-                {/* Row 1: Address (full width) */}
-                <div className="space-y-2">
-                  <Label htmlFor="address" className="flex items-center gap-2">
-                    <MapPin className="h-4 w-4" aria-hidden="true" />
-                    Full Property Address
-                  </Label>
-                  <Input
-                    id="address"
-                    placeholder="e.g. 123 High Street"
-                    required
-                    value={address}
-                    onChange={(e) => setAddress(e.target.value)}
-                  />
-                </div>
-
-                {/* Row 2: Postcode | Property Type */}
-                <div className="grid grid-cols-2 gap-4">
+                {/* Row 1: Address entry — auto (Google Places) or manual fallback */}
+                {entryMode === "auto" && !selectedAutoAddress && (
                   <div className="space-y-2">
-                    <Label htmlFor="postcode" className="flex items-center gap-2">
-                      <MapPin className="h-4 w-4" aria-hidden="true" />
-                      Postcode
+                    <Label className="flex items-center gap-2">
+                      <Search className="h-4 w-4" aria-hidden="true" />
+                      Find your property
                     </Label>
-                    <Input
-                      id="postcode"
-                      placeholder="e.g. M4 7FE"
-                      required
-                      value={postcode}
-                      onChange={(e) => setPostcode(e.target.value)}
+                    <AddressAutocomplete
+                      onSelect={(r) => {
+                        setAddress(r.address);
+                        setPostcode(r.postcode);
+                        setSelectedAutoAddress(r);
+                      }}
+                      onUseManual={() => setEntryMode("manual")}
                     />
                   </div>
+                )}
+
+                {entryMode === "auto" && selectedAutoAddress && (
+                  <div className="flex items-center justify-between gap-3 rounded-lg border border-border bg-muted/30 px-3 py-2.5">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <CheckCircle2 className="h-4 w-4 shrink-0 text-success" aria-hidden="true" />
+                        <p className="text-sm font-medium text-foreground truncate">
+                          {selectedAutoAddress.address}
+                        </p>
+                      </div>
+                      <p className="mt-0.5 pl-6 text-xs text-muted-foreground">
+                        {selectedAutoAddress.postcode || "Postcode not detected — please enter manually"}
+                      </p>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setSelectedAutoAddress(null);
+                        setAddress("");
+                        setPostcode("");
+                      }}
+                    >
+                      Change
+                    </Button>
+                  </div>
+                )}
+
+                {entryMode === "manual" && (
+                  <div className="space-y-2">
+                    <Label htmlFor="address" className="flex items-center gap-2">
+                      <MapPin className="h-4 w-4" aria-hidden="true" />
+                      Full Property Address
+                    </Label>
+                    <Input
+                      id="address"
+                      placeholder="e.g. 123 High Street"
+                      required
+                      value={address}
+                      onChange={(e) => setAddress(e.target.value)}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setEntryMode("auto")}
+                      className="text-xs font-medium text-primary hover:underline"
+                    >
+                      Use address search instead
+                    </button>
+                  </div>
+                )}
+
+                {/* Row 2: Postcode (manual only) | Property Type */}
+                <div className="grid grid-cols-2 gap-4">
+                  {entryMode === "manual" ? (
+                    <div className="space-y-2">
+                      <Label htmlFor="postcode" className="flex items-center gap-2">
+                        <MapPin className="h-4 w-4" aria-hidden="true" />
+                        Postcode
+                      </Label>
+                      <Input
+                        id="postcode"
+                        placeholder="e.g. M4 7FE"
+                        required
+                        value={postcode}
+                        onChange={(e) => setPostcode(e.target.value)}
+                      />
+                    </div>
+                  ) : (
+                    <div />
+                  )}
 
                   <div className="space-y-2">
                     <Label htmlFor="propertyType" className="flex items-center gap-2">
