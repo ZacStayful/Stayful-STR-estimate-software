@@ -172,7 +172,7 @@ function riskTextColor(level: RiskLevel): string {
 }
 
 function roundReviewRating(rating: number): string {
-  return (Math.round(rating * 10) / 10).toFixed(1);
+  return (Math.round(rating * 100) / 100).toFixed(2);
 }
 
 function formatRelativeTime(iso: string): string {
@@ -930,7 +930,7 @@ export default function HomePage() {
     const hasTop5 = top5Comps.length >= 5;
 
     const compsWithRating = comps.filter((c) => c.rating > 0);
-    const avgRating = compsWithRating.length > 0 ? Math.floor(compsWithRating.reduce((s, c) => s + c.rating, 0) / compsWithRating.length * 10) / 10 : 0;
+    const avgRating = compsWithRating.length > 0 ? Math.round(compsWithRating.reduce((s, c) => s + c.rating, 0) / compsWithRating.length * 100) / 100 : 0;
     const compsWithReviews = comps.filter((c) => c.reviewCount > 0);
     const avgReviews = compsWithReviews.length > 0 ? Math.round(compsWithReviews.reduce((s, c) => s + c.reviewCount, 0) / compsWithReviews.length) : 0;
     const compsWithAge = comps.filter((c) => c.listingAge > 0);
