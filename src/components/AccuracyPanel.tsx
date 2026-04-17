@@ -1,14 +1,9 @@
 "use client";
 
-// Confidence panel shown directly below the hero card on the Overview page.
-// Each data source is hard-coded with a score reflecting Stayful's audited
-// confidence in that feed. Not wired to live data — these are static figures
-// calibrated against the current input pipeline.
-
 interface SourceCard {
   name: string;
   detail: string;
-  score: number; // 0–100
+  score: number;
 }
 
 const SOURCES: SourceCard[] = [
@@ -20,33 +15,16 @@ const SOURCES: SourceCard[] = [
 
 export function AccuracyPanel() {
   return (
-    <div
-      className="rounded-xl border"
-      style={{
-        background: "#f8f6f2",
-        borderColor: "var(--border)",
-        padding: "20px 24px",
-      }}
-    >
+    <div className="rounded-xl border border-primary-foreground/15 bg-primary p-5 text-primary-foreground">
       {/* Header */}
       <div className="mb-[14px] flex items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <span aria-hidden="true">🔍</span>
-          <span className="text-[14px] font-semibold text-foreground">
+          <span className="text-[14px] font-semibold">
             Is this information accurate?
           </span>
         </div>
-        <span
-          className="inline-flex shrink-0 items-center border"
-          style={{
-            background: "#e4ede0",
-            color: "#5d8156",
-            borderColor: "var(--border)",
-            borderRadius: 20,
-            padding: "2px 10px",
-            fontSize: 11,
-          }}
-        >
+        <span className="inline-flex shrink-0 items-center rounded-full border border-primary-foreground/20 bg-primary-foreground/15 px-2.5 py-0.5 text-[11px] text-primary-foreground">
           High Confidence
         </span>
       </div>
@@ -56,29 +34,25 @@ export function AccuracyPanel() {
         {SOURCES.map((s) => (
           <div
             key={s.name}
-            className="border bg-white"
-            style={{
-              borderColor: "var(--border)",
-              borderRadius: 8,
-              padding: "12px 14px",
-            }}
+            className="rounded-lg border border-primary-foreground/15 bg-primary-foreground/10"
+            style={{ padding: "12px 14px" }}
           >
-            <p className="text-[11px] font-semibold text-foreground" style={{ marginBottom: 2 }}>
+            <p className="text-[11px] font-semibold text-primary-foreground" style={{ marginBottom: 2 }}>
               {s.name}
             </p>
-            <p className="text-[11px] text-muted-foreground" style={{ marginBottom: 8 }}>
+            <p className="text-[11px] text-primary-foreground/70" style={{ marginBottom: 8 }}>
               {s.detail}
             </p>
             <div className="flex items-center gap-2">
               <div
-                className="flex-1 overflow-hidden"
-                style={{ height: 4, background: "#e4e0d8", borderRadius: 2 }}
+                className="flex-1 overflow-hidden rounded-sm bg-primary-foreground/20"
+                style={{ height: 4 }}
               >
                 <div
+                  className="rounded-sm"
                   style={{
                     height: 4,
                     background: "var(--success)",
-                    borderRadius: 2,
                     width: `${s.score}%`,
                   }}
                 />
@@ -95,7 +69,7 @@ export function AccuracyPanel() {
       </div>
 
       {/* Methodology footnote */}
-      <p className="text-muted-foreground" style={{ fontSize: 12, marginTop: 12 }}>
+      <p className="mt-3 text-[12px] text-primary-foreground/70">
         Revenue projections are based on active comparable listings sourced from Airbnb,
         median-aggregated and updated in real time. Long-let comparison uses current
         OpenRent listings for the subject postcode. All cost assumptions use Stayful&apos;s

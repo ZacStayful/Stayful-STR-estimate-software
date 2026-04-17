@@ -1083,9 +1083,9 @@ export default function HomePage() {
               <button
                 type="button"
                 onClick={() => { trackCtaClick("sidebar_book_call"); window.open("https://calendly.com/zac-stayful/call", "_blank"); }}
-                style={{ background: "#2d4a2d", color: "white", fontSize: 12, fontWeight: 600, width: "100%", padding: "10px 0", borderRadius: 8, marginBottom: 10, border: "none", cursor: "pointer" }}
+                style={{ background: "var(--primary)", color: "var(--primary-foreground)", fontSize: 12, fontWeight: 600, width: "100%", padding: "10px 0", borderRadius: 8, marginBottom: 10, border: "none", cursor: "pointer" }}
               >
-                Book a free consultation
+                Book your action plan
               </button>
             </div>
           )}
@@ -1378,24 +1378,22 @@ export default function HomePage() {
             </div>
 
             {/* Calendly CTA banner */}
-            <div
-              className="mt-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-5 rounded-xl"
-              style={{ background: "#2d4a2d", padding: "24px 28px" }}
-            >
+            <div className="mt-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-5 rounded-xl bg-primary p-6 sm:p-7">
               <div>
-                <p style={{ color: "white", fontSize: 16, fontWeight: 600, marginBottom: 6 }}>
-                  Ready to see if this property qualifies for Stayful management?
+                <p className="text-base font-semibold text-primary-foreground" style={{ marginBottom: 6 }}>
+                  Book your profitability action plan
                 </p>
-                <p style={{ color: "rgba(255,255,255,0.6)", fontSize: 13 }}>
-                  Book a free 20-minute consultation with Zac. No commitment, no sales pressure — just your numbers.
+                <p className="text-[13px] text-primary-foreground/60">
+                  A free consultation to review the risks in your property and analyse your realistic profitability.
                 </p>
               </div>
               <button
                 type="button"
                 onClick={() => { trackCtaClick("overview_book_call"); window.open("https://calendly.com/zac-stayful/call", "_blank"); }}
-                style={{ background: "white", color: "#2d4a2d", fontSize: 13, fontWeight: 700, padding: "12px 22px", borderRadius: 8, border: "none", flexShrink: 0, whiteSpace: "nowrap", cursor: "pointer" }}
+                className="shrink-0 whitespace-nowrap rounded-lg bg-primary-foreground px-5 py-3 text-[13px] font-bold text-primary"
+                style={{ border: "none", cursor: "pointer" }}
               >
-                Book a free consultation →
+                Book your plan →
               </button>
             </div>
           </section>
@@ -1424,7 +1422,7 @@ export default function HomePage() {
                   <a href="https://calendly.com/zac-stayful/call" target="_blank" rel="noopener noreferrer"
                     className="mt-2 inline-block text-xs font-medium text-primary underline"
                     onClick={() => trackCtaClick("book_call")}>
-                    Book a Free Assessment with Stayful
+                    Book your profitability action plan
                   </a>
                 )}
               </div>
@@ -1808,7 +1806,7 @@ export default function HomePage() {
                         onClick={() => trackCtaClick("book_call")}
                       >
                         <Phone className="h-3 w-3" />
-                        Book a Free Assessment
+                        Book your profitability action plan
                         <ExternalLink className="h-3 w-3" />
                       </a>
                     </div>
@@ -2764,7 +2762,7 @@ export default function HomePage() {
                   short: "Stayful operates across the UK. Your postcode is within our active coverage area.",
                   answer: (
                     <p className="text-sm leading-relaxed text-muted-foreground">
-                      Stayful manages properties across all major UK cities, towns and coastal areas. The fact that this analysis has been run for your postcode confirms it sits within our active service area. Book a free consultation to confirm availability and discuss your specific property.
+                      Stayful manages properties across all major UK cities, towns and coastal areas. The fact that this analysis has been run for your postcode confirms it sits within our active service area. Book your profitability action plan to confirm availability and discuss your specific property.
                     </p>
                   ),
                 },
@@ -3076,7 +3074,7 @@ export default function HomePage() {
                 <h2 className="text-2xl font-bold">Ready to maximise your rental income?</h2>
                 <p className="max-w-lg text-sm text-primary-foreground/80">
                   Let Stayful handle the hard work while you earn more from your
-                  property. Book a free consultation to get started.
+                  property. Book your profitability action plan to get started.
                 </p>
                 <div className="flex flex-wrap items-center gap-3">
                   <div className="flex items-center gap-2 text-sm font-medium text-primary-foreground/80">
