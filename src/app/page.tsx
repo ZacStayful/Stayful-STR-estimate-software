@@ -80,6 +80,7 @@ import { Label } from "@/components/ui/label";
 import Presentation from "@/components/Presentation";
 import HeatmapOverlay from "@/components/HeatmapOverlay";
 import { AddressAutocomplete } from "@/components/AddressAutocomplete";
+import { AccuracyPanel } from "@/components/AccuracyPanel";
 import type { AnalysisResult, RiskLevel, VerdictFit } from "@/lib/types";
 import { DEMO_MAP } from "@/lib/demo-data";
 import { initTracker, endSession, trackCtaClick } from "@/lib/tracker";
@@ -1221,6 +1222,11 @@ export default function HomePage() {
                   <p className="text-xs text-primary-foreground/60 mt-1">Book a call with Stayful for a personalised estimate</p>
                 </div>
               )}
+            </div>
+
+            {/* Is this information accurate? — data-source confidence panel */}
+            <div className="mt-6">
+              <AccuracyPanel />
             </div>
 
             {/* Calendly CTA banner */}
