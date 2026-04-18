@@ -327,6 +327,7 @@ export default function HomePage() {
   // These inputs feed BOTH hero net-revenue columns and downstream sections
   // (Revenue Breakdown, Profit Calculator). Reset on every fresh analysis.
   const [expensesExpanded, setExpensesExpanded] = useState(false);
+  const [pdfLoading, setPdfLoading] = useState(false);
   const [platformFeePct, setPlatformFeePct] = useState<number | null>(null);
   const [mgmtFeePct, setMgmtFeePct] = useState<number | null>(null);
   const [cleaningMonthly, setCleaningMonthly] = useState<number | null>(null);
@@ -1141,9 +1142,33 @@ export default function HomePage() {
                   variant="outline"
                   size="sm"
                   className="border-primary-foreground/40 text-primary-foreground hover:bg-primary-foreground/10 bg-transparent"
-                  onClick={() => { trackCtaClick("download_pdf"); window.print(); }}
+                  disabled={pdfLoading}
+                  onClick={async () => {
+                    if (!result) return;
+                    trackCtaClick("download_pdf");
+                    setPdfLoading(true);
+                    try {
+                      const res = await fetch("/api/generate-pdf", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify(result),
+                      });
+                      if (!res.ok) throw new Error("PDF generation failed");
+                      const blob = await res.blob();
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement("a");
+                      a.href = url;
+                      a.download = `Stayful_Property_Analysis.pdf`;
+                      a.click();
+                      URL.revokeObjectURL(url);
+                    } catch {
+                      // silently fail — user sees button re-enable
+                    } finally {
+                      setPdfLoading(false);
+                    }
+                  }}
                 >
-                  ↓ Download as PDF
+                  {pdfLoading ? "Generating report…" : "↓ Download as PDF"}
                 </Button>
               </div>
               {/* Property title — centered above the two estimate columns */}
