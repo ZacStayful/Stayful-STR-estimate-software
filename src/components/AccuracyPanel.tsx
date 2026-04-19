@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { ChevronDown } from "lucide-react";
+import { CaseStudyModal } from "./CaseStudyModal";
 
 interface SourceCard {
   name: string;
@@ -16,8 +17,24 @@ const SOURCES: SourceCard[] = [
   { name: "Stayful data", detail: "Real managed costs", score: 100 },
 ];
 
+interface CaseStudy {
+  city: string;
+  file: string;
+}
+
+const CASE_STUDIES: CaseStudy[] = [
+  { city: "York", file: "Stayful_CaseStudy_17_Park_Crescent_York.pdf" },
+  { city: "Newcastle", file: "Stayful_CaseStudy_5_Cambourne_Place_Newcastle.pdf" },
+  { city: "London", file: "Stayful_CaseStudy_76_Thornton_Road_London.pdf" },
+  { city: "Bristol", file: "Stayful_CaseStudy_Kinsale_Road_Bristol.pdf" },
+  { city: "Derby", file: "Stayful_CaseStudy_Main_Street_Repton_Derby.pdf" },
+  { city: "Liverpool", file: "Stayful_CaseStudy_Picton_Road_Wavertree_Liverpool.pdf" },
+  { city: "Manchester", file: "Stayful_CaseStudy_X1_Eastbank_Tower_Great_Ancoats_Street_Manchester.pdf" },
+];
+
 export function AccuracyPanel() {
   const [expanded, setExpanded] = useState(false);
+  const [openStudy, setOpenStudy] = useState<CaseStudy | null>(null);
 
   return (
     <div className="rounded-xl border border-primary-foreground/15 bg-primary p-5 text-primary-foreground">
@@ -86,8 +103,33 @@ export function AccuracyPanel() {
             OpenRent listings for the subject postcode. All cost assumptions use Stayful&apos;s
             managed portfolio averages.
           </p>
+
+          {/* Case-study buttons */}
+          <div className="mt-4 border-t border-primary-foreground/15 pt-3">
+            <p className="mb-2 text-[11px] font-semibold text-primary-foreground">
+              See real Stayful properties
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              {CASE_STUDIES.map((c) => (
+                <button
+                  key={c.city}
+                  type="button"
+                  onClick={() => setOpenStudy(c)}
+                  className="rounded-full border border-primary-foreground/20 bg-primary-foreground/10 px-3 py-1 text-[11px] font-semibold text-primary-foreground transition-colors hover:bg-primary-foreground/20"
+                >
+                  {c.city}
+                </button>
+              ))}
+            </div>
+          </div>
         </>
       )}
+
+      <CaseStudyModal
+        city={openStudy?.city ?? null}
+        pdfUrl={openStudy ? `/case-studies/${openStudy.file}` : null}
+        onClose={() => setOpenStudy(null)}
+      />
     </div>
   );
 }
