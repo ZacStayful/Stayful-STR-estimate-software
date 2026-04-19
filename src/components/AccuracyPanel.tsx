@@ -106,10 +106,10 @@ export function AccuracyPanel() {
 
           {/* Case-study buttons */}
           <div className="mt-4 border-t border-primary-foreground/15 pt-3">
-            <p className="mb-2 text-[11px] font-semibold text-primary-foreground">
-              See real Stayful properties
+            <p className="mb-2 text-center text-[11px] font-semibold text-primary-foreground">
+              Case Studies
             </p>
-            <div className="flex flex-wrap gap-1.5">
+            <div className="flex flex-wrap justify-center gap-1.5">
               {CASE_STUDIES.map((c) => (
                 <button
                   key={c.city}
