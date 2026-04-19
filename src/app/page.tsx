@@ -290,12 +290,11 @@ const TAB_SECTIONS = [
   { id: "comparables", label: "Comparables", icon: Building2, num: 2 },
   { id: "amenities", label: "Amenities", icon: Sparkles, num: 3 },
   { id: "revenue", label: "Revenue", icon: PoundSterling, num: 4 },
-  { id: "profit-calculator", label: "Profit Calculator", icon: Calculator, num: 5 },
-  { id: "forecast", label: "Forecast", icon: LineChart, num: 6 },
-  { id: "local-area", label: "Local Area", icon: MapPin, num: 7 },
-  { id: "bookings", label: "Bookings", icon: Target, num: 8 },
-  { id: "risk", label: "Risk", icon: AlertTriangle, num: 9 },
-  { id: "growth", label: "Growth", icon: Rocket, num: 10 },
+  { id: "forecast", label: "Forecast", icon: LineChart, num: 5 },
+  { id: "local-area", label: "Local Area", icon: MapPin, num: 6 },
+  { id: "bookings", label: "Bookings", icon: Target, num: 7 },
+  { id: "risk", label: "Risk", icon: AlertTriangle, num: 8 },
+  { id: "growth", label: "Growth", icon: Rocket, num: 9 },
   { id: "faq", label: "FAQ", icon: HelpCircle, num: 11 },
 ] as const;
 
@@ -349,10 +348,6 @@ export default function HomePage() {
 
   // Sidebar state
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-
-  // Profit calculator state
-  const [calcMortgage, setCalcMortgage] = useState(0);
-  const [calcBills, setCalcBills] = useState(400);
 
   // User-curated comp exclusions — keyed by comp index in r.shortLet.comparables.
   // Excluded comps are dimmed in the grid and removed from all aggregate stats
@@ -718,14 +713,12 @@ export default function HomePage() {
     const ltlAgentFees = Math.round(ltlGrossAnnual * 0.10);
     const ltlNetAnnual = ltlGrossAnnual - ltlAgentFees;
 
-    const revDifference = stlNetAnnual - ltlNetAnnual;
+    const stlTrueAnnualProfit = stlNetAnnual - totalAnnualOverheads;
+    const ltlTrueAnnualProfit = ltlNetAnnual - ((overheadMortgage ?? 0) * 12);
+    const revDifference = stlTrueAnnualProfit - ltlTrueAnnualProfit;
     const revDifferenceMonthly = Math.round(revDifference / 12);
-    const revDifferencePct = ltlNetAnnual > 0 ? Math.round((revDifference / ltlNetAnnual) * 100) : 0;
-
-    // Profit calculator values
-    const stlTrueAnnualProfit = stlNetAnnual - (calcMortgage * 12) - (calcBills * 12);
-    const ltlTrueAnnualProfit = ltlNetAnnual - (calcMortgage * 12); // tenants pay bills
-    const profitDifference = stlTrueAnnualProfit - ltlTrueAnnualProfit;
+    const revDifferencePct = ltlTrueAnnualProfit > 0 ? Math.round((revDifference / ltlTrueAnnualProfit) * 100) : (ltlNetAnnual > 0 ? Math.round(((stlNetAnnual - ltlNetAnnual) / ltlNetAnnual) * 100) : 0);
+    const profitDifference = revDifference;
 
     // Monthly occupancy with seasonal weighting
     const avgOcc = r.shortLet.occupancyRate;
@@ -1009,7 +1002,7 @@ export default function HomePage() {
       const monthlyGross = grossAnnual / 12;
       const platformFeeRate = 0.15 * (1 - directPct);
       const revenue = monthlyGross * (1 - platformFeeRate - 0.15 - 0.18);
-      const expenses = (calcMortgage || 0) + (calcBills || 0);
+      const expenses = totalMonthlyOverheads;
       return {
         month: `M${month}`,
         Revenue: Math.round(revenue),
@@ -2216,166 +2209,7 @@ export default function HomePage() {
           </section>
 
           {/* ══════════════════════════════════════════════════════════
-              Section 5: True Profit Calculator
-              ══════════════════════════════════════════════════════════ */}
-          <section id="profit-calculator" ref={setSectionRef("profit-calculator")} className="mb-12">
-            <SectionHeading
-              icon={Calculator}
-              title="True Profit Calculator"
-              subtitle="Enter your monthly costs to see your actual take-home profit"
-            />
-
-            {/* Inputs side by side */}
-            <div className="mb-6 grid gap-4 sm:grid-cols-2">
-              <div className="space-y-2">
-                <Label htmlFor="calc-mortgage" className="text-sm font-semibold">
-                  Monthly Mortgage Cost
-                </Label>
-                <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">£</span>
-                  <Input
-                    id="calc-mortgage"
-                    type="number"
-                    min={0}
-                    className="pl-7"
-                    value={calcMortgage}
-                    onChange={(e) => setCalcMortgage(Number(e.target.value) || 0)}
-                  />
-                </div>
-              </div>
-              <div className="space-y-2">
-                <div className="flex items-center gap-2">
-                  <Label htmlFor="calc-bills" className="text-sm font-semibold">
-                    Monthly Bills
-                  </Label>
-                  <Info className="h-3.5 w-3.5 text-muted-foreground" />
-                </div>
-                <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">£</span>
-                  <Input
-                    id="calc-bills"
-                    type="number"
-                    min={0}
-                    className="pl-7"
-                    value={calcBills}
-                    onChange={(e) => setCalcBills(Number(e.target.value) || 0)}
-                  />
-                </div>
-                <p className="text-[11px] text-muted-foreground">
-                  Recommended: £400 (Council Tax, Utilities, WiFi)
-                </p>
-              </div>
-            </div>
-
-            {/* Three cards: STL, LTL, Extra Profit */}
-            <div className="grid gap-4 lg:grid-cols-3">
-              {/* Short-Term Let */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-base">Short-Term Let</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-2">
-                    <div className="flex justify-between px-2 py-1.5">
-                      <span className="text-sm">Net Revenue</span>
-                      <div className="text-right">
-                        <span className="text-sm font-semibold">{gbp(stlNetAnnual)}</span>
-                        <span className="ml-1 text-xs text-muted-foreground">({gbp(Math.round(stlNetAnnual / 12))}/mo)</span>
-                      </div>
-                    </div>
-                    <div className="flex justify-between px-2 py-1.5">
-                      <span className="text-sm text-muted-foreground">- Mortgage</span>
-                      <div className="text-right">
-                        <span className="text-sm text-destructive">-{gbp(calcMortgage * 12)}</span>
-                        <span className="ml-1 text-xs text-muted-foreground">(-{gbp(calcMortgage)}/mo)</span>
-                      </div>
-                    </div>
-                    <div className="flex justify-between px-2 py-1.5">
-                      <span className="text-sm text-muted-foreground">- Bills</span>
-                      <div className="text-right">
-                        <span className="text-sm text-destructive">-{gbp(calcBills * 12)}</span>
-                        <span className="ml-1 text-xs text-muted-foreground">(-{gbp(calcBills)}/mo)</span>
-                      </div>
-                    </div>
-                    <div className="border-t border-border" />
-                    <div className="rounded-lg bg-success/10 px-3 py-3 text-center">
-                      <p className="text-sm font-bold text-foreground">True Annual Profit</p>
-                      <p className={`text-2xl font-bold ${stlTrueAnnualProfit >= 0 ? "text-success" : "text-destructive"}`}>
-                        {gbp(stlTrueAnnualProfit)} <span className="text-base font-normal text-muted-foreground">({gbp(Math.round(stlTrueAnnualProfit / 12))}/mo)</span>
-                      </p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Long-Term Let */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-base">Long-Term Let</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-2">
-                    <div className="flex justify-between px-2 py-1.5">
-                      <span className="text-sm">Net Revenue</span>
-                      <div className="text-right">
-                        <span className="text-sm font-semibold">{gbp(ltlNetAnnual)}</span>
-                        <span className="ml-1 text-xs text-muted-foreground">({gbp(Math.round(ltlNetAnnual / 12))}/mo)</span>
-                      </div>
-                    </div>
-                    <div className="flex justify-between px-2 py-1.5">
-                      <span className="text-sm text-muted-foreground">- Mortgage</span>
-                      <div className="text-right">
-                        <span className="text-sm text-destructive">-{gbp(calcMortgage * 12)}</span>
-                        <span className="ml-1 text-xs text-muted-foreground">(-{gbp(calcMortgage)}/mo)</span>
-                      </div>
-                    </div>
-                    <div className="flex justify-between px-2 py-1.5">
-                      <span className="text-sm text-muted-foreground">- Bills</span>
-                      <span className="text-sm font-medium text-success">Tenant pays</span>
-                    </div>
-                    <div className="border-t border-border" />
-                    <div className="rounded-lg bg-muted/50 px-3 py-3 text-center">
-                      <p className="text-sm font-bold text-foreground">True Annual Profit</p>
-                      <p className={`text-2xl font-bold ${ltlTrueAnnualProfit >= 0 ? "text-foreground" : "text-destructive"}`}>
-                        {gbp(ltlTrueAnnualProfit)} <span className="text-base font-normal text-muted-foreground">({gbp(Math.round(ltlTrueAnnualProfit / 12))}/mo)</span>
-                      </p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Extra Profit Card */}
-              <Card className={`border-2 ${profitDifference >= 0 ? "border-success" : "border-destructive"}`}>
-                <CardContent className="flex flex-col items-center justify-center py-8 text-center">
-                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                    Extra Profit with Short-Term Let
-                  </p>
-                  <p className={`mt-2 text-3xl font-bold ${profitDifference >= 0 ? "text-success" : "text-destructive"}`}>
-                    {profitDifference >= 0 ? "+" : ""}{gbp(profitDifference)}
-                  </p>
-                  <p className={`text-lg font-semibold ${profitDifference >= 0 ? "text-success" : "text-destructive"}`}>
-                    {profitDifference >= 0 ? "+" : ""}{gbp(Math.round(profitDifference / 12))}/month
-                  </p>
-                  {profitDifference > 0 ? (
-                    <p className="mt-2 text-xs text-muted-foreground">
-                      Short-term letting generates more profit even after bills.
-                    </p>
-                  ) : (
-                    <p className="mt-2 text-xs text-destructive">
-                      Long-term letting may be more profitable with these costs.
-                    </p>
-                  )}
-                </CardContent>
-              </Card>
-            </div>
-
-            <p className="mt-3 text-xs text-muted-foreground text-center">
-              Note: Short-term let bills (council tax, utilities, WiFi) are your responsibility. With long-term lets, tenants typically pay their own bills.
-            </p>
-          </section>
-
-          {/* ══════════════════════════════════════════════════════════
-              Section 6: 12-Month Forecast
+              Section 5: 12-Month Forecast
               ══════════════════════════════════════════════════════════ */}
           <section id="forecast" ref={setSectionRef("forecast")} className="mb-12">
             <SectionHeading
