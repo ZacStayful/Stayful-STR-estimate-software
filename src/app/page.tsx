@@ -303,6 +303,7 @@ const TAB_SECTIONS = [
 export default function HomePage() {
   const [address, setAddress] = useState("");
   const [postcode, setPostcode] = useState("");
+  const [email, setEmail] = useState("");
   const [bedrooms, setBedrooms] = useState("2");
   const [guests, setGuests] = useState("6"); // Auto-calculated: (bedrooms × 2) + 2
   const [bathrooms, setBathrooms] = useState("1");
@@ -484,6 +485,7 @@ export default function HomePage() {
         body: JSON.stringify({
           address,
           postcode,
+          email,
           bedrooms: Number(bedrooms),
           guests: Number(guests),
           bathrooms: Number(bathrooms),
@@ -3414,6 +3416,21 @@ export default function HomePage() {
                       <option value="roof_terrace">Roof terrace</option>
                     </select>
                   </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="email">
+                    Email
+                  </Label>
+                  <Input
+                    id="email"
+                    type="email"
+                    required
+                    placeholder="you@example.com"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    autoComplete="email"
+                  />
                 </div>
 
                 {error && (

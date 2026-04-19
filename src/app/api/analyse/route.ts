@@ -71,12 +71,14 @@ export async function POST(request: Request) {
   }
 
   // Validate input
-  const { address, postcode, bedrooms, guests, bathrooms, parking, outdoorSpace, propertyType, monthlyMortgage, monthlyBills } = body as {
-    address: unknown; postcode: unknown; bedrooms: unknown; guests: unknown;
+  const { address, postcode, email, bedrooms, guests, bathrooms, parking, outdoorSpace, propertyType, monthlyMortgage, monthlyBills } = body as {
+    address: unknown; postcode: unknown; email: unknown;
+    bedrooms: unknown; guests: unknown;
     bathrooms: unknown; parking: unknown; outdoorSpace: unknown;
     propertyType: unknown;
     monthlyMortgage: unknown; monthlyBills: unknown;
   };
+  const emailStr = typeof email === 'string' && email.includes('@') ? email.trim() : null;
 
   const bathroomCount = Number(bathrooms);
   const validBathrooms = Number.isFinite(bathroomCount) && bathroomCount >= 1 ? bathroomCount : undefined;
@@ -392,6 +394,17 @@ export async function POST(request: Request) {
         };
 
         send({ stage: 'complete', progress: 100, message: 'Analysis complete', data: result });
+
+        // Fire-and-forget Monday.com CRM sync. All errors swallowed server-side —
+        // never surfaces to user regardless of whether email is in the board.
+        if (emailStr) {
+          const { syncAnalysisToMonday } = await import('@/lib/apis/monday');
+          void syncAnalysisToMonday(
+            emailStr,
+            result.financials.longLetNetAnnual,
+            result.financials.shortLetNetAnnual,
+          );
+        }
       } catch (err) {
         console.error('Unexpected error in /api/analyse:', err);
         send({ stage: 'error', progress: 0, message: 'An unexpected error occurred. Please try again.' });
