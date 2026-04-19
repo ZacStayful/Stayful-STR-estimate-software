@@ -234,6 +234,34 @@ export interface ShortLetOptions {
   specialFeatures?: string[];  // V3: e.g. ['sea_views','hot_tub','near_events_venue']
 }
 
+async function enrichWithThumbnails(
+  comparables: ShortLetComparable[],
+  lat: number,
+  lng: number,
+  apiKey: string,
+  radiusKm: number,
+): Promise<void> {
+  if (comparables.length === 0) return;
+  try {
+    const boundsResult = await fetchNearbyListings(lat, lng, apiKey, radiusKm);
+    if (boundsResult?.listings) {
+      const thumbMap = new Map<string, string>();
+      for (const l of boundsResult.listings) {
+        if (l.thumbnail_url) thumbMap.set(l.listingID, l.thumbnail_url);
+      }
+      for (const comp of comparables) {
+        const listingId = comp.url.split('/rooms/')[1];
+        if (listingId && thumbMap.has(listingId)) {
+          comp.thumbnailUrl = thumbMap.get(listingId);
+        }
+      }
+      console.log(`[Airbtics] Enriched ${comparables.filter(c => c.thumbnailUrl).length}/${comparables.length} comps with thumbnails`);
+    }
+  } catch {
+    // Non-critical — comps render fine without thumbnails
+  }
+}
+
 export async function getShortLetData(
   postcode: string,
   bedrooms: number,
@@ -270,6 +298,7 @@ export async function getShortLetData(
       // If we got 12+ quality comps, use the report result directly
       if (reportAllResult.quality.comparablesFound >= TARGET_COMPARABLES) {
         console.log(`[Airbtics] Using report/all result: ${reportAllResult.quality.comparablesFound} comps found`);
+        await enrichWithThumbnails(reportAllResult.data.comparables, lat, lng, apiKey, reportAllResult.quality.searchRadiusKm);
         return reportAllResult;
       }
       console.log(`[Airbtics] report/all only found ${reportAllResult.quality.comparablesFound}/${TARGET_COMPARABLES} comps - trying bounds expansion`);
@@ -292,6 +321,7 @@ export async function getShortLetData(
     // Prefer whichever found more comparables
     if (reportAllResult && reportAllResult.quality.comparablesFound > marketsResult.quality.comparablesFound) {
       console.log(`[Airbtics] Keeping report/all result (${reportAllResult.quality.comparablesFound} > ${marketsResult.quality.comparablesFound} comps)`);
+      await enrichWithThumbnails(reportAllResult.data.comparables, lat, lng, apiKey, reportAllResult.quality.searchRadiusKm);
       return reportAllResult;
     }
     console.log(`[Airbtics] Using markets flow result: ${marketsResult.quality.comparablesFound} comps`);
@@ -303,6 +333,7 @@ export async function getShortLetData(
   // ── LAST RESORT: Return report/all result even with few comps ──
   if (reportAllResult) {
     console.log('[Airbtics] Returning report/all result as last resort');
+    await enrichWithThumbnails(reportAllResult.data.comparables, lat, lng, apiKey, reportAllResult.quality.searchRadiusKm);
     return reportAllResult;
   }
 
@@ -1106,11 +1137,20 @@ function buildDataFromReportComps(
   const comparables: ShortLetComparable[] = enrichedComps.map((c): ShortLetComparable => {
     const e = enrichment.get(c.listingID);
     const distance = haversineKm(lat, lng, c.latitude, c.longitude);
-    // listingAge: show months-live / 12 as decimal years when <12 months, else rounded years.
     let listingAge = 0;
     if (e?.monthsLive != null) {
       listingAge = Math.round((e.monthsLive / 12) * 10) / 10;
+    } else {
+      const raw = c.added_on || c.created_date || c.listed_date;
+      if (raw) {
+        const d = new Date(raw);
+        if (!isNaN(d.getTime())) {
+          listingAge = Math.max(0, Math.round((Date.now() - d.getTime()) / (365.25 * 24 * 60 * 60 * 1000) * 10) / 10);
+        }
+      }
     }
+    const rawRating = c.reveiw_scores_rating ?? 0;
+    const normalizedRating = rawRating > 5 ? rawRating / 20 : rawRating;
     return {
       title: c.name || 'Airbnb Listing',
       url: `https://www.airbnb.co.uk/rooms/${c.listingID}`,
@@ -1120,10 +1160,11 @@ function buildDataFromReportComps(
       occupancyRate: Math.round(c.avg_occupancy_rate_ltm ?? 0) / 100,
       annualRevenue: Math.round(c.annual_revenue_ltm ?? 0),
       distance,
-      rating: Math.round((c.reveiw_scores_rating ?? 0) * 100) / 100,
+      rating: Math.round(normalizedRating * 100) / 100,
       reviewCount: c.visible_review_count ?? 0,
       listingAge,
       daysAvailable: c.active_days_count_ltm ?? 0,
+      amenityCount: Object.values(c.amenities ?? {}).filter(Boolean).length,
     };
   });
 
@@ -1782,6 +1823,8 @@ function extractComparables(
       ? Math.max(0, Math.round((Date.now() - addedOn.getTime()) / (365.25 * 24 * 60 * 60 * 1000) * 10) / 10)
       : 0;
 
+    const rawRating = l.reveiw_scores_rating ?? 0;
+    const normalizedRating = rawRating > 5 ? rawRating / 20 : rawRating;
     return {
       title: l.name || 'Airbnb Listing',
       url: `https://www.airbnb.co.uk/rooms/${l.listingID}`,
@@ -1791,10 +1834,12 @@ function extractComparables(
       occupancyRate: Math.round(l.avg_occupancy_rate_ltm ?? 0) / 100,
       annualRevenue: Math.round(l.annual_revenue_ltm ?? 0),
       distance: l.distance,
-      rating: Math.round(((l.reveiw_scores_rating ?? 0) / 20) * 100) / 100,
+      rating: Math.round(normalizedRating * 100) / 100,
       reviewCount: l.visible_review_count ?? 0,
       listingAge: ageYears,
       daysAvailable: l.active_days_count_ltm ?? 0,
+      thumbnailUrl: l.thumbnail_url || undefined,
+      amenityCount: 0,
     };
   });
 

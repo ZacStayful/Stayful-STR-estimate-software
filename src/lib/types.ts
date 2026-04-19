@@ -16,10 +16,12 @@ export interface ShortLetComparable {
   occupancyRate: number;
   annualRevenue: number;
   distance?: number;
-  rating: number;          // 0-5 scale (converted from 0-100)
+  rating: number;          // 0-5 scale (auto-normalised from API)
   reviewCount: number;
   listingAge: number;      // years, calculated from added_on
   daysAvailable: number;
+  thumbnailUrl?: string;   // Airbnb listing cover photo (from bounds enrichment)
+  amenityCount: number;    // count of amenities listed on the property
 }
 
 // ─── V2 Scenarios (worst/base/best) ─────────────────────────────

@@ -940,6 +940,8 @@ export default function HomePage() {
     const avgReviews = compsWithReviews.length > 0 ? Math.round(compsWithReviews.reduce((s, c) => s + c.reviewCount, 0) / compsWithReviews.length) : 0;
     const compsWithAge = comps.filter((c) => c.listingAge > 0);
     const avgListingAge = compsWithAge.length > 0 ? Math.round(compsWithAge.reduce((s, c) => s + c.listingAge, 0) / compsWithAge.length * 10) / 10 : 0;
+    const compsWithAmenities = comps.filter((c) => c.amenityCount > 0);
+    const avgAmenities = compsWithAmenities.length > 0 ? Math.round(compsWithAmenities.reduce((s, c) => s + c.amenityCount, 0) / compsWithAmenities.length) : 0;
 
     // Full pool averages (filtered comps) for Decision Engine "Match" box
     const poolAvgAdr = hasIncluded ? Math.round(comps.reduce((s, c) => s + c.averageDailyRate, 0) / comps.length) : r.shortLet.averageDailyRate;
@@ -1507,7 +1509,9 @@ export default function HomePage() {
                   </div>
                   <div className="rounded-lg bg-muted/50 p-3">
                     <p className="text-[11px] text-muted-foreground">Avg. Amenities</p>
-                    <p className="mt-1 text-base font-semibold text-muted-foreground/50">N/A</p>
+                    <p className="mt-1 text-xl font-bold text-foreground">
+                      {avgAmenities > 0 ? avgAmenities : <span className="text-base font-semibold text-muted-foreground/50">N/A</span>}
+                    </p>
                   </div>
                 </div>
               </div>
@@ -1590,7 +1594,17 @@ export default function HomePage() {
                         {isTopPerformer && (
                           <div className="absolute left-0 right-0 top-0 h-0.5 bg-success" />
                         )}
-                        <CardContent className="p-4">
+                        {comp.thumbnailUrl && (
+                          <div className="aspect-[16/9] w-full overflow-hidden">
+                            <img
+                              src={comp.thumbnailUrl}
+                              alt={comp.title || `Listing ${i + 1}`}
+                              className="h-full w-full object-cover"
+                              loading="lazy"
+                            />
+                          </div>
+                        )}
+                        <CardContent className={comp.thumbnailUrl ? "p-4 pt-3" : "p-4"}>
                           {/* Header */}
                           <div className="mb-3 flex items-start justify-between gap-2">
                             <div className="min-w-0">
