@@ -97,7 +97,22 @@ async function findItemIdByEmail(
     email,
   });
   const item = data?.items_page_by_column_values?.items?.[0];
-  return item?.id ?? null;
+  if (item?.id) return item.id;
+
+  // Fallback: try lowercase if original didn't match (handles case mismatches)
+  const lower = email.toLowerCase();
+  if (lower !== email) {
+    const fallback = await mondayQuery<{
+      items_page_by_column_values: { items: Array<{ id: string }> };
+    }>(token, query, {
+      boardId,
+      columnId: emailColumnId,
+      email: lower,
+    });
+    return fallback?.items_page_by_column_values?.items?.[0]?.id ?? null;
+  }
+
+  return null;
 }
 
 /**
