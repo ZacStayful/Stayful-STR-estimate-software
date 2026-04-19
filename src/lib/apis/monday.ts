@@ -19,16 +19,26 @@
 const MONDAY_API_URL = "https://api.monday.com/v2";
 const MONDAY_API_VERSION = "2024-10";
 
+// Management Leads board + its column IDs, hardcoded as defaults so the
+// integration works with only MONDAY_API_TOKEN set. Env vars still override
+// each value if you ever need to point at a different board or columns.
+const DEFAULTS = {
+  boardId: "5891626711",
+  emailColumnId: "text_mkygb5xx",
+  longTermColumnId: "text_mm2dsnw7",
+  dealAnalyserColumnId: "text_mm2dkavd",
+};
+
 function envConfig() {
   const token = process.env.MONDAY_API_TOKEN;
-  const boardId = process.env.MONDAY_BOARD_ID;
-  const emailColumnId = process.env.MONDAY_EMAIL_COLUMN_ID;
-  const longTermColumnId = process.env.MONDAY_LONG_TERM_LET_COLUMN_ID;
-  const dealAnalyserColumnId = process.env.MONDAY_DEAL_ANALYSER_COLUMN_ID;
-  if (!token || !boardId || !emailColumnId || !longTermColumnId || !dealAnalyserColumnId) {
-    return null;
-  }
-  return { token, boardId, emailColumnId, longTermColumnId, dealAnalyserColumnId };
+  if (!token) return null;
+  return {
+    token,
+    boardId: process.env.MONDAY_BOARD_ID || DEFAULTS.boardId,
+    emailColumnId: process.env.MONDAY_EMAIL_COLUMN_ID || DEFAULTS.emailColumnId,
+    longTermColumnId: process.env.MONDAY_LONG_TERM_LET_COLUMN_ID || DEFAULTS.longTermColumnId,
+    dealAnalyserColumnId: process.env.MONDAY_DEAL_ANALYSER_COLUMN_ID || DEFAULTS.dealAnalyserColumnId,
+  };
 }
 
 async function mondayQuery<T>(token: string, query: string, variables: Record<string, unknown>): Promise<T | null> {
@@ -84,7 +94,7 @@ async function findItemIdByEmail(
   }>(token, query, {
     boardId,
     columnId: emailColumnId,
-    email: email.toLowerCase(),
+    email,
   });
   const item = data?.items_page_by_column_values?.items?.[0];
   return item?.id ?? null;
