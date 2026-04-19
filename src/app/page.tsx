@@ -947,8 +947,6 @@ export default function HomePage() {
     const avgReviews = compsWithReviews.length > 0 ? Math.round(compsWithReviews.reduce((s, c) => s + c.reviewCount, 0) / compsWithReviews.length) : 0;
     const compsWithAge = comps.filter((c) => c.listingAge > 0);
     const avgListingAge = compsWithAge.length > 0 ? Math.round(compsWithAge.reduce((s, c) => s + c.listingAge, 0) / compsWithAge.length * 10) / 10 : 0;
-    const compsWithAmenities = comps.filter((c) => c.amenityCount > 0);
-    const avgAmenities = compsWithAmenities.length > 0 ? Math.round(compsWithAmenities.reduce((s, c) => s + c.amenityCount, 0) / compsWithAmenities.length) : 0;
 
     // Full pool averages (filtered comps) for Decision Engine "Match" box
     const poolAvgAdr = hasIncluded ? Math.round(comps.reduce((s, c) => s + c.averageDailyRate, 0) / comps.length) : r.shortLet.averageDailyRate;
@@ -1607,7 +1605,7 @@ export default function HomePage() {
                   <p className="text-sm font-semibold text-foreground">Comp Set Benchmarks</p>
                   <p className="text-xs text-muted-foreground">What your listing needs to match the market</p>
                 </div>
-                <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
                   <div className="rounded-lg bg-muted/50 p-3">
                     <p className="text-[11px] text-muted-foreground">Avg. Rating</p>
                     <p className="mt-1 text-xl font-bold text-foreground flex items-center gap-1">
@@ -1628,12 +1626,6 @@ export default function HomePage() {
                     <p className="text-[11px] text-muted-foreground">Avg. Listing Age</p>
                     <p className="mt-1 text-xl font-bold text-foreground">
                       {avgListingAge > 0 ? `${avgListingAge} yrs` : <span className="text-base font-semibold text-muted-foreground/50">N/A</span>}
-                    </p>
-                  </div>
-                  <div className="rounded-lg bg-muted/50 p-3">
-                    <p className="text-[11px] text-muted-foreground">Avg. Amenities</p>
-                    <p className="mt-1 text-xl font-bold text-foreground">
-                      {avgAmenities > 0 ? avgAmenities : <span className="text-base font-semibold text-muted-foreground/50">N/A</span>}
                     </p>
                   </div>
                 </div>
