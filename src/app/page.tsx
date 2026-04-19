@@ -331,6 +331,9 @@ export default function HomePage() {
   const [platformFeePct, setPlatformFeePct] = useState<number | null>(null);
   const [mgmtFeePct, setMgmtFeePct] = useState<number | null>(null);
   const [cleaningMonthly, setCleaningMonthly] = useState<number | null>(null);
+  const [overheadMortgage, setOverheadMortgage] = useState<number | null>(null);
+  const [overheadBills, setOverheadBills] = useState<number | null>(null);
+  const [overheadOther, setOverheadOther] = useState<number | null>(null);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -700,6 +703,10 @@ export default function HomePage() {
       const mgmtAnnual = gross * (effMgmtPct / 100);
       return Math.max(0, Math.round(gross - platformAnnual - mgmtAnnual - cleaningAnnual));
     };
+
+    const totalMonthlyOverheads = (overheadMortgage ?? 0) + (overheadBills ?? 0) + (overheadOther ?? 0);
+    const totalAnnualOverheads = totalMonthlyOverheads * 12;
+    const computeProfit = (gross: number): number => computeNet(gross) - totalAnnualOverheads;
 
     const platformFees = Math.round(grossAnnual * (effPlatformPct / 100));
     const managementFees = Math.round(grossAnnual * (effMgmtPct / 100));
@@ -1297,7 +1304,7 @@ export default function HomePage() {
                       className="flex w-full items-center justify-center gap-2 text-xs font-medium text-primary-foreground/80 hover:text-primary-foreground transition-colors"
                       aria-expanded={expensesExpanded}
                     >
-                      {expensesExpanded ? "Hide" : "Customise"} expenses
+                      {expensesExpanded ? "Hide" : "Estimate"} profit
                       <ChevronDown className={`h-3.5 w-3.5 transition-transform ${expensesExpanded ? "rotate-180" : ""}`} aria-hidden="true" />
                     </button>
                     {expensesExpanded && (
@@ -1384,6 +1391,122 @@ export default function HomePage() {
                         </div>
                       </div>
                     )}
+                    {/* ── Overhead inputs (bills, mortgage, other) ── */}
+                    {expensesExpanded && (
+                      <div className="mt-4 border-t border-primary-foreground/15 pt-4">
+                        <p className="mb-3 text-center text-xs font-medium text-primary-foreground/80">Your monthly overheads</p>
+                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                          {/* Mortgage / Rent */}
+                          <div className="rounded-lg bg-primary-foreground/10 p-3">
+                            <label className="text-[11px] font-medium text-primary-foreground/70">
+                              Mortgage / Rent
+                            </label>
+                            <div className="mt-1 flex items-center gap-1">
+                              <span className="text-sm text-primary-foreground/80">£</span>
+                              <input
+                                type="number"
+                                min={0}
+                                step={50}
+                                value={overheadMortgage ?? ""}
+                                placeholder="0"
+                                onChange={(e) => {
+                                  const v = e.target.value.trim();
+                                  if (v === "") { setOverheadMortgage(null); return; }
+                                  const n = Number(v);
+                                  if (Number.isFinite(n) && n >= 0) setOverheadMortgage(Math.round(n));
+                                }}
+                                className="w-24 rounded-md border border-primary-foreground/30 bg-primary-foreground/10 px-2 py-1 text-sm font-semibold text-primary-foreground outline-none focus:border-primary-foreground/60"
+                              />
+                              <span className="text-sm text-primary-foreground/80">/mo</span>
+                            </div>
+                          </div>
+                          {/* Bills */}
+                          <div className="rounded-lg bg-primary-foreground/10 p-3">
+                            <label className="text-[11px] font-medium text-primary-foreground/70">
+                              Bills (council tax, utilities, broadband)
+                            </label>
+                            <div className="mt-1 flex items-center gap-1">
+                              <span className="text-sm text-primary-foreground/80">£</span>
+                              <input
+                                type="number"
+                                min={0}
+                                step={10}
+                                value={overheadBills ?? ""}
+                                placeholder="0"
+                                onChange={(e) => {
+                                  const v = e.target.value.trim();
+                                  if (v === "") { setOverheadBills(null); return; }
+                                  const n = Number(v);
+                                  if (Number.isFinite(n) && n >= 0) setOverheadBills(Math.round(n));
+                                }}
+                                className="w-24 rounded-md border border-primary-foreground/30 bg-primary-foreground/10 px-2 py-1 text-sm font-semibold text-primary-foreground outline-none focus:border-primary-foreground/60"
+                              />
+                              <span className="text-sm text-primary-foreground/80">/mo</span>
+                            </div>
+                          </div>
+                          {/* Other */}
+                          <div className="rounded-lg bg-primary-foreground/10 p-3">
+                            <label className="text-[11px] font-medium text-primary-foreground/70">
+                              Other / miscellaneous
+                            </label>
+                            <div className="mt-1 flex items-center gap-1">
+                              <span className="text-sm text-primary-foreground/80">£</span>
+                              <input
+                                type="number"
+                                min={0}
+                                step={10}
+                                value={overheadOther ?? ""}
+                                placeholder="0"
+                                onChange={(e) => {
+                                  const v = e.target.value.trim();
+                                  if (v === "") { setOverheadOther(null); return; }
+                                  const n = Number(v);
+                                  if (Number.isFinite(n) && n >= 0) setOverheadOther(Math.round(n));
+                                }}
+                                className="w-24 rounded-md border border-primary-foreground/30 bg-primary-foreground/10 px-2 py-1 text-sm font-semibold text-primary-foreground outline-none focus:border-primary-foreground/60"
+                              />
+                              <span className="text-sm text-primary-foreground/80">/mo</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* ── True Profit display ── */}
+                    {expensesExpanded && totalMonthlyOverheads > 0 && (
+                      <div className="mt-4 border-t border-primary-foreground/15 pt-4">
+                        <p className="mb-3 text-center text-xs font-medium text-primary-foreground/80">Your true profit (after all overheads)</p>
+                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                          <div className="rounded-lg bg-primary-foreground/10 p-4 text-center">
+                            <p className="text-[11px] font-medium text-primary-foreground/70 mb-1">Top Market Profit</p>
+                            <p className="text-2xl font-bold text-primary-foreground">
+                              {gbp(computeProfit(topGross))}
+                              <span className="text-sm font-normal text-primary-foreground/60">/yr</span>
+                            </p>
+                            <p className="mt-1 text-sm text-primary-foreground/80">
+                              {gbp(Math.round(computeProfit(topGross) / 12))}/mo
+                            </p>
+                            <p className="mt-2 text-[10px] text-primary-foreground/50">
+                              Net {gbp(computeNet(topGross))} − Overheads {gbp(totalAnnualOverheads)}
+                            </p>
+                          </div>
+                          <div className="rounded-lg bg-primary-foreground/10 p-4 text-center">
+                            <p className="text-[11px] font-medium text-primary-foreground/70 mb-1">Your Filtered Profit</p>
+                            <p className="text-2xl font-bold text-primary-foreground">
+                              {gbp(computeProfit(filteredGross))}
+                              <span className="text-sm font-normal text-primary-foreground/60">/yr</span>
+                            </p>
+                            <p className="mt-1 text-sm text-primary-foreground/80">
+                              {gbp(Math.round(computeProfit(filteredGross) / 12))}/mo
+                            </p>
+                            <p className="mt-2 text-[10px] text-primary-foreground/50">
+                              Net {gbp(computeNet(filteredGross))} − Overheads {gbp(totalAnnualOverheads)}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
                     {expensesExpanded && (
                       <p className="mt-3 text-center text-[11px] text-primary-foreground/60">
                         Your inputs flow through to both Net Revenue figures and the Revenue Breakdown &amp; Profit Calculator sections.
