@@ -10,11 +10,13 @@ interface Props {
   onBedroomsChange: (n: number) => void;
 }
 
-const OPTIONS: { value: FurnishingState; hint: string }[] = [
+const FURNISHING_OPTIONS: { value: FurnishingState; hint: string }[] = [
   { value: "fully",       hint: "Property already has beds, sofas, tables etc." },
   { value: "part",        hint: "Some items present, some missing" },
   { value: "unfurnished", hint: "Completely bare" },
 ];
+
+const BEDROOM_OPTIONS = [1, 2, 3, 4, 5];
 
 export function PropertyConfig({ furnishing, bedrooms, onFurnishingChange, onBedroomsChange }: Props) {
   return (
@@ -23,7 +25,7 @@ export function PropertyConfig({ furnishing, bedrooms, onFurnishingChange, onBed
       <div>
         <p className="mb-2 text-xs font-semibold text-primary-foreground/80">Furnishing state</p>
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-          {OPTIONS.map((opt) => {
+          {FURNISHING_OPTIONS.map((opt) => {
             const active = furnishing === opt.value;
             return (
               <button
@@ -45,24 +47,29 @@ export function PropertyConfig({ furnishing, bedrooms, onFurnishingChange, onBed
         </div>
       </div>
 
-      {/* Bedrooms */}
+      {/* Bedrooms — pill buttons */}
       <div>
-        <label htmlFor="setup-bedrooms" className="mb-2 block text-xs font-semibold text-primary-foreground/80">
-          Number of bedrooms
-        </label>
-        <input
-          id="setup-bedrooms"
-          type="number"
-          min={1}
-          max={10}
-          step={1}
-          value={bedrooms}
-          onChange={(e) => {
-            const n = Number(e.target.value);
-            if (Number.isFinite(n)) onBedroomsChange(Math.max(1, Math.min(10, Math.round(n))));
-          }}
-          className="w-24 rounded-md border border-primary-foreground/30 bg-primary-foreground/10 px-3 py-2 text-sm font-semibold text-primary-foreground outline-none focus:border-primary-foreground/60"
-        />
+        <p className="mb-2 text-xs font-semibold text-primary-foreground/80">Number of bedrooms</p>
+        <div className="flex gap-2">
+          {BEDROOM_OPTIONS.map((n) => {
+            const active = bedrooms === n;
+            return (
+              <button
+                key={n}
+                type="button"
+                onClick={() => onBedroomsChange(n)}
+                aria-pressed={active}
+                className={`flex h-10 w-10 items-center justify-center rounded-lg border text-sm font-bold transition-colors ${
+                  active
+                    ? "border-primary-foreground bg-primary-foreground/20 text-primary-foreground"
+                    : "border-primary-foreground/20 bg-primary-foreground/5 text-primary-foreground/80 hover:bg-primary-foreground/10"
+                }`}
+              >
+                {n}
+              </button>
+            );
+          })}
+        </div>
       </div>
     </div>
   );

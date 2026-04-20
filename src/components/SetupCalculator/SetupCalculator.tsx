@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ChevronDown } from "lucide-react";
 import type { FurnishingState, LineItemState } from "./lineItemDefaults";
-import { FURNISHING_LABELS, buildDefaultLineItems } from "./lineItemDefaults";
+import { FURNISHING_LABELS, buildDefaultLineItems, computeLabourCost } from "./lineItemDefaults";
 import { PropertyConfig } from "./PropertyConfig";
 import { LineItemsEditor } from "./LineItemsEditor";
 import { QuoteSummary } from "./QuoteSummary";
@@ -42,10 +42,18 @@ export function SetupCalculator({ defaultBedrooms, propertyAddress, onSnapshot }
 
   // Rebuild defaults whenever furnishing or bedrooms change AND the user
   // hasn't yet manually edited line items. Once the user touches anything,
-  // we stop auto-rebuilding so their edits persist.
+  // we stop auto-rebuilding so their edits persist — except for computed
+  // items like Labour which always recalculate from bedroom count.
   useEffect(() => {
     if (!userEditedRef.current) {
       setItems(buildDefaultLineItems(furnishing, bedrooms));
+    } else {
+      // Even after user edits, recalculate Labour (computed total based on bedrooms)
+      setItems((prev) =>
+        prev.map((it) =>
+          it.id === "labour" ? { ...it, unitCost: computeLabourCost(bedrooms) } : it,
+        ),
+      );
     }
   }, [furnishing, bedrooms]);
 
