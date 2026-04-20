@@ -74,27 +74,27 @@ export function computeLabourCost(bedrooms: number): number {
 }
 
 const FURNISHING_OVERRIDES: Record<FurnishingState, Record<string, { active?: boolean; qtyByBedrooms?: (b: number) => number }>> = {
+  // Only services + basics: TV, paint, soft furnishings, electrical, kitchen,
+  // photos, labour, keysafes. All actual furniture off by default.
   fully: {
+    double_beds:     { active: false },
     zip_link_single: { active: false },
+    sofabed:         { active: false },
+    coffee_table:    { active: false },
+    dining_table:    { active: false },
+    side_tables:     { active: false },
+    clothes_rack:    { active: false },
   },
+  // Fully-furnished baseline + coffee table + dining table (commonly missing)
   part: {
     double_beds:     { active: false },
     zip_link_single: { active: false },
     sofabed:         { active: false },
-    coffee_table:    { active: false },
-    dining_table:    { active: false },
     side_tables:     { active: false },
+    clothes_rack:    { active: false },
   },
-  unfurnished: {
-    electrical_pack: { active: false },
-    kitchen_pack:    { active: false },
-    sofabed:         { active: false },
-    double_beds:     { active: false },
-    zip_link_single: { active: false },
-    side_tables:     { active: false },
-    coffee_table:    { active: false },
-    dining_table:    { active: false },
-  },
+  // Everything ticked by default — bare property needs it all
+  unfurnished: {},
 };
 
 export function buildDefaultLineItems(
