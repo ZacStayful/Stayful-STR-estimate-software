@@ -81,6 +81,7 @@ import Presentation from "@/components/Presentation";
 import HeatmapOverlay from "@/components/HeatmapOverlay";
 import { AddressAutocomplete, splitAddressAndPostcode } from "@/components/AddressAutocomplete";
 import { AccuracyPanel } from "@/components/AccuracyPanel";
+import { SetupCalculator } from "@/components/SetupCalculator";
 import type { AnalysisResult, RiskLevel, VerdictFit } from "@/lib/types";
 import { DEMO_MAP } from "@/lib/demo-data";
 import { initTracker, endSession, trackCtaClick } from "@/lib/tracker";
@@ -362,6 +363,7 @@ export default function HomePage() {
   const [overheadMortgage, setOverheadMortgage] = useState<number | null>(null);
   const [overheadBills, setOverheadBills] = useState<number | null>(null);
   const [overheadOther, setOverheadOther] = useState<number | null>(null);
+  const setupSnapshotRef = useRef<import("@/components/SetupCalculator").SetupCalculatorSnapshot | null>(null);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -1541,6 +1543,15 @@ export default function HomePage() {
                   <p className="text-xs text-primary-foreground/60 mt-1">Book a call with Stayful for a personalised estimate</p>
                 </div>
               )}
+            </div>
+
+            {/* Estimate setup costs — collapsible calculator */}
+            <div className="mt-6">
+              <SetupCalculator
+                defaultBedrooms={r.property.bedrooms}
+                propertyAddress={r.property.address}
+                onSnapshot={(snap) => { setupSnapshotRef.current = snap; }}
+              />
             </div>
 
             {/* Is this information accurate? — data-source confidence panel */}
