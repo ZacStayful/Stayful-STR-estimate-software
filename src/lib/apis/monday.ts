@@ -27,6 +27,8 @@ const DEFAULTS = {
   emailColumnId: "text_mkygb5xx",
   longTermColumnId: "text_mm2dsnw7",
   dealAnalyserColumnId: "text_mm2dkavd",
+  fileColumnId: "files__1",
+  timeOnSiteColumnId: "text_mm1ysvmg",
 };
 
 function envConfig() {
@@ -122,7 +124,7 @@ async function updateItemColumns(
   token: string,
   boardId: string,
   itemId: string,
-  columnValues: Record<string, number>,
+  columnValues: Record<string, string | number>,
 ): Promise<boolean> {
   const mutation = `
     mutation ($boardId: ID!, $itemId: ID!, $values: JSON!) {
@@ -170,7 +172,7 @@ export async function syncAnalysisToMonday(
     return;
   }
 
-  const columnValues: Record<string, number> = {
+  const columnValues: Record<string, string | number> = {
     [cfg.longTermColumnId]: Math.round(longTermLetNetAnnual),
     [cfg.dealAnalyserColumnId]: Math.round(stayfulNetRevenue),
   };
@@ -180,5 +182,101 @@ export async function syncAnalysisToMonday(
     console.log(`[Monday] Synced analysis for ${email} → item ${itemId}`);
   } else {
     console.error(`[Monday] Column update failed for ${email} (item ${itemId})`);
+  }
+}
+
+/**
+ * Uploads a PDF buffer to a Monday file column on the matched item.
+ * Uses Monday's multipart file upload endpoint.
+ */
+export async function uploadPdfToMonday(
+  email: string,
+  pdfBuffer: Buffer | Uint8Array,
+  filename: string,
+): Promise<void> {
+  const cfg = envConfig();
+  if (!cfg) return;
+  if (!email || !email.includes("@")) return;
+
+  const itemId = await findItemIdByEmail(cfg.token, cfg.boardId, cfg.emailColumnId, email);
+  if (!itemId) {
+    console.log(`[Monday] PDF upload skipped — no lead for: ${email}`);
+    return;
+  }
+
+  const fileColumnId = process.env.MONDAY_FILE_COLUMN_ID || DEFAULTS.fileColumnId;
+
+  try {
+    const query = `mutation ($file: File!) { add_file_to_column(item_id: ${itemId}, column_id: "${fileColumnId}", file: $file) { id } }`;
+
+    const blob = new Blob([new Uint8Array(pdfBuffer)], { type: "application/pdf" });
+    const form = new FormData();
+    form.append("query", query);
+    form.append("variables[file]", blob, filename);
+
+    const res = await fetch("https://api.monday.com/v2/file", {
+      method: "POST",
+      headers: {
+        Authorization: cfg.token,
+        "API-Version": MONDAY_API_VERSION,
+      },
+      body: form,
+    });
+
+    if (!res.ok) {
+      console.error(`[Monday] PDF upload HTTP ${res.status}: ${await res.text()}`);
+      return;
+    }
+    console.log(`[Monday] PDF uploaded for ${email} → item ${itemId}`);
+  } catch (err) {
+    console.error("[Monday] PDF upload error:", err);
+  }
+}
+
+function formatDuration(seconds: number): string {
+  if (seconds < 60) return `${seconds}s`;
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  if (m < 60) return s > 0 ? `${m}m ${s}s` : `${m}m`;
+  const h = Math.floor(m / 60);
+  const rm = m % 60;
+  return rm > 0 ? `${h}h ${rm}m` : `${h}h`;
+}
+
+/**
+ * Pushes session duration to a text column in Monday.
+ */
+export async function syncTimeOnSiteToMonday(
+  email: string,
+  seconds: number,
+): Promise<void> {
+  const cfg = envConfig();
+  if (!cfg) return;
+  if (!email || !email.includes("@") || seconds <= 0) return;
+
+  const itemId = await findItemIdByEmail(cfg.token, cfg.boardId, cfg.emailColumnId, email);
+  if (!itemId) {
+    console.log(`[Monday] Time sync skipped — no lead for: ${email}`);
+    return;
+  }
+
+  const timeColumnId = process.env.MONDAY_TIME_ON_SITE_COLUMN_ID || DEFAULTS.timeOnSiteColumnId;
+  const formatted = formatDuration(Math.round(seconds));
+
+  const mutation = `
+    mutation ($boardId: ID!, $itemId: ID!, $values: JSON!) {
+      change_multiple_column_values(board_id: $boardId, item_id: $itemId, column_values: $values) { id }
+    }
+  `;
+  const valuesJson = JSON.stringify({ [timeColumnId]: formatted });
+  const data = await mondayQuery<{ change_multiple_column_values: { id: string } }>(
+    cfg.token,
+    mutation,
+    { boardId: cfg.boardId, itemId, values: valuesJson },
+  );
+  if (data?.change_multiple_column_values?.id) {
+    console.log(`[Monday] Time synced for ${email}: ${formatted}`);
+  } else {
+    console.error(`[Monday] Time update failed for ${email}`);
   }
 }

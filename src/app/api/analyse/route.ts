@@ -395,15 +395,32 @@ export async function POST(request: Request) {
 
         send({ stage: 'complete', progress: 100, message: 'Analysis complete', data: result });
 
-        // Fire-and-forget Monday.com CRM sync. All errors swallowed server-side —
-        // never surfaces to user regardless of whether email is in the board.
+        // Fire-and-forget Monday.com CRM sync + PDF upload. All errors
+        // swallowed server-side — never surfaces to user.
         if (emailStr) {
-          const { syncAnalysisToMonday } = await import('@/lib/apis/monday');
+          const { syncAnalysisToMonday, uploadPdfToMonday } = await import('@/lib/apis/monday');
           void syncAnalysisToMonday(
             emailStr,
             result.financials.longLetNetAnnual,
             result.financials.shortLetNetAnnual,
           );
+          // Generate branded PDF and upload to Monday file column
+          void (async () => {
+            try {
+              const React = await import('react');
+              const { renderToBuffer } = await import('@react-pdf/renderer');
+              const { deriveReportData, sanitiseAddressForFilename } = await import('@/lib/pdf/derive');
+              const { StayfulReport } = await import('@/lib/pdf/StayfulReport');
+              const data = deriveReportData(result);
+              const element = React.createElement(StayfulReport, { data });
+              // renderToBuffer expects DocumentProps but our wrapper component is typed differently
+              const buffer = await (renderToBuffer as (e: unknown) => Promise<Buffer>)(element);
+              const filename = `Stayful_Property_Analysis_${sanitiseAddressForFilename(result.property.address)}.pdf`;
+              await uploadPdfToMonday(emailStr, buffer, filename);
+            } catch (err) {
+              console.error('[Monday] PDF generation/upload error:', err);
+            }
+          })();
         }
       } catch (err) {
         console.error('Unexpected error in /api/analyse:', err);

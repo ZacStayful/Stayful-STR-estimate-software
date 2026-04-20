@@ -26,7 +26,11 @@ export async function POST(request: Request) {
       sessions.shift();
     }
 
-    // TODO: Push to Monday.com when API key is configured
+    // Push time-on-site to Monday CRM (silent, fire-and-forget)
+    if (data.type === 'time_on_site' && data.email && data.seconds > 0) {
+      const { syncTimeOnSiteToMonday } = await import('@/lib/apis/monday');
+      void syncTimeOnSiteToMonday(data.email, data.seconds);
+    }
 
     return Response.json({ ok: true });
   } catch {

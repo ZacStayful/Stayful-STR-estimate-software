@@ -313,6 +313,34 @@ export default function HomePage() {
   const [monthlyMortgage, setMonthlyMortgage] = useState("");
   const [monthlyBills, setMonthlyBills] = useState("");
 
+  // ── Session timer: pushed to Monday via sendBeacon on tab close ──
+  const sessionStartRef = useRef(Date.now());
+  const emailRef = useRef(email);
+  emailRef.current = email;
+
+  useEffect(() => {
+    const pushTime = () => {
+      const seconds = Math.round((Date.now() - sessionStartRef.current) / 1000);
+      const currentEmail = emailRef.current;
+      if (seconds > 0 && currentEmail && currentEmail.includes("@")) {
+        navigator.sendBeacon(
+          "/api/track",
+          new Blob(
+            [JSON.stringify({ type: "time_on_site", email: currentEmail, seconds })],
+            { type: "application/json" },
+          ),
+        );
+      }
+    };
+    const onVisChange = () => { if (document.visibilityState === "hidden") pushTime(); };
+    window.addEventListener("beforeunload", pushTime);
+    document.addEventListener("visibilitychange", onVisChange);
+    return () => {
+      window.removeEventListener("beforeunload", pushTime);
+      document.removeEventListener("visibilitychange", onVisChange);
+    };
+  }, []);
+
   // Address input mode: "auto" uses Google Places autocomplete (default),
   // "manual" falls back to the original two freeform fields. selectedAutoAddress
   // tracks the last picked suggestion so we can render a compact confirmation
