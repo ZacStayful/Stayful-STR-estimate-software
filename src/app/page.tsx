@@ -1183,7 +1183,16 @@ export default function HomePage() {
                       const res = await fetch("/api/generate-pdf", {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify(result),
+                        body: JSON.stringify({
+                          ...result,
+                          setup: setupSnapshotRef.current
+                            ? {
+                                furnishing: setupSnapshotRef.current.furnishing,
+                                bedrooms: setupSnapshotRef.current.bedrooms,
+                                items: setupSnapshotRef.current.items,
+                              }
+                            : undefined,
+                        }),
                       });
                       if (!res.ok) throw new Error("PDF generation failed");
                       const blob = await res.blob();

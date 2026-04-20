@@ -35,6 +35,29 @@ export interface PdfDemandDriver {
   impact: "HIGH" | "MEDIUM" | "LOW";
 }
 
+export interface PdfSetupLineItem {
+  id: string;
+  name: string;
+  supplier: string;
+  qty: number;
+  unitCost: number;
+  total: number;
+}
+
+export interface PdfSetupCategory {
+  category: string;
+  items: PdfSetupLineItem[];
+  subtotal: number;
+}
+
+export interface PdfSetupSnapshot {
+  furnishingLabel: string;
+  bedrooms: number;
+  itemCount: number;
+  grandTotal: number;
+  categories: PdfSetupCategory[];
+}
+
 export interface PdfReportData {
   property: { address: string; bedrooms: number; sleeps: number };
   overview: {
@@ -107,6 +130,63 @@ export interface PdfReportData {
     repeatCustomers: number;
     platformFeeSavingsPct: number;
     extraMonthlyProfitYr3: number;
+  };
+  setup?: PdfSetupSnapshot;
+}
+
+/**
+ * Converts the raw calculator snapshot (active line items + category groups)
+ * into the shape the PDF page renders. Returns null if there's nothing to
+ * include (zero items or grandTotal === 0).
+ */
+export function buildSetupSnapshot(raw: {
+  furnishing: "fully" | "part" | "unfurnished";
+  bedrooms: number;
+  items: Array<{
+    id: string;
+    name: string;
+    category: string;
+    supplier: string;
+    qty: number;
+    unitCost: number;
+    active: boolean;
+  }>;
+}): PdfSetupSnapshot | null {
+  const FURNISHING_LABELS: Record<string, string> = {
+    fully: "Fully Furnished",
+    part: "Part Furnished",
+    unfurnished: "Unfurnished",
+  };
+  const active = raw.items.filter((i) => i.active && i.qty > 0 && i.unitCost > 0);
+  if (active.length === 0) return null;
+
+  const groups = new Map<string, PdfSetupLineItem[]>();
+  for (const it of active) {
+    const arr = groups.get(it.category) ?? [];
+    arr.push({
+      id: it.id,
+      name: it.name,
+      supplier: it.supplier,
+      qty: it.qty,
+      unitCost: it.unitCost,
+      total: Math.round(it.qty * it.unitCost),
+    });
+    groups.set(it.category, arr);
+  }
+
+  const categories: PdfSetupCategory[] = Array.from(groups.entries()).map(([category, items]) => ({
+    category,
+    items,
+    subtotal: items.reduce((s, i) => s + i.total, 0),
+  }));
+
+  const grandTotal = categories.reduce((s, c) => s + c.subtotal, 0);
+  return {
+    furnishingLabel: FURNISHING_LABELS[raw.furnishing] ?? raw.furnishing,
+    bedrooms: raw.bedrooms,
+    itemCount: active.length,
+    grandTotal,
+    categories,
   };
 }
 
