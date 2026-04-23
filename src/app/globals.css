@@ -4,42 +4,63 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* ─── Stayful Intelligence Theme ────────────────────────────────────
+ * Dark, premium, data-driven palette. Sage greens on near-black.
+ * Used across the new Intelligence app at intelligence.stayful.co.uk.
+ * The legacy analyser at /legacy keeps its own styling via inline classes.
+ * ────────────────────────────────────────────────────────────────── */
+
 @theme inline {
+  /* Brand */
+  --color-sage-deep:   #5d8156;
+  --color-sage-mid:    #b9d5c6;
+  --color-sage-light:  #d0d6ba;
+  --color-bg-dark:     #0a0f09;
+  --color-bg-card:     #111a0f;
+  --color-bg-card2:    #162013;
+  --color-text-primary:#f0ede4;
+  --color-text-muted:  #9ba896;
+  --color-intel-border: rgba(93, 129, 86, 0.2);
+  --color-intel-border-strong: rgba(93, 129, 86, 0.4);
+
+  /* Fonts */
+  --font-sans: var(--font-dm-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-heading: var(--font-playfair), ui-serif, Georgia, serif;
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+
+  /* shadcn tokens (kept so legacy analyser still resolves) */
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
-  --font-heading: "Inter", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  --color-sidebar-ring: var(--sidebar-ring);
-  --color-sidebar-border: var(--sidebar-border);
-  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-  --color-sidebar-accent: var(--sidebar-accent);
-  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-  --color-sidebar-primary: var(--sidebar-primary);
-  --color-sidebar-foreground: var(--sidebar-foreground);
-  --color-sidebar: var(--sidebar);
-  --color-chart-5: var(--chart-5);
-  --color-chart-4: var(--chart-4);
-  --color-chart-3: var(--chart-3);
-  --color-chart-2: var(--chart-2);
-  --color-chart-1: var(--chart-1);
-  --color-ring: var(--ring);
-  --color-input: var(--input);
-  --color-border: var(--border);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);
-  --color-accent-foreground: var(--accent-foreground);
-  --color-accent: var(--accent);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-muted: var(--muted);
-  --color-secondary-foreground: var(--secondary-foreground);
-  --color-secondary: var(--secondary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-primary: var(--primary);
-  --color-popover-foreground: var(--popover-foreground);
-  --color-popover: var(--popover);
-  --color-card-foreground: var(--card-foreground);
-  --color-card: var(--card);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
   --color-stayful-green: var(--stayful-green);
   --color-stayful-sage: var(--stayful-sage);
   --color-stayful-mint: var(--stayful-mint);
@@ -47,6 +68,7 @@
   --color-success-foreground: var(--success-foreground);
   --color-warning: var(--warning);
   --color-warning-foreground: var(--warning-foreground);
+
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
@@ -56,7 +78,52 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
+/* Default (Intelligence app) — dark sage palette. */
 :root {
+  --background: #0a0f09;
+  --foreground: #f0ede4;
+  --card: #111a0f;
+  --card-foreground: #f0ede4;
+  --popover: #162013;
+  --popover-foreground: #f0ede4;
+  --primary: #5d8156;
+  --primary-foreground: #f0ede4;
+  --secondary: #162013;
+  --secondary-foreground: #f0ede4;
+  --muted: #162013;
+  --muted-foreground: #9ba896;
+  --accent: #b9d5c6;
+  --accent-foreground: #0a0f09;
+  --destructive: #c45050;
+  --destructive-foreground: #fff;
+  --border: rgba(93, 129, 86, 0.2);
+  --input: rgba(93, 129, 86, 0.25);
+  --ring: #5d8156;
+  --chart-1: #5d8156;
+  --chart-2: #b9d5c6;
+  --chart-3: #d0d6ba;
+  --chart-4: #c8b464;
+  --chart-5: #786496;
+  --radius: 0.75rem;
+  --sidebar: #0a0f09;
+  --sidebar-foreground: #f0ede4;
+  --sidebar-primary: #5d8156;
+  --sidebar-primary-foreground: #f0ede4;
+  --sidebar-accent: #162013;
+  --sidebar-accent-foreground: #f0ede4;
+  --sidebar-border: rgba(93, 129, 86, 0.2);
+  --sidebar-ring: #5d8156;
+  --stayful-green: #5d8156;
+  --stayful-sage: #b9d5c6;
+  --stayful-mint: #d0d6ba;
+  --success: #5d8156;
+  --success-foreground: #f0ede4;
+  --warning: #c8b464;
+  --warning-foreground: #0a0f09;
+}
+
+/* Legacy analyser keeps the original light sage theme — scoped via class */
+.theme-legacy {
   --background: #d0d6ba;
   --foreground: #5d8156;
   --card: #e6ebd7;
@@ -81,7 +148,6 @@
   --chart-3: #b45050;
   --chart-4: #c8b464;
   --chart-5: #786496;
-  --radius: 0.75rem;
   --sidebar: #d0d6ba;
   --sidebar-foreground: #5d8156;
   --sidebar-primary: #5d8156;
@@ -93,52 +159,6 @@
   --stayful-green: #5d8156;
   --stayful-sage: #d0d6ba;
   --stayful-mint: #bad6c7;
-  --success: #64a064;
-  --success-foreground: #fff;
-  --warning: #c8b464;
-  --warning-foreground: #503c1e;
-}
-
-.dark {
-  --background: #1a2118;
-  --foreground: #d0d6ba;
-  --card: #242e21;
-  --card-foreground: #d0d6ba;
-  --popover: #242e21;
-  --popover-foreground: #d0d6ba;
-  --primary: #8ab382;
-  --primary-foreground: #1a2118;
-  --secondary: #2e3d2b;
-  --secondary-foreground: #d0d6ba;
-  --muted: #2e3d2b;
-  --muted-foreground: #8ab382;
-  --accent: #2e3d2b;
-  --accent-foreground: #d0d6ba;
-  --destructive: #c45050;
-  --destructive-foreground: #fff;
-  --border: rgba(255, 255, 255, 0.1);
-  --input: rgba(255, 255, 255, 0.15);
-  --ring: #8ab382;
-  --chart-1: #8ab382;
-  --chart-2: #bad6c7;
-  --chart-3: #c45050;
-  --chart-4: #c8b464;
-  --chart-5: #9884b6;
-  --sidebar: #1a2118;
-  --sidebar-foreground: #d0d6ba;
-  --sidebar-primary: #8ab382;
-  --sidebar-primary-foreground: #1a2118;
-  --sidebar-accent: #2e3d2b;
-  --sidebar-accent-foreground: #d0d6ba;
-  --sidebar-border: rgba(255, 255, 255, 0.1);
-  --sidebar-ring: #8ab382;
-  --stayful-green: #8ab382;
-  --stayful-sage: #2e3d2b;
-  --stayful-mint: #3a4d37;
-  --success: #64a064;
-  --success-foreground: #fff;
-  --warning: #c8b464;
-  --warning-foreground: #503c1e;
 }
 
 @layer base {
@@ -146,9 +166,28 @@
     @apply border-border outline-ring/50;
   }
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground antialiased;
+    font-family: var(--font-sans);
   }
   html {
-    @apply font-sans;
+    color-scheme: dark;
   }
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-heading);
+    letter-spacing: -0.01em;
+  }
+}
+
+/* Subtle grid background for hero sections */
+.intel-grid {
+  background-image:
+    linear-gradient(to right, rgba(93, 129, 86, 0.06) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(93, 129, 86, 0.06) 1px, transparent 1px);
+  background-size: 48px 48px;
+}
+
+.intel-radial {
+  background:
+    radial-gradient(ellipse at top, rgba(93, 129, 86, 0.18), transparent 60%),
+    radial-gradient(ellipse at bottom, rgba(185, 213, 198, 0.06), transparent 70%);
 }

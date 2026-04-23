@@ -1,17 +1,28 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+import { DM_Sans, Playfair_Display } from "next/font/google";
 import "./globals.css";
 
-const inter = Inter({
-  variable: "--font-sans",
+const dmSans = DM_Sans({
+  variable: "--font-dm-sans",
   subsets: ["latin"],
+  display: "swap",
+});
+
+const playfair = Playfair_Display({
+  variable: "--font-playfair",
+  subsets: ["latin"],
+  display: "swap",
 });
 
 export const metadata: Metadata = {
-  title: "Stayful Property Analyser | Short-Term Rental Income Calculator",
+  metadataBase: new URL("https://intelligence.stayful.co.uk"),
+  title: {
+    default: "Stayful Intelligence — UK STR revenue estimator",
+    template: "%s · Stayful Intelligence",
+  },
   description:
-    "Analyse your property's short-term rental potential with Stayful. Compare Airbnb income vs long-term let, view local demand drivers, and get a comprehensive risk assessment.",
-  generator: "Stayful",
+    "Know exactly what your UK property will earn on Airbnb before you buy. Live comparable data, monthly revenue forecasts, and SA vs long-let uplift in under 3 seconds.",
+  generator: "Stayful Intelligence",
   icons: {
     icon: [
       { url: "/favicon.svg", type: "image/svg+xml" },
@@ -24,14 +35,10 @@ export const metadata: Metadata = {
 
 export default function RootLayout({
   children,
-}: Readonly<{
-  children: React.ReactNode;
-}>) {
+}: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en">
-      <body
-        className={`${inter.variable} font-sans antialiased`}
-      >
+    <html lang="en" suppressHydrationWarning>
+      <body className={`${dmSans.variable} ${playfair.variable} font-sans antialiased min-h-screen bg-bg-dark text-text-primary`}>
         {children}
       </body>
     </html>
