@@ -47,7 +47,7 @@ export default function ReportPage() {
     <main className="min-h-screen bg-background">
       {/* Hero */}
       <section className="relative overflow-hidden bg-primary py-12 sm:py-16">
-        <div className="absolute inset-0 bg-[url(\"/grid.svg\")] opacity-10" />
+        <div className="absolute inset-0 bg-[url('/grid.svg')] opacity-10" />
         <div className="relative mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="flex flex-col items-center text-center">
             <Image
@@ -155,7 +155,7 @@ export default function ReportPage() {
           </Card>
 
           <p className="mt-6 text-center text-xs text-muted-foreground">
-            Don&apos;t have a report yet?{" "}
+            {`Don't have a report yet? `}
             <a href="/" className="font-medium text-primary underline underline-offset-2">
               Run your free property analysis
             </a>
@@ -174,7 +174,7 @@ export default function ReportPage() {
             className="mx-auto mb-4 h-8 w-auto opacity-60"
             src="/images/stayful-logo.png"
           />
-          <p>&copy; {new Date().getFullYear()} Stayful. All rights reserved.</p>
+          <p>&copy; 2026 Stayful. All rights reserved.</p>
         </div>
       </footer>
     </main>
