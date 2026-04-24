@@ -172,9 +172,10 @@ export async function syncAnalysisToMonday(
     return;
   }
 
-  const columnValues: Record<string, string | number> = {
-    [cfg.longTermColumnId]: Math.round(longTermLetNetAnnual),
-    [cfg.dealAnalyserColumnId]: Math.round(stayfulNetRevenue),
+  // Text columns require string values in Monday's API
+  const columnValues: Record<string, string> = {
+    [cfg.longTermColumnId]: String(Math.round(longTermLetNetAnnual)),
+    [cfg.dealAnalyserColumnId]: String(Math.round(stayfulNetRevenue)),
   };
 
   const ok = await updateItemColumns(cfg.token, cfg.boardId, itemId, columnValues);
