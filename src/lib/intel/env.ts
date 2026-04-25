@@ -8,15 +8,12 @@ export const env = {
   supabaseAnonKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "",
   appUrl:
     process.env.NEXT_PUBLIC_APP_URL ??
-    process.env.VERCEL_URL ??
-    "http://localhost:3000",
+    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000"),
 };
 
 export function requireServerEnv(name: string): string {
   const value = process.env[name];
-  if (!value) {
-    throw new Error(`Missing required server env var: ${name}`);
-  }
+  if (!value) throw new Error(`Missing required server env var: ${name}`);
   return value;
 }
 

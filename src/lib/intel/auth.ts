@@ -1,13 +1,15 @@
 import { redirect } from "next/navigation";
 import { createSupabaseServerClient } from "./supabase/server";
 import { createSupabaseAdminClient } from "./supabase/admin";
+import { TRIAL_DAYS } from "./access";
 import type { Profile } from "./types";
 
 /**
  * Resolves the authenticated user + profile for the current request.
- * Redirects to /login if there is no session.
+ * Redirects to /login (with redirect= back) if there is no session.
  *
- * Uses getUser() rather than getSession() because the latter is unverified.
+ * Uses getUser() rather than getSession(): the latter is unverified and
+ * shouldn't be trusted for authorisation.
  */
 export async function requireUserAndProfile(redirectTo?: string): Promise<{
   userId: string;
@@ -29,9 +31,8 @@ export async function requireUserAndProfile(redirectTo?: string): Promise<{
 }
 
 /**
- * Ensures the auth user has a corresponding `profiles` row. New signups always
- * get a fresh profile here so we never depend on a Supabase trigger being
- * configured in the user's project.
+ * Ensures the auth user has a corresponding profiles row. New profiles get
+ * a 14-day trial window starting now. Idempotent.
  */
 export async function ensureProfile(userId: string, email: string | null): Promise<Profile> {
   const admin = createSupabaseAdminClient();
@@ -43,9 +44,18 @@ export async function ensureProfile(userId: string, email: string | null): Promi
 
   if (existing) return existing as Profile;
 
+  const now = new Date();
+  const trialEnds = new Date(now.getTime() + TRIAL_DAYS * 24 * 60 * 60 * 1000);
+
   const { data: created, error } = await admin
     .from("profiles")
-    .insert({ id: userId, email, plan: "free", searches_used: 0 })
+    .insert({
+      id: userId,
+      email,
+      plan: "free",
+      trial_started_at: now.toISOString(),
+      trial_ends_at: trialEnds.toISOString(),
+    })
     .select("*")
     .single();
 

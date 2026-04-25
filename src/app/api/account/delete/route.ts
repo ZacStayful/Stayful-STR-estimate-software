@@ -18,7 +18,6 @@ export async function POST() {
   if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
   const admin = createSupabaseAdminClient();
-
   const { data: profile } = await admin
     .from("profiles")
     .select("stripe_subscription_id")
@@ -34,8 +33,6 @@ export async function POST() {
   }
 
   const { error } = await admin.auth.admin.deleteUser(user.id);
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ ok: true });
 }

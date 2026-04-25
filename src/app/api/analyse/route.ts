@@ -1,10 +1,12 @@
 import type { PropertyInput, AnalysisResult, ShortLetData, LongLetData, DemandDrivers, NearbyEvent, DataQuality } from '@/lib/types';
 import { geocodePostcode } from '@/lib/apis/geocode';
 import { getShortLetData } from '@/lib/apis/airbtics';
-import { getLongLetData, getFloorArea } from '@/lib/apis/propertydata';
+import { getLongLetData, getFloorArea, fetchPropertyValuation } from '@/lib/apis/propertydata';
 import { getNearbyAmenities } from '@/lib/apis/google-places';
 import { getNearbyEvents } from '@/lib/apis/ticketmaster';
+import { fetchPriceLabsRevenueEstimate, buildCrossValidation } from '@/lib/apis/pricelabs';
 import { calculateFinancials, assessRisk, generateVerdict } from '@/lib/analysis';
+import { requireFullAccess } from '@/lib/intel/api-gate';
 
 // ─── Rate Limiter (in-memory, per IP) ────────────────────────────
 // 10 requests per IP per 60-second window. Protects against API credit abuse.
@@ -52,6 +54,14 @@ export async function POST(request: Request) {
     calibrationSecret &&
     calibrationHeader === calibrationSecret;
 
+  // SaaS gate: require an authed user whose trial is active or who is on Pro.
+  // The calibration bypass is preserved so internal calibration scripts that
+  // ship a shared dev secret can still hit the route without a session.
+  if (!isCalibrationBypass) {
+    const gate = await requireFullAccess();
+    if (!gate.ok) return gate.response;
+  }
+
   if (!isCalibrationBypass && isRateLimited(ip)) {
     return Response.json(
       { error: 'Too many requests. Please wait a minute before trying again.' },
@@ -70,12 +80,14 @@ export async function POST(request: Request) {
   }
 
   // Validate input
-  const { address, postcode, bedrooms, guests, bathrooms, parking, outdoorSpace, propertyType, monthlyMortgage, monthlyBills } = body as {
-    address: unknown; postcode: unknown; bedrooms: unknown; guests: unknown;
+  const { address, postcode, email, bedrooms, guests, bathrooms, parking, outdoorSpace, propertyType, monthlyMortgage, monthlyBills } = body as {
+    address: unknown; postcode: unknown; email: unknown;
+    bedrooms: unknown; guests: unknown;
     bathrooms: unknown; parking: unknown; outdoorSpace: unknown;
     propertyType: unknown;
     monthlyMortgage: unknown; monthlyBills: unknown;
   };
+  const emailStr = typeof email === 'string' && email.includes('@') ? email.trim() : null;
 
   const bathroomCount = Number(bathrooms);
   const validBathrooms = Number.isFinite(bathroomCount) && bathroomCount >= 1 ? bathroomCount : undefined;
@@ -104,10 +116,10 @@ export async function POST(request: Request) {
     ? outdoorMap[outdoorSpace]
     : 'none';
 
-  // Finish quality hardcoded to top spec — removed from form per client request.
-  // All properties analysed at premium finish to prevent users re-entering specs,
-  // wasting API credits, or getting confused when figures stay the same.
-  const validFinishQuality = 'very_high';
+  // Changed from 'very_high' to 'average' — hardcoded 1.38x condition multiplier
+  // was inflating every property estimate by 38% regardless of actual finish quality.
+  // PMI applies no quality multiplier to the headline figure.
+  const validFinishQuality = 'average';
   const validSpecialFeatures: string[] = [];
 
   if (!address || typeof address !== 'string' || (address as string).trim().length === 0) {
@@ -125,9 +137,9 @@ export async function POST(request: Request) {
   }
 
   const bedroomCount = Number(bedrooms);
-  if (!Number.isFinite(bedroomCount) || bedroomCount < 1 || bedroomCount > 10) {
+  if (!Number.isFinite(bedroomCount) || bedroomCount < 0 || bedroomCount > 10) {
     return Response.json(
-      { error: 'Bedrooms must be a number between 1 and 10.' },
+      { error: 'Bedrooms must be a number between 0 and 10.' },
       { status: 400 },
     );
   }
@@ -218,7 +230,42 @@ export async function POST(request: Request) {
             specialFeatures: validSpecialFeatures,  // V3
           },
         );
-        const [shortLetResult, longLetResult] = await Promise.allSettled([shortLetPromise, longLetPromise]);
+        // PriceLabs Revenue Estimator is gated behind PRICELABS_AS_PRIMARY
+        // env var. When unset (the default), PriceLabs is NOT called at all
+        // — saves trial credits and keeps the existing Airbtics-V4 pipeline
+        // as the sole headline source. To re-enable PriceLabs as primary,
+        // set PRICELABS_AS_PRIMARY=true in Vercel and redeploy.
+        //
+        // When enabled and successful, PriceLabs RE OVERRIDES the V4
+        // headline below. When it fails (missing key, 401, 429 quota
+        // exhausted, 500), V4 result stays unchanged.
+        const priceLabsEnabled = process.env.PRICELABS_AS_PRIMARY === 'true';
+        const priceLabsPromise: Promise<Awaited<ReturnType<typeof fetchPriceLabsRevenueEstimate>>> = priceLabsEnabled
+          ? fetchPriceLabsRevenueEstimate({
+              address: property.address,
+              bedrooms: property.bedrooms,
+              lat: coordinates.lat,
+              lng: coordinates.lng,
+              currency: 'GBP',
+            })
+          : Promise.resolve(null);
+        if (!priceLabsEnabled) {
+          console.log('[PriceLabs RE] disabled (PRICELABS_AS_PRIMARY not set) — using Airbtics-V4 only');
+        }
+
+        // Sale valuation runs in parallel — never blocks or throws
+        const saleValuationPromise = fetchPropertyValuation(
+          property.postcode,
+          property.bedrooms,
+          mappedPropertyType,
+        );
+
+        const [shortLetResult, longLetResult, priceLabsResult, saleValuationResult] = await Promise.allSettled([
+          shortLetPromise,
+          longLetPromise,
+          priceLabsPromise,
+          saleValuationPromise,
+        ]);
 
         const shortLetRaw = shortLetResult.status === 'fulfilled'
           ? shortLetResult.value
@@ -296,6 +343,42 @@ export async function POST(request: Request) {
         // ── Final: Run analysis ──────────────────────────────────────
         send({ stage: 'analysis', progress: 90, message: 'Running financial analysis...' });
 
+        // PriceLabs Revenue Estimator override.
+        // If the trial/subscription returned a successful estimate, it
+        // becomes the primary headline source — we overwrite shortLet.* with
+        // PriceLabs values BEFORE running financials. The V4-on-Airbtics
+        // result is preserved in crossValidation.airbticsRevenue for
+        // transparency but no longer drives the headline.
+        const priceLabsData = priceLabsResult.status === 'fulfilled' ? priceLabsResult.value : null;
+        if (priceLabsResult.status === 'rejected') {
+          console.error('[PriceLabs RE] promise rejected:', priceLabsResult.reason);
+        }
+
+        const propertyValuation = saleValuationResult.status === 'fulfilled'
+          ? saleValuationResult.value
+          : null;
+        if (saleValuationResult.status === 'rejected') {
+          console.error('[PropertyData] sale valuation promise rejected:', (saleValuationResult as PromiseRejectedResult).reason);
+        }
+        const crossValidation = buildCrossValidation(shortLet.annualRevenue, priceLabsData);
+
+        if (priceLabsData) {
+          // Override headline: replace V4 numbers with PriceLabs RE numbers.
+          // Comparables stay as Airbtics-sourced (PriceLabs RE doesn't
+          // expose individual comp listings, only aggregates).
+          shortLet.annualRevenue = priceLabsData.annualRevenue;
+          shortLet.averageDailyRate = priceLabsData.adr;
+          shortLet.occupancyRate = priceLabsData.occupancy;
+          // PriceLabs gives us 12 monthly values — use directly.
+          // Cast required: ShortLetData expects a fixed-length tuple.
+          const padded: number[] = [...priceLabsData.monthlyRevenue];
+          while (padded.length < 12) padded.push(0);
+          shortLet.monthlyRevenue = padded.slice(0, 12) as ShortLetData['monthlyRevenue'];
+          console.log(`[PriceLabs RE] overrode headline: was £${crossValidation.airbticsRevenue}, now £${priceLabsData.annualRevenue} (range £${priceLabsData.rangeLow}-£${priceLabsData.rangeHigh})`);
+        }
+        console.log(`[PriceLabs RE] crossValidation: source=${crossValidation.source}, confidence=${crossValidation.confidence}, divergence=${crossValidation.divergencePct?.toFixed(1) ?? 'n/a'}%`);
+
+        // Re-run financials with the (possibly overridden) shortLet values
         const financials = calculateFinancials(shortLet, longLet);
         const risk = assessRisk(shortLet, longLet, demandDrivers, nearbyEvents);
         const verdict = generateVerdict(financials, risk);
@@ -315,9 +398,40 @@ export async function POST(request: Request) {
           verdict,
           createdAt: now,
           updatedAt: now,
+          crossValidation,
+          propertyValuation,
         };
 
         send({ stage: 'complete', progress: 100, message: 'Analysis complete', data: result });
+
+        // Monday.com CRM sync + PDF upload — awaited before closing stream
+        // so Vercel doesn't kill the function before they complete.
+        if (emailStr) {
+          try {
+            const { syncAnalysisToMonday, uploadPdfToMonday } = await import('@/lib/apis/monday');
+            // Run sync and PDF generation in parallel
+            await Promise.allSettled([
+              syncAnalysisToMonday(
+                emailStr,
+                result.financials.longLetNetAnnual,
+                result.financials.shortLetNetAnnual,
+              ),
+              (async () => {
+                const React = await import('react');
+                const { renderToBuffer } = await import('@react-pdf/renderer');
+                const { deriveReportData, sanitiseAddressForFilename } = await import('@/lib/pdf/derive');
+                const { StayfulReport } = await import('@/lib/pdf/StayfulReport');
+                const data = deriveReportData(result);
+                const element = React.createElement(StayfulReport, { data });
+                const buffer = await (renderToBuffer as (e: unknown) => Promise<Buffer>)(element);
+                const filename = `Stayful_Property_Analysis_${sanitiseAddressForFilename(result.property.address)}.pdf`;
+                await uploadPdfToMonday(emailStr, buffer, filename);
+              })(),
+            ]);
+          } catch (err) {
+            console.error('[Monday] CRM sync error:', err);
+          }
+        }
       } catch (err) {
         console.error('Unexpected error in /api/analyse:', err);
         send({ stage: 'error', progress: 0, message: 'An unexpected error occurred. Please try again.' });

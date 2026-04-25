@@ -3,14 +3,15 @@ import { NextResponse, type NextRequest } from "next/server";
 import { env } from "@/lib/intel/env";
 
 /**
- * Next.js 16 renamed `middleware.ts` → `proxy.ts`. The behaviour is the same:
- * runs before each matched route, refreshes the Supabase session cookie if
- * needed, and gates protected routes.
+ * Next.js 16 renamed `middleware.ts` → `proxy.ts`. Refreshes the Supabase
+ * session on every matched request and gates protected routes.
  *
- * Rules:
- *   - /estimate, /dashboard, /account, /upgrade  → require auth
- *   - /login, /signup                            → redirect signed-in users to /estimate
- *   - everything else                            → public, but session is still refreshed
+ *   /estimate, /dashboard, /account, /upgrade  → require auth
+ *   /login, /signup                            → bounce signed-in users to /estimate
+ *   everything else                            → public, but session still refreshes
+ *
+ * The trial-vs-Pro check happens further down (inside Server Components and
+ * API routes) because it needs the profile row, not just the auth user.
  */
 
 const PROTECTED = ["/estimate", "/dashboard", "/account", "/upgrade"];
@@ -24,8 +25,7 @@ export async function proxy(request: NextRequest) {
   let response = NextResponse.next({ request });
   const { pathname } = request.nextUrl;
 
-  // If Supabase env vars aren't set yet, fail open — we still want the marketing
-  // site to render. Auth-gated routes will bounce to /login on render.
+  // If Supabase env vars aren't set yet, fail open — marketing pages still render.
   if (!env.supabaseUrl || !env.supabaseAnonKey) return response;
 
   const supabase = createServerClient(env.supabaseUrl, env.supabaseAnonKey, {
@@ -68,10 +68,8 @@ export async function proxy(request: NextRequest) {
 
 export const config = {
   matcher: [
-    /*
-     * Match all request paths except for static assets, the Next image loader,
-     * and Stripe webhooks (which need the raw body and don't use sessions).
-     */
+    // Skip static assets, the Next image loader, and Stripe webhooks (which
+    // need the raw body and don't use sessions).
     "/((?!_next/static|_next/image|favicon.ico|favicon.svg|api/stripe/webhook|.*\\.(?:svg|png|jpg|jpeg|gif|webp|pdf)$).*)",
   ],
 };

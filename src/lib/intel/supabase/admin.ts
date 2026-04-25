@@ -2,9 +2,9 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { env, requireServerEnv } from "../env";
 
 /**
- * Service-role client for trusted server-side mutations that need to bypass RLS
- * (e.g. Stripe webhooks updating profile rows for any user). Never expose this
- * client to a browser context.
+ * Service-role client for trusted server-side mutations that bypass RLS
+ * (Stripe webhooks, on-demand profile creation, account deletion). Never
+ * expose this client to a browser context.
  */
 let cached: SupabaseClient | null = null;
 

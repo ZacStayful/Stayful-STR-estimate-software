@@ -1,12 +1,11 @@
 import Link from "next/link";
 import type { Metadata } from "next";
-import { Badge } from "@/components/intel-ui/Badge";
-import { Card } from "@/components/intel-ui/Card";
-import { DeleteAccountButton } from "@/components/DeleteAccountButton";
-import { PasswordResetLink } from "@/components/PasswordResetLink";
-import { OpenBillingPortalButton, UpgradeButton } from "@/components/UpgradeButton";
+import { DeleteAccountButton } from "@/components/intel/DeleteAccountButton";
+import { PasswordResetLink } from "@/components/intel/PasswordResetLink";
+import { OpenBillingPortalButton, UpgradeButton } from "@/components/intel/UpgradeButton";
 import { requireUserAndProfile } from "@/lib/intel/auth";
-import { FREE_SEARCH_LIMIT } from "@/lib/intel/search-limits";
+import { accessState, TRIAL_DAYS } from "@/lib/intel/access";
+import { formatDate } from "@/lib/intel/format";
 
 export const metadata: Metadata = { title: "Account" };
 
@@ -16,89 +15,91 @@ export default async function AccountPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const { email, profile } = await requireUserAndProfile("/account");
+  const access = accessState(profile);
   const params = await searchParams;
   const justUpgraded = params.upgraded === "true";
-  const isPro = profile.plan === "pro";
 
   return (
     <section className="mx-auto max-w-3xl px-6 py-10">
-      <h1 className="font-heading text-3xl text-text-primary sm:text-4xl">Account</h1>
-      <p className="mt-1 text-sm text-text-muted">Manage your plan, billing, and account.</p>
+      <h1 className="text-3xl font-semibold tracking-tight">Account</h1>
+      <p className="mt-1 text-sm text-muted-foreground">Manage your plan, billing, and account.</p>
 
       {justUpgraded && (
-        <div className="mt-6 rounded-xl border border-sage-deep/50 bg-sage-deep/15 p-4 text-sm text-text-primary">
-          Welcome to Pro. Unlimited estimates are now unlocked.
+        <div className="mt-6 rounded-xl border border-primary/50 bg-primary/10 p-4 text-sm">
+          Welcome to Pro. Unlimited access is now unlocked.
         </div>
       )}
 
       <div className="mt-8 space-y-4">
-        <Card className="p-6">
+        <div className="rounded-2xl border border-border bg-card p-6">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <p className="text-xs uppercase tracking-wider text-text-muted">Plan</p>
+              <p className="text-xs uppercase tracking-wider text-muted-foreground">Plan</p>
               <div className="mt-1 flex items-center gap-2">
-                <p className="font-heading text-2xl capitalize text-text-primary">{profile.plan}</p>
-                {isPro && <Badge tone="sage">PRO</Badge>}
+                <p className="text-2xl font-semibold capitalize">{profile.plan}</p>
+                {access.kind === "pro" && (
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-primary/40 bg-primary/15 px-2.5 py-0.5 text-xs font-medium text-primary">PRO</span>
+                )}
               </div>
-              {!isPro && (
-                <p className="mt-1 text-sm text-text-muted">
-                  {profile.searches_used} of {FREE_SEARCH_LIMIT} free searches used.
+              {access.kind === "trialing" && (
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {access.daysRemaining} of {TRIAL_DAYS} trial days remaining &middot; ends {formatDate(profile.trial_ends_at)}
                 </p>
               )}
-              {isPro && profile.stripe_subscription_status && (
-                <p className="mt-1 text-sm text-text-muted">
-                  Subscription status: <span className="capitalize text-text-primary">
-                    {profile.stripe_subscription_status}
-                  </span>
+              {access.kind === "expired" && (
+                <p className="mt-1 text-sm text-destructive">
+                  Trial ended {formatDate(profile.trial_ends_at)}. Subscribe to keep access.
+                </p>
+              )}
+              {access.kind === "pro" && profile.stripe_subscription_status && (
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Subscription: <span className="capitalize text-foreground">{profile.stripe_subscription_status}</span>
                 </p>
               )}
             </div>
-            <div>
-              {!isPro ? (
-                <div className="w-56">
-                  <UpgradeButton label="Upgrade to Pro" />
-                </div>
-              ) : null}
-            </div>
+            {access.kind !== "pro" && (
+              <div className="w-full max-w-xs">
+                <UpgradeButton label={access.kind === "expired" ? "Subscribe to continue" : "Upgrade to Pro"} />
+              </div>
+            )}
           </div>
-        </Card>
+        </div>
 
-        {isPro && (
-          <Card className="p-6">
-            <p className="text-xs uppercase tracking-wider text-text-muted">Billing</p>
-            <p className="mt-2 text-sm text-text-muted">
-              Update your payment method, download invoices, or cancel your subscription through
-              the Stripe billing portal.
+        {access.kind === "pro" && (
+          <div className="rounded-2xl border border-border bg-card p-6">
+            <p className="text-xs uppercase tracking-wider text-muted-foreground">Billing</p>
+            <p className="mt-2 text-sm text-muted-foreground">
+              Update payment method, download invoices, or cancel your subscription via Stripe.
             </p>
             <div className="mt-4">
               <OpenBillingPortalButton />
             </div>
-          </Card>
+          </div>
         )}
 
-        <Card className="p-6">
-          <p className="text-xs uppercase tracking-wider text-text-muted">Account details</p>
-          <p className="mt-2 text-sm text-text-muted">Email</p>
-          <p className="mt-1 text-text-primary">{email}</p>
+        <div className="rounded-2xl border border-border bg-card p-6">
+          <p className="text-xs uppercase tracking-wider text-muted-foreground">Account details</p>
+          <p className="mt-2 text-sm text-muted-foreground">Email</p>
+          <p className="mt-1 text-foreground">{email}</p>
           <div className="mt-4">
             <PasswordResetLink email={email} />
           </div>
-        </Card>
+        </div>
 
-        <Card className="border-destructive/40 p-6">
-          <p className="text-xs uppercase tracking-wider text-text-muted">Danger zone</p>
-          <p className="mt-2 text-sm text-text-muted">
-            Deleting your account cancels any active subscription and removes your saved searches
-            permanently.
+        <div className="rounded-2xl border border-destructive/40 bg-card p-6">
+          <p className="text-xs uppercase tracking-wider text-muted-foreground">Danger zone</p>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Deleting your account cancels any active subscription and permanently removes your saved
+            searches.
           </p>
           <div className="mt-4">
             <DeleteAccountButton />
           </div>
-        </Card>
+        </div>
       </div>
 
-      <Link href="/estimate" className="mt-10 inline-block text-sm text-text-muted hover:text-text-primary">
-        &larr; Back to estimate tool
+      <Link href="/estimate" className="mt-10 inline-block text-sm text-muted-foreground hover:text-foreground">
+        &larr; Back to the analyser
       </Link>
     </section>
   );

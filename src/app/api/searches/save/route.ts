@@ -1,14 +1,14 @@
 import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/intel/supabase/server";
-import { shortAddressLabel } from "@/lib/intel/postcode";
-import type { EstimateResult } from "@/lib/intel/types";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 interface Body {
   address?: unknown;
+  postcode?: unknown;
   guestCount?: unknown;
+  bedrooms?: unknown;
   name?: unknown;
   result?: unknown;
 }
@@ -28,15 +28,17 @@ export async function POST(request: Request) {
   }
 
   const address = typeof body.address === "string" ? body.address.trim() : "";
+  const postcode = typeof body.postcode === "string" ? body.postcode.trim() : null;
   const guestCount = Number(body.guestCount);
-  const result = body.result as EstimateResult | undefined;
+  const bedrooms = Number.isFinite(Number(body.bedrooms)) ? Number(body.bedrooms) : null;
+  const result = body.result;
   const nameInput = typeof body.name === "string" ? body.name.trim() : "";
 
   if (!address || !Number.isFinite(guestCount) || !result) {
     return NextResponse.json({ error: "invalid_body" }, { status: 400 });
   }
 
-  const name = nameInput.length > 0 ? nameInput : shortAddressLabel(address);
+  const name = nameInput.length > 0 ? nameInput : address.slice(0, 80);
 
   const { data, error } = await supabase
     .from("saved_searches")
@@ -44,7 +46,9 @@ export async function POST(request: Request) {
       user_id: user.id,
       name,
       address,
+      postcode,
       guest_count: guestCount,
+      bedrooms,
       result,
     })
     .select("*")

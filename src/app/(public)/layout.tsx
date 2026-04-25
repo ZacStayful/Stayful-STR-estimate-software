@@ -1,6 +1,6 @@
-import { PublicNav } from "@/components/layout/PublicNav";
-import { Footer } from "@/components/layout/Footer";
-import { ToastProvider } from "@/components/intel-ui/Toast";
+import { ToastProvider } from "@/components/intel/Toast";
+import { PublicNav } from "@/components/intel/PublicNav";
+import { Footer } from "@/components/intel/Footer";
 import { getOptionalUser } from "@/lib/intel/auth";
 
 export default async function PublicLayout({ children }: { children: React.ReactNode }) {

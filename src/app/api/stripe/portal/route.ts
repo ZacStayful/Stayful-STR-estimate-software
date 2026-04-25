@@ -19,8 +19,7 @@ export async function POST() {
     return NextResponse.json({ error: "no_customer" }, { status: 400 });
   }
 
-  const stripe = getStripe();
-  const session = await stripe.billingPortal.sessions.create({
+  const session = await getStripe().billingPortal.sessions.create({
     customer: profile.stripe_customer_id,
     return_url: `${publicAppUrl()}/account`,
   });

@@ -5,9 +5,8 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 /**
- * Handles the OAuth and magic-link redirect. Supabase appends `?code=...` to
- * this URL — we exchange it for a session cookie and forward the user to the
- * page they asked for (or /estimate by default).
+ * OAuth + magic-link callback. Supabase appends `?code=...` to this URL —
+ * we exchange it for a session cookie and forward to the requested page.
  */
 export async function GET(request: Request) {
   const url = new URL(request.url);

@@ -8,11 +8,11 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 /**
- * Stripe webhook receiver.
+ * Stripe webhook receiver. Verifies the signature with `STRIPE_WEBHOOK_SECRET`,
+ * then keeps `profiles.plan` and the subscription metadata in sync.
  *
- * Verifies the signature with `STRIPE_WEBHOOK_SECRET`, then keeps the user's
- * `profiles` row in sync with their subscription state. The matcher in
- * proxy.ts excludes this path so the raw body reaches us unmodified.
+ * The proxy.ts matcher excludes /api/stripe/webhook so the raw body reaches
+ * us unmodified — Stripe's signature check requires byte-perfect bodies.
  */
 export async function POST(request: Request) {
   const stripe = getStripe();
@@ -42,7 +42,8 @@ export async function POST(request: Request) {
           (session.client_reference_id as string | null) ??
           (session.metadata?.supabase_user_id as string | undefined);
         const customerId = typeof session.customer === "string" ? session.customer : null;
-        const subscriptionId = typeof session.subscription === "string" ? session.subscription : null;
+        const subscriptionId =
+          typeof session.subscription === "string" ? session.subscription : null;
 
         if (userId) {
           await admin
@@ -81,7 +82,7 @@ export async function POST(request: Request) {
       }
 
       default:
-        // Other events are ignored — Stripe will keep retrying anything we 5xx.
+        // Other events ignored — Stripe retries any 5xx.
         break;
     }
   } catch (err) {

@@ -38,9 +38,7 @@ export async function POST() {
     success_url: `${baseUrl}/account?upgraded=true`,
     cancel_url: `${baseUrl}/upgrade?cancelled=true`,
     client_reference_id: user.id,
-    subscription_data: {
-      metadata: { supabase_user_id: user.id },
-    },
+    subscription_data: { metadata: { supabase_user_id: user.id } },
     metadata: { supabase_user_id: user.id },
   });
 
