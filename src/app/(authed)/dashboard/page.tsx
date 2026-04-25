@@ -78,11 +78,8 @@ function SavedSearchCard({ search }: { search: SavedSearch }) {
         </p>
       )}
       <div className="mt-auto flex gap-2 pt-5">
-        <Link
-          href={`/estimate?address=${encodeURIComponent(search.address)}&guests=${search.guest_count}`}
-          className="flex-1"
-        >
-          <Button size="sm" variant="outline" className="w-full">Run again</Button>
+        <Link href="/estimate" className="flex-1">
+          <Button size="sm" variant="outline" className="w-full">Open analyser</Button>
         </Link>
       </div>
     </li>
