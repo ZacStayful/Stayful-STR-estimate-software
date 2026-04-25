@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { Metadata } from "next";
 import { Button } from "@/components/ui/button";
+import { DeleteSearchButton } from "@/components/intel/DeleteSearchButton";
 import { requireUserAndProfile } from "@/lib/intel/auth";
 import { accessState, gateForFullAccess } from "@/lib/intel/access";
 import { createSupabaseServerClient } from "@/lib/intel/supabase/server";
@@ -63,8 +64,15 @@ function EmptyState() {
 }
 
 function SavedSearchCard({ search }: { search: SavedSearch }) {
-  const result = (search.result ?? {}) as Record<string, unknown>;
-  const annual = typeof result.annualRevenue === "number" ? result.annualRevenue : null;
+  // result is the full AnalysisResult shape — shortLet/financials are nested.
+  const result = (search.result ?? {}) as {
+    shortLet?: { annualRevenue?: number; occupancyRate?: number; averageDailyRate?: number };
+    financials?: { shortLetGrossAnnual?: number; annualDifference?: number };
+  };
+  const annual = result.shortLet?.annualRevenue ?? result.financials?.shortLetGrossAnnual ?? null;
+  const occupancy = result.shortLet?.occupancyRate ?? null;
+  const adr = result.shortLet?.averageDailyRate ?? null;
+
   return (
     <li className="flex h-full flex-col rounded-xl border border-border bg-card p-5">
       <p className="text-base font-semibold">{search.name ?? search.address}</p>
@@ -77,10 +85,18 @@ function SavedSearchCard({ search }: { search: SavedSearch }) {
           £{annual.toLocaleString("en-GB")}
         </p>
       )}
-      <div className="mt-auto flex gap-2 pt-5">
+      {(occupancy !== null || adr !== null) && (
+        <p className="mt-1 text-xs text-muted-foreground">
+          {occupancy !== null && `${Math.round(occupancy * 100)}% occupancy`}
+          {occupancy !== null && adr !== null && " · "}
+          {adr !== null && `£${Math.round(adr)} ADR`}
+        </p>
+      )}
+      <div className="mt-auto flex items-center gap-2 pt-5">
         <Link href="/estimate" className="flex-1">
           <Button size="sm" variant="outline" className="w-full">Open analyser</Button>
         </Link>
+        <DeleteSearchButton id={search.id} />
       </div>
     </li>
   );

@@ -357,6 +357,10 @@ export function Analyser() {
   // (Revenue Breakdown, Profit Calculator). Reset on every fresh analysis.
   const [expensesExpanded, setExpensesExpanded] = useState(false);
   const [pdfLoading, setPdfLoading] = useState(false);
+  // Save-to-dashboard state. `savedFlash` swaps the button label to "Saved" for
+  // ~2s after a successful save so the user gets a confirmation without a toast.
+  const [savingSearch, setSavingSearch] = useState(false);
+  const [savedFlash, setSavedFlash] = useState(false);
   const [platformFeePct, setPlatformFeePct] = useState<number | null>(null);
   const [mgmtFeePct, setMgmtFeePct] = useState<number | null>(null);
   const [cleaningMonthly, setCleaningMonthly] = useState<number | null>(null);
@@ -1170,47 +1174,85 @@ export function Analyser() {
                   <CheckCircle2 className="h-5 w-5" />
                   <span className="text-sm font-medium">Analysis Complete</span>
                 </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="border-primary-foreground/40 text-primary-foreground hover:bg-primary-foreground/10 bg-transparent"
-                  disabled={pdfLoading}
-                  onClick={async () => {
-                    if (!result) return;
-                    trackCtaClick("download_pdf");
-                    setPdfLoading(true);
-                    try {
-                      const res = await fetch("/api/generate-pdf", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({
-                          ...result,
-                          setup: setupSnapshotRef.current
-                            ? {
-                                furnishing: setupSnapshotRef.current.furnishing,
-                                bedrooms: setupSnapshotRef.current.bedrooms,
-                                items: setupSnapshotRef.current.items,
-                              }
-                            : undefined,
-                        }),
-                      });
-                      if (!res.ok) throw new Error("PDF generation failed");
-                      const blob = await res.blob();
-                      const url = URL.createObjectURL(blob);
-                      const a = document.createElement("a");
-                      a.href = url;
-                      a.download = `Stayful_Property_Analysis.pdf`;
-                      a.click();
-                      URL.revokeObjectURL(url);
-                    } catch {
-                      // silently fail — user sees button re-enable
-                    } finally {
-                      setPdfLoading(false);
-                    }
-                  }}
-                >
-                  {pdfLoading ? "Generating report…" : "↓ Download as PDF"}
-                </Button>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="border-primary-foreground/40 text-primary-foreground hover:bg-primary-foreground/10 bg-transparent"
+                    disabled={savingSearch || !result}
+                    onClick={async () => {
+                      if (!result) return;
+                      setSavingSearch(true);
+                      try {
+                        const res = await fetch("/api/searches/save", {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({
+                            address: result.property.address,
+                            postcode: result.property.postcode,
+                            guestCount: result.property.guests,
+                            bedrooms: result.property.bedrooms,
+                            // Default name = address; users can rename from the
+                            // dashboard later. Keeping this simple avoids forcing
+                            // a modal into the analyser flow.
+                            name: result.property.address,
+                            result,
+                          }),
+                        });
+                        if (!res.ok) throw new Error(`Save failed (${res.status})`);
+                        setSavedFlash(true);
+                        setTimeout(() => setSavedFlash(false), 2000);
+                      } catch {
+                        // silently fail — re-enabling the button signals retry
+                      } finally {
+                        setSavingSearch(false);
+                      }
+                    }}
+                  >
+                    {savedFlash ? "✓ Saved" : savingSearch ? "Saving…" : "☆ Save this search"}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="border-primary-foreground/40 text-primary-foreground hover:bg-primary-foreground/10 bg-transparent"
+                    disabled={pdfLoading}
+                    onClick={async () => {
+                      if (!result) return;
+                      trackCtaClick("download_pdf");
+                      setPdfLoading(true);
+                      try {
+                        const res = await fetch("/api/generate-pdf", {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({
+                            ...result,
+                            setup: setupSnapshotRef.current
+                              ? {
+                                  furnishing: setupSnapshotRef.current.furnishing,
+                                  bedrooms: setupSnapshotRef.current.bedrooms,
+                                  items: setupSnapshotRef.current.items,
+                                }
+                              : undefined,
+                          }),
+                        });
+                        if (!res.ok) throw new Error("PDF generation failed");
+                        const blob = await res.blob();
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement("a");
+                        a.href = url;
+                        a.download = `Stayful_Property_Analysis.pdf`;
+                        a.click();
+                        URL.revokeObjectURL(url);
+                      } catch {
+                        // silently fail — user sees button re-enable
+                      } finally {
+                        setPdfLoading(false);
+                      }
+                    }}
+                  >
+                    {pdfLoading ? "Generating report…" : "↓ Download as PDF"}
+                  </Button>
+                </div>
               </div>
               {/* Property title — centered above the two estimate columns */}
               <div className="mb-6 text-center">
