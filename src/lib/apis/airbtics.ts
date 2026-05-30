@@ -1007,10 +1007,37 @@ function buildDataFromReportComps(
   // ── Step 5 (V3): Weighted ADR + weighted occupancy ──
   // Replaces V2's median + outlier trimming. Distance, bedroom-match, property-type,
   // and review-count all contribute to each comp's weight.
-  const base_ADR = calculateWeightedADR(enrichedComps, enrichment, bedrooms, lat, lng);
-  const base_occ = calculateWeightedOccupancy(enrichedComps, enrichment, lat, lng);
+  let base_ADR = calculateWeightedADR(enrichedComps, enrichment, bedrooms, lat, lng);
+  let base_occ = calculateWeightedOccupancy(enrichedComps, enrichment, lat, lng);
   const trimmed = wasADRTrimmed(enrichedComps);
   console.log(`[V3] Step 5: base_ADR=£${base_ADR.toFixed(0)}, base_occ=${(base_occ*100).toFixed(0)}% (weighted)`);
+
+  // ── Step 5b (V3 SAFETY): recover when comps lack ADR or occupancy fields ──
+  // Some Airbtics responses give us comps with annual_revenue_ltm but missing
+  // per-night ADR or occupancy. Without this guard, base_ADR=0 OR base_occ=0
+  // propagates through buildForecast (adr × occ × days = 0), producing a
+  // flat-at-zero 12-month chart for the affected leads.
+  if (base_ADR === 0 || base_occ === 0) {
+    const compRevenues = enrichedComps
+      .map((c) => c.annual_revenue_ltm ?? 0)
+      .filter((v) => v > 0);
+    const avgAnnualRevenue = compRevenues.length > 0
+      ? compRevenues.reduce((s, v) => s + v, 0) / compRevenues.length
+      : 0;
+
+    if (base_ADR === 0 && base_occ > 0 && avgAnnualRevenue > 0) {
+      base_ADR = avgAnnualRevenue / (base_occ * 365);
+      console.log(`[V3] Step 5b: derived base_ADR=£${base_ADR.toFixed(0)} from revenue/(occ*365)`);
+    } else if (base_occ === 0 && base_ADR > 0 && avgAnnualRevenue > 0) {
+      base_occ = Math.min(avgAnnualRevenue / (base_ADR * 365), 1.0);
+      console.log(`[V3] Step 5b: derived base_occ=${(base_occ*100).toFixed(0)}% from revenue/(adr*365)`);
+    } else {
+      const fallback = generateMarketEstimate(bedrooms);
+      base_ADR = fallback.averageDailyRate;
+      base_occ = fallback.occupancyRate;
+      console.log(`[V3] Step 5b: comps missing both ADR & occupancy — using ${bedrooms}-bed market estimate (ADR=£${base_ADR}, occ=${(base_occ*100).toFixed(0)}%)`);
+    }
+  }
 
   // ── Step 6: Quality multiplier (stored for scenarios, NOT applied to headline) ──
   const qualityMultiplier = FINISH_MULTIPLIERS[finishQuality || 'average'] ?? 1.0;
@@ -1401,6 +1428,26 @@ async function getShortLetDataFromMarkets(
     level: qualityLevel,
     disclaimer,
   };
+
+  // Safety: if the markets metrics path produced all zeros (e.g. p50 was null
+  // across every month and summary had no revenue), fall back to a seasonally
+  // distributed market estimate so the forecast chart never flat-lines at 0.
+  if (monthlyRevenue.every((m) => m === 0)) {
+    const fallback = generateMarketEstimate(bedrooms);
+    monthlyRevenue = fallback.monthlyRevenue.map((m) =>
+      Math.round(m * qualityMultiplier * guestAdjustment),
+    );
+    if (annualRevenue === 0) {
+      annualRevenue = Math.round(fallback.annualRevenue * qualityMultiplier * guestAdjustment);
+    }
+    if (!derivedAdr) {
+      derivedAdr = Math.round(fallback.averageDailyRate * qualityMultiplier * guestAdjustment);
+    }
+    if (!avgOccupancy) {
+      avgOccupancy = fallback.occupancyRate;
+    }
+    console.log('[Airbtics] markets path produced all-zero monthlyRevenue — using market estimate fallback');
+  }
 
   const paddedRevenue = padTo12Months(monthlyRevenue);
 
