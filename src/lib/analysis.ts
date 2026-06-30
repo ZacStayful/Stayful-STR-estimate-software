@@ -105,6 +105,21 @@ export const LL_AGENT_FEE = 0.10;   // standard long-let management-company fee
 // Uplift required to recommend short-let. Exported so the decision screen can
 // explain the criteria in plain money terms (single source of truth).
 export const MARGIN_THRESHOLD = 0.50;
+// Lower band: at/above this (but below MARGIN_THRESHOLD) a lead is "Medium".
+export const MEDIUM_THRESHOLD = 0.30;
+
+// Lead qualification band, used to drive the Monday "Qualified" status column
+// during the early test phase:
+//   uplift ≥ 50%  → qualified
+//   uplift 30–50% → medium
+//   uplift < 30%  → unqualified  (lead is also auto-set to Abandoned)
+export type LeadQualification = 'qualified' | 'medium' | 'unqualified';
+
+export function getLeadQualification(upliftPct: number): LeadQualification {
+  if (upliftPct >= MARGIN_THRESHOLD) return 'qualified';
+  if (upliftPct >= MEDIUM_THRESHOLD) return 'medium';
+  return 'unqualified';
+}
 
 /**
  * Itemised step-down from gross short-let revenue to true take-home, used to
