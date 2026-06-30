@@ -11,6 +11,7 @@ import type {
   RiskLevel,
   PropertyVerdict,
   VerdictFit,
+  Recommendation,
 } from './types';
 
 // ─── Default cost assumptions ────────────────────────────────────
@@ -69,6 +70,94 @@ export function calculateFinancials(
     annualDifference: Math.round(annualDifference),
     breakEvenOccupancy,
   };
+}
+
+// ─── Qualification Decision ──────────────────────────────────────
+// After the STR gross income projection runs, decide whether short-let or
+// long-let is the better option for this specific property. The figures here
+// are deliberately more conservative ("true net") than the headline numbers
+// shown on the detailed report, so the decision reflects real take-home.
+
+// Short-let running costs, as fractions of gross revenue. The first three
+// (platform, managementBase, cleaning) are exactly what the full report
+// deducts to reach its headline "Net Revenue". The decision goes further and
+// also removes managementVat + maintenance + the fixed costs below — that gap
+// is what the decision screen's bridge explains.
+export const STR_COST_RATES = {
+  platform: 0.15,        // booking platform fee
+  managementBase: 0.15,  // Stayful management fee (ex-VAT)
+  managementVat: 0.03,   // VAT on the 15% management fee (15% × 20%)
+  cleaning: 0.18,        // cleaning & laundry
+  maintenance: 0.05,     // ongoing maintenance
+} as const;
+
+// Fixed monthly costs a short-let carries that a long-let does not (the tenant
+// pays bills on a long-let). Exported so the UI can show the assumptions.
+export const FIXED_BILLS_MONTHLY = 450;
+export const FIXED_SOFTWARE_MONTHLY = 42;
+
+// Derived from the rates above so the bridge always reconciles to the decision.
+const TRUE_NET_PCT =
+  1 - (STR_COST_RATES.platform + STR_COST_RATES.managementBase + STR_COST_RATES.managementVat + STR_COST_RATES.cleaning + STR_COST_RATES.maintenance); // 0.44
+const FIXED_COSTS_ANNUAL = (FIXED_BILLS_MONTHLY + FIXED_SOFTWARE_MONTHLY) * 12; // 5904
+
+export const LL_AGENT_FEE = 0.10;   // standard long-let management-company fee
+// Uplift required to recommend short-let. Exported so the decision screen can
+// explain the criteria in plain money terms (single source of truth).
+export const MARGIN_THRESHOLD = 0.50;
+
+/**
+ * Itemised step-down from gross short-let revenue to true take-home, used to
+ * render the decision-screen bridge. The first block (to netRevenue) mirrors
+ * the full report's headline net; the second block is what the decision adds.
+ */
+export function getCostBreakdown(grossSTRAnnual: number) {
+  const platform = grossSTRAnnual * STR_COST_RATES.platform;
+  const managementBase = grossSTRAnnual * STR_COST_RATES.managementBase;
+  const cleaning = grossSTRAnnual * STR_COST_RATES.cleaning;
+  const netRevenue = grossSTRAnnual - platform - managementBase - cleaning; // report's "Net Revenue"
+  const managementVat = grossSTRAnnual * STR_COST_RATES.managementVat;
+  const maintenance = grossSTRAnnual * STR_COST_RATES.maintenance;
+  const fixed = FIXED_COSTS_ANNUAL;
+  const trueTakeHome = netRevenue - managementVat - maintenance - fixed;
+  return { gross: grossSTRAnnual, platform, managementBase, cleaning, netRevenue, managementVat, maintenance, fixed, trueTakeHome };
+}
+
+/**
+ * Core decision formula. Compares the true net short-let income against the
+ * true net long-let income and recommends short-let only when the uplift
+ * clears MARGIN_THRESHOLD (the extra work has to be worth it).
+ */
+export function getRecommendation(
+  grossSTRAnnual: number,
+  longLetMonthly: number,
+): Pick<Recommendation, 'recommendation' | 'upliftPct' | 'trueSTRNet' | 'trueLLNet'> {
+  const trueSTRNet = (grossSTRAnnual * TRUE_NET_PCT) - FIXED_COSTS_ANNUAL;
+  const trueLLNet = (longLetMonthly * 12) * (1 - LL_AGENT_FEE);
+  const upliftPct = (trueSTRNet - trueLLNet) / trueLLNet;
+  return {
+    recommendation: upliftPct >= MARGIN_THRESHOLD ? 'SHORT_LET' : 'LONG_LET',
+    upliftPct,
+    trueSTRNet,
+    trueLLNet,
+  };
+}
+
+/**
+ * Fallback long-let rent estimator for when the landlord selects "Not sure".
+ *
+ * TODO: Wire this up to a real lookup — e.g. the PropertyData long-let
+ * valuation already fetched during analysis, or a dedicated comparables
+ * service keyed on postcode + bedrooms. Returns null for now, which signals
+ * the caller to fall back to the PropertyData valuation so a decision can
+ * still be produced.
+ */
+export function estimateLongLet(
+  _postcode: string,
+  _bedrooms: number,
+): number | null {
+  // Not yet implemented — see TODO above.
+  return null;
 }
 
 // ─── Risk Assessment ─────────────────────────────────────────────

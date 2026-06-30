@@ -16,10 +16,12 @@ export interface ShortLetComparable {
   occupancyRate: number;
   annualRevenue: number;
   distance?: number;
-  rating: number;          // 0-5 scale (converted from 0-100)
+  rating: number;          // 0-5 scale (auto-normalised from API)
   reviewCount: number;
   listingAge: number;      // years, calculated from added_on
   daysAvailable: number;
+  thumbnailUrl?: string;   // Airbnb listing cover photo (from bounds enrichment)
+  amenityCount: number;    // count of amenities listed on the property
 }
 
 // ─── V2 Scenarios (worst/base/best) ─────────────────────────────
@@ -147,6 +149,25 @@ export interface FinancialSummary {
   breakEvenOccupancy: number;
 }
 
+// ─── Qualification Decision ──────────────────────────────────────
+export type RecommendationDecision = 'SHORT_LET' | 'LONG_LET';
+
+// Where the long-let monthly figure used in the decision came from:
+//  - 'user'                 → landlord entered it on the intake form
+//  - 'estimate'             → estimateLongLet() returned a value (future)
+//  - 'propertydata_fallback'→ "Not sure" + estimate unavailable, fell back to
+//                             the PropertyData valuation
+export type LongLetSource = 'user' | 'estimate' | 'propertydata_fallback';
+
+export interface Recommendation {
+  recommendation: RecommendationDecision;
+  upliftPct: number;          // (trueSTRNet - trueLLNet) / trueLLNet
+  trueSTRNet: number;
+  trueLLNet: number;
+  longLetMonthly: number;     // the GBP/mo figure actually used in the decision
+  longLetSource: LongLetSource;
+}
+
 // ─── Property Verdict ────────────────────────────────────────────
 export type VerdictFit = 'strong' | 'moderate' | 'weak';
 
@@ -168,6 +189,32 @@ export interface DataQuality {
   disclaimer: string | null;
 }
 
+// ─── PropertyData Sale Valuation ─────────────────────────────────
+export interface PropertyDataValuation {
+  estimatedValue: number;       // point estimate (median)
+  valuationRangeLow: number;    // lower bound (approx. 25th percentile)
+  valuationRangeHigh: number;   // upper bound (approx. 75th percentile)
+  source: 'propertydata';
+}
+
+// ─── Cross-validation against secondary STR data source ───────────
+export type CrossValidationConfidence = 'high' | 'medium' | 'low' | 'unverified';
+
+export interface CrossValidation {
+  // Which source produced the headline (shortLet.* values)
+  source: 'pricelabs_revenue_estimator_v2' | 'airbtics_v4_aggregation';
+  confidence: CrossValidationConfidence;
+  // Both estimates if both ran successfully (for transparency)
+  airbticsRevenue: number;
+  priceLabsRevenue: number | null;
+  // PriceLabs 25th–75th percentile range
+  rangeLow: number | null;
+  rangeHigh: number | null;
+  priceLabsListings: number | null;
+  divergencePct: number | null;
+  note: string;
+}
+
 // ─── Full Analysis Result ────────────────────────────────────────
 export interface AnalysisResult {
   property: PropertyInput;
@@ -180,6 +227,15 @@ export interface AnalysisResult {
   dataQuality: DataQuality;
   risk: RiskProfile;
   verdict: PropertyVerdict;
+  // Binary short-let vs long-let qualification decision. Optional so existing
+  // fixtures remain valid; absent when no long-let figure is available to
+  // decide against.
+  recommendation?: Recommendation;
   createdAt: string;
   updatedAt: string;
+  // PriceLabs cross-validation, if available. confidence='unverified'
+  // means PriceLabs was not consulted (key missing or call failed).
+  crossValidation?: CrossValidation;
+  // PropertyData estimated sale value. null if the call failed or key is missing.
+  propertyValuation?: PropertyDataValuation | null;
 }
