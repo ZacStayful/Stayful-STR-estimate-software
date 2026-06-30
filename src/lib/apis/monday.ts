@@ -16,6 +16,8 @@
  * caller (the analyse endpoint) never leaks CRM failures to the user.
  */
 
+import { getLeadQualification, type LeadQualification } from "../analysis";
+
 const MONDAY_API_URL = "https://api.monday.com/v2";
 const MONDAY_API_VERSION = "2024-10";
 
@@ -32,6 +34,8 @@ const DEFAULTS = {
   // Qualification decision columns
   strProfitColumnId: "text_mm2eawgk",       // "STR Profit" — true uplift figure
   recommendationColumnId: "color_mm4tkwqv", // "Recommendation" status (Short-Let / Long-Let)
+  qualifiedColumnId: "color_mm4t61wc",      // "Qualified" status (uplift band)
+  statusColumnId: "status5",                // main "Status" column
 };
 
 // Status-label text for the Recommendation column, keyed by decision.
@@ -39,6 +43,17 @@ const RECOMMENDATION_LABELS: Record<string, string> = {
   SHORT_LET: "Short-Let",
   LONG_LET: "Long-Let",
 };
+
+// Exact existing labels on the "Qualified" status column (color_mm4t61wc).
+// Keep these verbatim — Monday matches status writes by label text.
+const QUALIFIED_LABELS: Record<LeadQualification, string> = {
+  qualified: "Qualified (50%)",
+  medium: "Medium (30%)",
+  unqualified: "Not unqualified (-30%)",
+};
+
+// Label on status5 that an unqualified lead is moved to.
+const ABANDONED_STATUS_LABEL = "Abandoned";
 
 function envConfig() {
   const token = process.env.MONDAY_API_TOKEN;
@@ -51,6 +66,8 @@ function envConfig() {
     dealAnalyserColumnId: process.env.MONDAY_DEAL_ANALYSER_COLUMN_ID || DEFAULTS.dealAnalyserColumnId,
     strProfitColumnId: process.env.MONDAY_STR_PROFIT_COLUMN_ID || DEFAULTS.strProfitColumnId,
     recommendationColumnId: process.env.MONDAY_RECOMMENDATION_COLUMN_ID || DEFAULTS.recommendationColumnId,
+    qualifiedColumnId: process.env.MONDAY_QUALIFIED_COLUMN_ID || DEFAULTS.qualifiedColumnId,
+    statusColumnId: process.env.MONDAY_STATUS_COLUMN_ID || DEFAULTS.statusColumnId,
   };
 }
 
@@ -171,6 +188,7 @@ export async function syncAnalysisToMonday(
     trueSTRNet: number;
     trueLLNet: number;
     longLetMonthly: number;
+    upliftPct: number;
   },
 ): Promise<void> {
   const cfg = envConfig();
@@ -206,6 +224,14 @@ export async function syncAnalysisToMonday(
     columnValues[cfg.strProfitColumnId] = String(Math.round(recommendation.trueSTRNet - recommendation.trueLLNet));
     if (label) {
       columnValues[cfg.recommendationColumnId] = { label };
+    }
+
+    // Lead qualification band (test phase): ≥50% qualified, 30–50% medium,
+    // <30% unqualified. Unqualified leads are also moved to status5 = Abandoned.
+    const band: LeadQualification = getLeadQualification(recommendation.upliftPct);
+    columnValues[cfg.qualifiedColumnId] = { label: QUALIFIED_LABELS[band] };
+    if (band === "unqualified") {
+      columnValues[cfg.statusColumnId] = { label: ABANDONED_STATUS_LABEL };
     }
   }
 
