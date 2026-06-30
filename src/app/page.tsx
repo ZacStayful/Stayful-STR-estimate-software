@@ -83,6 +83,7 @@ import { AddressAutocomplete, splitAddressAndPostcode } from "@/components/Addre
 import { AccuracyPanel } from "@/components/AccuracyPanel";
 import { SetupCalculator } from "@/components/SetupCalculator";
 import type { AnalysisResult, RiskLevel, VerdictFit } from "@/lib/types";
+import { MARGIN_THRESHOLD } from "@/lib/analysis";
 import { DEMO_MAP } from "@/lib/demo-data";
 import { initTracker, endSession, trackCtaClick } from "@/lib/tracker";
 import {
@@ -712,6 +713,15 @@ export default function HomePage() {
     const upliftWhole = Math.round(rec.upliftPct * 100);
     const isEstimatedLongLet = rec.longLetSource !== "user";
 
+    // True money "left over" each year after all running costs.
+    const strNet = Math.round(rec.trueSTRNet);
+    const llNet = Math.round(rec.trueLLNet);
+    const leftoverDiff = strNet - llNet;                 // extra in pocket with short-let
+    const thresholdWhole = Math.round(MARGIN_THRESHOLD * 100); // e.g. 50
+    // What short-let must clear to be recommended: long-let net + the margin.
+    const requiredStrNet = Math.round(rec.trueLLNet * (1 + MARGIN_THRESHOLD));
+    const shortfall = requiredStrNet - strNet;           // how far short (when long-let wins)
+
     return (
       <main className="flex min-h-screen flex-col items-center justify-center bg-background px-4 py-12">
         <div className="flex w-full max-w-xl flex-col items-center gap-8 text-center">
@@ -742,16 +752,59 @@ export default function HomePage() {
               </h1>
               <p className="mt-3 text-lg font-semibold sm:text-xl">
                 {isShortLet ? (
-                  <>+{upliftWhole}% more income with short-let</>
-                ) : rec.upliftPct < 0 ? (
-                  <>Long-let currently earns more income</>
+                  <>{gbp(leftoverDiff)} more in your pocket per year <span className="opacity-80 font-normal">(+{upliftWhole}%)</span></>
+                ) : leftoverDiff < 0 ? (
+                  <>Long-let leaves you {gbp(-leftoverDiff)} more per year</>
                 ) : (
-                  <>Short-let would add only +{upliftWhole}% — not enough to justify the extra work</>
+                  <>Short-let adds just {gbp(leftoverDiff)}/yr <span className="opacity-80 font-normal">(+{upliftWhole}%)</span></>
                 )}
               </p>
             </div>
 
             <CardContent className="flex flex-col items-center gap-5 px-6 py-8">
+              {/* Money left over: short-let vs long-let, after all running costs */}
+              <div className="grid w-full grid-cols-2 gap-3">
+                <div className={`rounded-lg p-4 ${isShortLet ? "bg-primary/10 ring-1 ring-primary/20" : "bg-muted/50"}`}>
+                  <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Short-let leaves you</p>
+                  <p className="mt-1 text-2xl font-bold text-foreground">{gbp(strNet)}<span className="text-sm font-normal text-muted-foreground">/yr</span></p>
+                  <p className="text-xs text-muted-foreground">{gbp(Math.round(strNet / 12))}/mo after costs</p>
+                </div>
+                <div className={`rounded-lg p-4 ${!isShortLet ? "bg-foreground/5 ring-1 ring-foreground/15" : "bg-muted/50"}`}>
+                  <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Long-let leaves you</p>
+                  <p className="mt-1 text-2xl font-bold text-foreground">{gbp(llNet)}<span className="text-sm font-normal text-muted-foreground">/yr</span></p>
+                  <p className="text-xs text-muted-foreground">{gbp(Math.round(llNet / 12))}/mo after fees</p>
+                </div>
+              </div>
+
+              {/* Plain-money difference line */}
+              <p className="text-sm font-semibold text-foreground">
+                {leftoverDiff >= 0 ? (
+                  <>That&apos;s <span className={isShortLet ? "text-success" : ""}>{gbp(leftoverDiff)} more per year</span> with short-let.</>
+                ) : (
+                  <>That&apos;s <span className="text-foreground">{gbp(-leftoverDiff)} more per year</span> with long-let.</>
+                )}
+              </p>
+
+              {/* Our criteria — explained in money terms */}
+              <div className="w-full rounded-lg border border-border bg-muted/30 p-4 text-left">
+                <p className="text-sm font-semibold text-foreground">How we decide</p>
+                <p className="mt-1.5 text-sm text-muted-foreground">
+                  Short-letting takes more work, cost and risk than a long-let, so we
+                  only recommend it when it leaves you at least <span className="font-semibold text-foreground">{thresholdWhole}% more</span> after
+                  all running costs (platform &amp; management fees, cleaning,
+                  maintenance, bills and software).
+                </p>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  A long-let here leaves <span className="font-semibold text-foreground">{gbp(llNet)}/yr</span>, so short-let needs to clear{" "}
+                  <span className="font-semibold text-foreground">{gbp(requiredStrNet)}/yr</span> to be worth it.
+                  {isShortLet ? (
+                    <> Yours comes out at <span className="font-semibold text-success">{gbp(strNet)}/yr</span> — it clears the bar.</>
+                  ) : (
+                    <> Yours comes out at <span className="font-semibold text-foreground">{gbp(strNet)}/yr</span>{shortfall > 0 ? <>, about {gbp(shortfall)} short.</> : <>.</>}</>
+                  )}
+                </p>
+              </div>
+
               {isShortLet ? (
                 <p className="max-w-md text-sm text-muted-foreground">
                   Based on your numbers, short-letting this property looks like the

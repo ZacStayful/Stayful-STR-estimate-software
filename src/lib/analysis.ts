@@ -81,7 +81,9 @@ export function calculateFinancials(
 const TRUE_NET_PCT = 0.44;          // after platform 15%, mgmt 15%+VAT (18%), cleaning 18%, maintenance 5%
 const FIXED_COSTS_ANNUAL = 5904;    // £450/mo bills + £42/mo software, x12
 const LL_AGENT_FEE = 0.10;          // standard long-let management fee
-const MARGIN_THRESHOLD = 0.50;      // uplift required to recommend short-let
+// Uplift required to recommend short-let. Exported so the decision screen can
+// explain the criteria in plain money terms (single source of truth).
+export const MARGIN_THRESHOLD = 0.50;
 
 /**
  * Core decision formula. Compares the true net short-let income against the

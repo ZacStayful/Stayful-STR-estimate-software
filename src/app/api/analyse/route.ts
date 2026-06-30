@@ -200,15 +200,28 @@ export async function POST(request: Request) {
         // Wait for floor area data before starting long-let call
         const floorArea = await floorAreaPromise;
 
-        const longLetPromise = getLongLetData(property.postcode, property.bedrooms, {
-          propertyType: mappedPropertyType,
-          constructionDate: floorArea.constructionDate,
-          internalArea: floorArea.squareFeet,
-          ...(validBathrooms && { bathrooms: validBathrooms }),
-          finishQuality: validFinishQuality,
-          outdoorSpace: validOutdoorSpace,
-          offStreetParking: parkingValue,
-        });
+        // Long-let figure: when the landlord told us what the property rents
+        // for as a standard long-term let, that IS the comparison figure — we
+        // bypass the PropertyData valuation entirely and run every downstream
+        // long-let number (financials, comparison, decision) off their figure.
+        // Only fall back to the PropertyData API when they didn't provide one
+        // (or chose "Not sure").
+        const longLetPromise: Promise<LongLetData> = hasLongLetMonthly
+          ? Promise.resolve({
+              monthlyRent: longLetMonthlyInput,
+              estimateHigh: longLetMonthlyInput,
+              estimateLow: longLetMonthlyInput,
+              comparables: [],
+            })
+          : getLongLetData(property.postcode, property.bedrooms, {
+              propertyType: mappedPropertyType,
+              constructionDate: floorArea.constructionDate,
+              internalArea: floorArea.squareFeet,
+              ...(validBathrooms && { bathrooms: validBathrooms }),
+              finishQuality: validFinishQuality,
+              outdoorSpace: validOutdoorSpace,
+              offStreetParking: parkingValue,
+            });
 
         // Now fetch short-let (needs coords) + long-let in parallel
         const shortLetPromise = getShortLetData(
