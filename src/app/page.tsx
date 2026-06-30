@@ -727,7 +727,7 @@ export default function HomePage() {
 
     // Itemised step-down from gross → Net Revenue (report) → True Take-Home.
     const cb = getCostBreakdown(result.shortLet.annualRevenue);
-    const bridgeSteps: { label: string; value: number; kind: "total" | "deduct" | "subtotal" | "final"; note?: string }[] = [
+    const bridgeSteps: { label: string; value: number; kind: "total" | "deduct" | "subtotal" | "final" | "compare" | "diff"; note?: string }[] = [
       { label: "Gross short-let income", value: Math.round(cb.gross), kind: "total" },
       { label: "Booking platform fee (15%)", value: -Math.round(cb.platform), kind: "deduct" },
       { label: "Management fee (15%)", value: -Math.round(cb.managementBase), kind: "deduct" },
@@ -736,7 +736,9 @@ export default function HomePage() {
       { label: "VAT on management", value: -Math.round(cb.managementVat), kind: "deduct" },
       { label: "Maintenance (5%)", value: -Math.round(cb.maintenance), kind: "deduct" },
       { label: `Bills & software (£${FIXED_BILLS_MONTHLY} + £${FIXED_SOFTWARE_MONTHLY}/mo)`, value: -Math.round(cb.fixed), kind: "deduct" },
-      { label: "True Take-Home", value: Math.round(cb.trueTakeHome), kind: "final", note: "what the recommendation is based on" },
+      { label: "Short-let true take-home", value: Math.round(cb.trueTakeHome), kind: "final", note: "what the recommendation is based on" },
+      { label: "Managed long-let take-home", value: llNet, kind: "compare", note: `after a ${llFeeWhole}% management fee` },
+      { label: leftoverDiff >= 0 ? "Difference — short-let ahead" : "Difference — long-let ahead", value: leftoverDiff, kind: "diff" },
     ];
 
     return (
@@ -779,23 +781,6 @@ export default function HomePage() {
             </div>
 
             <CardContent className="flex flex-col items-center gap-5 px-6 py-8">
-              {/* Head-to-head: short-let true take-home vs long-let with a
-                  management company. Both annual and monthly. */}
-              <div className="grid w-full grid-cols-2 gap-3">
-                <div className={`rounded-lg p-4 text-left ${isShortLet ? "bg-primary/10 ring-1 ring-primary/20" : "bg-muted/50"}`}>
-                  <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Short-let — true take-home</p>
-                  <p className="mt-1 text-2xl font-bold text-foreground leading-tight">{gbp(strNet)}<span className="text-sm font-normal text-muted-foreground">/yr</span></p>
-                  <p className="text-sm font-semibold text-foreground">{mo(strNet)}<span className="text-xs font-normal text-muted-foreground">/mo</span></p>
-                  <p className="mt-0.5 text-[11px] text-muted-foreground">after all fees, costs &amp; bills</p>
-                </div>
-                <div className={`rounded-lg p-4 text-left ${!isShortLet ? "bg-foreground/5 ring-1 ring-foreground/15" : "bg-muted/50"}`}>
-                  <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Long-let — managed</p>
-                  <p className="mt-1 text-2xl font-bold text-foreground leading-tight">{gbp(llNet)}<span className="text-sm font-normal text-muted-foreground">/yr</span></p>
-                  <p className="text-sm font-semibold text-foreground">{mo(llNet)}<span className="text-xs font-normal text-muted-foreground">/mo</span></p>
-                  <p className="mt-0.5 text-[11px] text-muted-foreground">after a {llFeeWhole}% management fee</p>
-                </div>
-              </div>
-
               {/* Net difference between the two — the headline comparison */}
               <div className={`w-full rounded-lg p-4 text-center ${isShortLet ? "bg-success/10 ring-1 ring-success/25" : "bg-muted/40 ring-1 ring-border"}`}>
                 <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
@@ -825,17 +810,24 @@ export default function HomePage() {
                     const isDeduct = step.kind === "deduct";
                     const isFinal = step.kind === "final";
                     const isSub = step.kind === "subtotal";
+                    const isCompare = step.kind === "compare";
+                    const isDiff = step.kind === "diff";
+                    // The difference row is positive when short-let wins.
+                    const diffFavoursShort = step.value >= 0;
+                    const prefix = isDeduct ? "−" : isDiff ? "+" : "";
                     return (
                       <div
                         key={step.label}
                         className={`flex items-baseline justify-between gap-2 rounded px-2 py-1.5 ${
                           isFinal ? "bg-primary/10 ring-1 ring-primary/20"
+                            : isDiff ? (diffFavoursShort ? "bg-success/10 ring-1 ring-success/25" : "bg-muted/60 ring-1 ring-border")
                             : isSub ? "bg-muted/60"
+                            : isCompare ? "bg-muted/30"
                             : ""
-                        } ${isSub || isFinal ? "mt-1.5 border-t border-border/0" : ""}`}
+                        } ${isSub || isFinal || isCompare ? "mt-1.5" : ""} ${isDiff ? "mt-1" : ""} ${isCompare ? "border-t border-border pt-2" : ""}`}
                       >
                         <div className="min-w-0">
-                          <span className={`text-sm ${isFinal || isSub ? "font-semibold text-foreground" : "text-muted-foreground"}`}>
+                          <span className={`text-sm ${isFinal || isSub || isDiff || isCompare ? "font-semibold text-foreground" : "text-muted-foreground"}`}>
                             {step.label}
                           </span>
                           {step.note && (
@@ -846,12 +838,13 @@ export default function HomePage() {
                           <span className={`text-sm tabular-nums ${
                             isDeduct ? "text-destructive"
                               : isFinal ? "font-bold text-primary"
+                              : isDiff ? (diffFavoursShort ? "font-bold text-success" : "font-bold text-foreground")
                               : "font-semibold text-foreground"
                           }`}>
-                            {isDeduct ? "−" : ""}{gbp(Math.abs(step.value))}<span className="text-[10px] font-normal text-muted-foreground">/yr</span>
+                            {prefix}{gbp(Math.abs(step.value))}<span className="text-[10px] font-normal text-muted-foreground">/yr</span>
                           </span>
                           <span className="block text-[10px] tabular-nums text-muted-foreground">
-                            {isDeduct ? "−" : ""}{mo(Math.abs(step.value))}/mo
+                            {prefix}{mo(Math.abs(step.value))}/mo
                           </span>
                         </div>
                       </div>
