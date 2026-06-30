@@ -302,6 +302,95 @@ const TAB_SECTIONS = [
 
 // ─── Main Component ─────────────────────────────────────────────
 
+// Reusable take-home bridge: steps from gross short-let income down to the true
+// take-home (reconciling the report's higher "Net Revenue"), then compares to a
+// managed long-let and shows the difference. Used on the decision screen and
+// inside the full analyser report. Every figure shows annual + monthly.
+function TakeHomeBridge({
+  grossSTRAnnual,
+  longLetNetAnnual,
+  longLetFeePct,
+}: {
+  grossSTRAnnual: number;
+  longLetNetAnnual: number;
+  longLetFeePct: number;
+}) {
+  const cb = getCostBreakdown(grossSTRAnnual);
+  const llNet = Math.round(longLetNetAnnual);
+  const diff = Math.round(cb.trueTakeHome) - llNet; // +ve when short-let wins
+  const mo = (annual: number) => gbp(Math.round(annual / 12));
+
+  const steps: { label: string; value: number; kind: "total" | "deduct" | "subtotal" | "final" | "compare" | "diff"; note?: string }[] = [
+    { label: "Gross short-let income", value: Math.round(cb.gross), kind: "total" },
+    { label: "Booking platform fee (15%)", value: -Math.round(cb.platform), kind: "deduct" },
+    { label: "Management fee (15%)", value: -Math.round(cb.managementBase), kind: "deduct" },
+    { label: "Cleaning & laundry (18%)", value: -Math.round(cb.cleaning), kind: "deduct" },
+    { label: "Net Revenue", value: Math.round(cb.netRevenue), kind: "subtotal", note: "the figure shown in the full report" },
+    { label: "VAT on management", value: -Math.round(cb.managementVat), kind: "deduct" },
+    { label: "Maintenance (5%)", value: -Math.round(cb.maintenance), kind: "deduct" },
+    { label: `Bills & software (£${FIXED_BILLS_MONTHLY} + £${FIXED_SOFTWARE_MONTHLY}/mo)`, value: -Math.round(cb.fixed), kind: "deduct" },
+    { label: "Short-let true take-home", value: Math.round(cb.trueTakeHome), kind: "final", note: "what the recommendation is based on" },
+    { label: "Managed long-let take-home", value: llNet, kind: "compare", note: `after a ${longLetFeePct}% management fee` },
+    { label: diff >= 0 ? "Difference — short-let ahead" : "Difference — long-let ahead", value: diff, kind: "diff" },
+  ];
+
+  return (
+    <div className="w-full rounded-lg border border-border bg-card p-4 text-left">
+      <p className="text-sm font-semibold text-foreground">Where your take-home comes from</p>
+      <p className="mt-1 text-xs text-muted-foreground">
+        The full report shows <span className="font-medium">Net Revenue</span>. The recommendation goes
+        further — taking off VAT, maintenance and your bills — to show what you actually keep, then
+        compares it to a managed long-let.
+      </p>
+      <div className="mt-3 space-y-1">
+        {steps.map((step) => {
+          const isDeduct = step.kind === "deduct";
+          const isFinal = step.kind === "final";
+          const isSub = step.kind === "subtotal";
+          const isCompare = step.kind === "compare";
+          const isDiff = step.kind === "diff";
+          const diffFavoursShort = step.value >= 0;
+          const prefix = isDeduct ? "−" : isDiff ? "+" : "";
+          return (
+            <div
+              key={step.label}
+              className={`flex items-baseline justify-between gap-2 rounded px-2 py-1.5 ${
+                isFinal ? "bg-primary/10 ring-1 ring-primary/20"
+                  : isDiff ? (diffFavoursShort ? "bg-success/10 ring-1 ring-success/25" : "bg-muted/60 ring-1 ring-border")
+                  : isSub ? "bg-muted/60"
+                  : isCompare ? "bg-muted/30"
+                  : ""
+              } ${isSub || isFinal || isCompare ? "mt-1.5" : ""} ${isDiff ? "mt-1" : ""} ${isCompare ? "border-t border-border pt-2" : ""}`}
+            >
+              <div className="min-w-0">
+                <span className={`text-sm ${isFinal || isSub || isDiff || isCompare ? "font-semibold text-foreground" : "text-muted-foreground"}`}>
+                  {step.label}
+                </span>
+                {step.note && (
+                  <span className="block text-[10px] text-muted-foreground">{step.note}</span>
+                )}
+              </div>
+              <div className="shrink-0 text-right">
+                <span className={`text-sm tabular-nums ${
+                  isDeduct ? "text-destructive"
+                    : isFinal ? "font-bold text-primary"
+                    : isDiff ? (diffFavoursShort ? "font-bold text-success" : "font-bold text-foreground")
+                    : "font-semibold text-foreground"
+                }`}>
+                  {prefix}{gbp(Math.abs(step.value))}<span className="text-[10px] font-normal text-muted-foreground">/yr</span>
+                </span>
+                <span className="block text-[10px] tabular-nums text-muted-foreground">
+                  {prefix}{mo(Math.abs(step.value))}/mo
+                </span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export default function HomePage() {
   const [address, setAddress] = useState("");
   const [postcode, setPostcode] = useState("");
@@ -725,22 +814,6 @@ export default function HomePage() {
     // Monthly equivalents (every figure is shown both annually and monthly).
     const mo = (annual: number) => gbp(Math.round(annual / 12));
 
-    // Itemised step-down from gross → Net Revenue (report) → True Take-Home.
-    const cb = getCostBreakdown(result.shortLet.annualRevenue);
-    const bridgeSteps: { label: string; value: number; kind: "total" | "deduct" | "subtotal" | "final" | "compare" | "diff"; note?: string }[] = [
-      { label: "Gross short-let income", value: Math.round(cb.gross), kind: "total" },
-      { label: "Booking platform fee (15%)", value: -Math.round(cb.platform), kind: "deduct" },
-      { label: "Management fee (15%)", value: -Math.round(cb.managementBase), kind: "deduct" },
-      { label: "Cleaning & laundry (18%)", value: -Math.round(cb.cleaning), kind: "deduct" },
-      { label: "Net Revenue", value: Math.round(cb.netRevenue), kind: "subtotal", note: "the figure shown in the full report" },
-      { label: "VAT on management", value: -Math.round(cb.managementVat), kind: "deduct" },
-      { label: "Maintenance (5%)", value: -Math.round(cb.maintenance), kind: "deduct" },
-      { label: `Bills & software (£${FIXED_BILLS_MONTHLY} + £${FIXED_SOFTWARE_MONTHLY}/mo)`, value: -Math.round(cb.fixed), kind: "deduct" },
-      { label: "Short-let true take-home", value: Math.round(cb.trueTakeHome), kind: "final", note: "what the recommendation is based on" },
-      { label: "Managed long-let take-home", value: llNet, kind: "compare", note: `after a ${llFeeWhole}% management fee` },
-      { label: leftoverDiff >= 0 ? "Difference — short-let ahead" : "Difference — long-let ahead", value: leftoverDiff, kind: "diff" },
-    ];
-
     return (
       <main className="flex min-h-screen flex-col items-center justify-center bg-background px-4 py-12">
         <div className="flex w-full max-w-xl flex-col items-center gap-8 text-center">
@@ -798,60 +871,12 @@ export default function HomePage() {
               </div>
 
               {/* Waterfall bridge: reconciles the report's Net Revenue with the
-                  decision's true take-home so the higher report figure makes sense. */}
-              <div className="w-full rounded-lg border border-border bg-card p-4 text-left">
-                <p className="text-sm font-semibold text-foreground">Where your take-home comes from</p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  The full report shows <span className="font-medium">Net Revenue</span>. The recommendation goes
-                  further — taking off VAT, maintenance and your bills — to show what you actually keep.
-                </p>
-                <div className="mt-3 space-y-1">
-                  {bridgeSteps.map((step) => {
-                    const isDeduct = step.kind === "deduct";
-                    const isFinal = step.kind === "final";
-                    const isSub = step.kind === "subtotal";
-                    const isCompare = step.kind === "compare";
-                    const isDiff = step.kind === "diff";
-                    // The difference row is positive when short-let wins.
-                    const diffFavoursShort = step.value >= 0;
-                    const prefix = isDeduct ? "−" : isDiff ? "+" : "";
-                    return (
-                      <div
-                        key={step.label}
-                        className={`flex items-baseline justify-between gap-2 rounded px-2 py-1.5 ${
-                          isFinal ? "bg-primary/10 ring-1 ring-primary/20"
-                            : isDiff ? (diffFavoursShort ? "bg-success/10 ring-1 ring-success/25" : "bg-muted/60 ring-1 ring-border")
-                            : isSub ? "bg-muted/60"
-                            : isCompare ? "bg-muted/30"
-                            : ""
-                        } ${isSub || isFinal || isCompare ? "mt-1.5" : ""} ${isDiff ? "mt-1" : ""} ${isCompare ? "border-t border-border pt-2" : ""}`}
-                      >
-                        <div className="min-w-0">
-                          <span className={`text-sm ${isFinal || isSub || isDiff || isCompare ? "font-semibold text-foreground" : "text-muted-foreground"}`}>
-                            {step.label}
-                          </span>
-                          {step.note && (
-                            <span className="block text-[10px] text-muted-foreground">{step.note}</span>
-                          )}
-                        </div>
-                        <div className="shrink-0 text-right">
-                          <span className={`text-sm tabular-nums ${
-                            isDeduct ? "text-destructive"
-                              : isFinal ? "font-bold text-primary"
-                              : isDiff ? (diffFavoursShort ? "font-bold text-success" : "font-bold text-foreground")
-                              : "font-semibold text-foreground"
-                          }`}>
-                            {prefix}{gbp(Math.abs(step.value))}<span className="text-[10px] font-normal text-muted-foreground">/yr</span>
-                          </span>
-                          <span className="block text-[10px] tabular-nums text-muted-foreground">
-                            {prefix}{mo(Math.abs(step.value))}/mo
-                          </span>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
+                  decision's true take-home, then compares to a managed long-let. */}
+              <TakeHomeBridge
+                grossSTRAnnual={result.shortLet.annualRevenue}
+                longLetNetAnnual={rec.trueLLNet}
+                longLetFeePct={llFeeWhole}
+              />
 
               {/* Our criteria — explained in money terms, annual + monthly */}
               <div className="w-full rounded-lg border border-border bg-muted/30 p-4 text-left">
@@ -2499,6 +2524,19 @@ export default function HomePage() {
                 </div>
               </CardContent>
             </Card>
+
+            {/* True take-home bridge — reconciles Net Revenue above with the
+                real take-home, and compares to a managed long-let. Same view
+                shown on the qualification decision screen. */}
+            {r.recommendation && (
+              <div className="mt-6">
+                <TakeHomeBridge
+                  grossSTRAnnual={r.shortLet.annualRevenue}
+                  longLetNetAnnual={r.recommendation.trueLLNet}
+                  longLetFeePct={Math.round(LL_AGENT_FEE * 100)}
+                />
+              </div>
+            )}
           </section>
 
           {/* ══════════════════════════════════════════════════════════
