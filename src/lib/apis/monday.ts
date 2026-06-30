@@ -6,7 +6,7 @@
  * to the board columns.
  *
  * Required env vars (all must be set for sync to run):
- *   MONDAY_API_TOKEN              — personal API token (keep secret)
+ *   MONDAY_API_KEY (or MONDAY_API_TOKEN) — API token (keep secret)
  *   MONDAY_BOARD_ID               — "Management Leads" board id
  *   MONDAY_EMAIL_COLUMN_ID        — column id holding lead emails
  *   MONDAY_LONG_TERM_LET_COLUMN_ID
@@ -56,8 +56,13 @@ const QUALIFIED_LABELS: Record<LeadQualification, string> = {
 const ABANDONED_STATUS_LABEL = "Abandoned";
 
 function envConfig() {
-  const token = process.env.MONDAY_API_TOKEN;
-  if (!token) return null;
+  // Accept either env var name. This project deploys with MONDAY_API_KEY (the
+  // get-report route uses it too); MONDAY_API_TOKEN is supported for back-compat.
+  const token = process.env.MONDAY_API_TOKEN || process.env.MONDAY_API_KEY;
+  if (!token) {
+    console.log("[Monday] No API credential set (MONDAY_API_KEY / MONDAY_API_TOKEN)");
+    return null;
+  }
   return {
     token,
     boardId: process.env.MONDAY_BOARD_ID || DEFAULTS.boardId,
