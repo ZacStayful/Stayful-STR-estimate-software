@@ -29,6 +29,15 @@ const DEFAULTS = {
   dealAnalyserColumnId: "text_mm2dkavd",
   fileColumnId: "files__1",
   timeOnSiteColumnId: "text_mm1ysvmg",
+  // Qualification decision columns
+  strProfitColumnId: "text_mm2eawgk",       // "STR Profit" — true uplift figure
+  recommendationColumnId: "color_mm4tkwqv", // "Recommendation" status (Short-Let / Long-Let)
+};
+
+// Status-label text for the Recommendation column, keyed by decision.
+const RECOMMENDATION_LABELS: Record<string, string> = {
+  SHORT_LET: "Short-Let",
+  LONG_LET: "Long-Let",
 };
 
 function envConfig() {
@@ -40,6 +49,8 @@ function envConfig() {
     emailColumnId: process.env.MONDAY_EMAIL_COLUMN_ID || DEFAULTS.emailColumnId,
     longTermColumnId: process.env.MONDAY_LONG_TERM_LET_COLUMN_ID || DEFAULTS.longTermColumnId,
     dealAnalyserColumnId: process.env.MONDAY_DEAL_ANALYSER_COLUMN_ID || DEFAULTS.dealAnalyserColumnId,
+    strProfitColumnId: process.env.MONDAY_STR_PROFIT_COLUMN_ID || DEFAULTS.strProfitColumnId,
+    recommendationColumnId: process.env.MONDAY_RECOMMENDATION_COLUMN_ID || DEFAULTS.recommendationColumnId,
   };
 }
 
@@ -124,7 +135,7 @@ async function updateItemColumns(
   token: string,
   boardId: string,
   itemId: string,
-  columnValues: Record<string, string | number>,
+  columnValues: Record<string, string | number | { label: string }>,
 ): Promise<boolean> {
   const mutation = `
     mutation ($boardId: ID!, $itemId: ID!, $values: JSON!) {
@@ -155,6 +166,12 @@ export async function syncAnalysisToMonday(
   email: string,
   longTermLetNetAnnual: number,
   stayfulNetRevenue: number,
+  recommendation?: {
+    recommendation: string;
+    trueSTRNet: number;
+    trueLLNet: number;
+    longLetMonthly: number;
+  },
 ): Promise<void> {
   const cfg = envConfig();
   if (!cfg) {
@@ -173,10 +190,24 @@ export async function syncAnalysisToMonday(
   }
 
   // Text columns require string values in Monday's API
-  const columnValues: Record<string, string> = {
+  const columnValues: Record<string, string | { label: string }> = {
     [cfg.longTermColumnId]: String(Math.round(longTermLetNetAnnual)),
     [cfg.dealAnalyserColumnId]: String(Math.round(stayfulNetRevenue)),
   };
+
+  // Qualification decision write-back. Per spec:
+  //  • Long term let column ← longLetMonthly × 12 (the figure the decision used)
+  //  • STR Profit column    ← true uplift (trueSTRNet − trueLLNet), not the
+  //                           inflated headline difference
+  //  • Recommendation status ← Short-Let / Long-Let
+  if (recommendation) {
+    const label = RECOMMENDATION_LABELS[recommendation.recommendation];
+    columnValues[cfg.longTermColumnId] = String(Math.round(recommendation.longLetMonthly * 12));
+    columnValues[cfg.strProfitColumnId] = String(Math.round(recommendation.trueSTRNet - recommendation.trueLLNet));
+    if (label) {
+      columnValues[cfg.recommendationColumnId] = { label };
+    }
+  }
 
   const ok = await updateItemColumns(cfg.token, cfg.boardId, itemId, columnValues);
   if (ok) {

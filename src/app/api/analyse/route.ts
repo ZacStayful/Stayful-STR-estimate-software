@@ -1,11 +1,11 @@
-import type { PropertyInput, AnalysisResult, ShortLetData, LongLetData, DemandDrivers, NearbyEvent, DataQuality } from '@/lib/types';
+import type { PropertyInput, AnalysisResult, ShortLetData, LongLetData, DemandDrivers, NearbyEvent, DataQuality, Recommendation, LongLetSource } from '@/lib/types';
 import { geocodePostcode } from '@/lib/apis/geocode';
 import { getShortLetData } from '@/lib/apis/airbtics';
 import { getLongLetData, getFloorArea, fetchPropertyValuation } from '@/lib/apis/propertydata';
 import { getNearbyAmenities } from '@/lib/apis/google-places';
 import { getNearbyEvents } from '@/lib/apis/ticketmaster';
 import { fetchPriceLabsRevenueEstimate, buildCrossValidation } from '@/lib/apis/pricelabs';
-import { calculateFinancials, assessRisk, generateVerdict } from '@/lib/analysis';
+import { calculateFinancials, assessRisk, generateVerdict, getRecommendation, estimateLongLet } from '@/lib/analysis';
 
 // ─── Rate Limiter (in-memory, per IP) ────────────────────────────
 // 10 requests per IP per 60-second window. Protects against API credit abuse.
@@ -71,14 +71,20 @@ export async function POST(request: Request) {
   }
 
   // Validate input
-  const { address, postcode, email, bedrooms, guests, bathrooms, parking, outdoorSpace, propertyType, monthlyMortgage, monthlyBills } = body as {
+  const { address, postcode, email, bedrooms, guests, bathrooms, parking, outdoorSpace, propertyType, monthlyMortgage, monthlyBills, longLetMonthly, longLetNotSure } = body as {
     address: unknown; postcode: unknown; email: unknown;
     bedrooms: unknown; guests: unknown;
     bathrooms: unknown; parking: unknown; outdoorSpace: unknown;
     propertyType: unknown;
     monthlyMortgage: unknown; monthlyBills: unknown;
+    longLetMonthly: unknown; longLetNotSure: unknown;
   };
   const emailStr = typeof email === 'string' && email.includes('@') ? email.trim() : null;
+
+  // Long-let monthly rent the landlord entered (GBP). "Not sure" → undefined here
+  // and resolved later via estimateLongLet() / PropertyData fallback.
+  const longLetMonthlyInput = Number(longLetMonthly);
+  const hasLongLetMonthly = !longLetNotSure && Number.isFinite(longLetMonthlyInput) && longLetMonthlyInput > 0;
 
   const bathroomCount = Number(bathrooms);
   const validBathrooms = Number.isFinite(bathroomCount) && bathroomCount >= 1 ? bathroomCount : undefined;
@@ -374,6 +380,39 @@ export async function POST(request: Request) {
         const risk = assessRisk(shortLet, longLet, demandDrivers, nearbyEvents);
         const verdict = generateVerdict(financials, risk);
 
+        // ── Qualification decision: short-let vs long-let ──
+        // Resolve the long-let monthly figure to compare against:
+        //   1. landlord's entered figure, else
+        //   2. estimateLongLet() (currently a stub → null), else
+        //   3. PropertyData valuation fallback.
+        let longLetMonthlyForDecision = 0;
+        let longLetSource: LongLetSource = 'user';
+        if (hasLongLetMonthly) {
+          longLetMonthlyForDecision = longLetMonthlyInput;
+          longLetSource = 'user';
+        } else {
+          const estimated = estimateLongLet(property.postcode, property.bedrooms);
+          if (estimated != null && estimated > 0) {
+            longLetMonthlyForDecision = estimated;
+            longLetSource = 'estimate';
+          } else {
+            longLetMonthlyForDecision = longLet.monthlyRent;
+            longLetSource = 'propertydata_fallback';
+          }
+        }
+
+        // Only produce a decision when we have both a gross STR projection and a
+        // positive long-let figure to compare against (avoids divide-by-zero).
+        let recommendation: Recommendation | undefined;
+        if (shortLet.annualRevenue > 0 && longLetMonthlyForDecision > 0) {
+          const decision = getRecommendation(shortLet.annualRevenue, longLetMonthlyForDecision);
+          recommendation = {
+            ...decision,
+            longLetMonthly: longLetMonthlyForDecision,
+            longLetSource,
+          };
+        }
+
         const now = new Date().toISOString();
 
         const result: AnalysisResult = {
@@ -387,6 +426,7 @@ export async function POST(request: Request) {
           dataQuality,
           risk,
           verdict,
+          recommendation,
           createdAt: now,
           updatedAt: now,
           crossValidation,
@@ -406,6 +446,7 @@ export async function POST(request: Request) {
                 emailStr,
                 result.financials.longLetNetAnnual,
                 result.financials.shortLetNetAnnual,
+                result.recommendation,
               ),
               (async () => {
                 const React = await import('react');

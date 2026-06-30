@@ -11,6 +11,7 @@ import type {
   RiskLevel,
   PropertyVerdict,
   VerdictFit,
+  Recommendation,
 } from './types';
 
 // ─── Default cost assumptions ────────────────────────────────────
@@ -69,6 +70,54 @@ export function calculateFinancials(
     annualDifference: Math.round(annualDifference),
     breakEvenOccupancy,
   };
+}
+
+// ─── Qualification Decision ──────────────────────────────────────
+// After the STR gross income projection runs, decide whether short-let or
+// long-let is the better option for this specific property. The figures here
+// are deliberately more conservative ("true net") than the headline numbers
+// shown on the detailed report, so the decision reflects real take-home.
+
+const TRUE_NET_PCT = 0.44;          // after platform 15%, mgmt 15%+VAT (18%), cleaning 18%, maintenance 5%
+const FIXED_COSTS_ANNUAL = 5904;    // £450/mo bills + £42/mo software, x12
+const LL_AGENT_FEE = 0.10;          // standard long-let management fee
+const MARGIN_THRESHOLD = 0.50;      // uplift required to recommend short-let
+
+/**
+ * Core decision formula. Compares the true net short-let income against the
+ * true net long-let income and recommends short-let only when the uplift
+ * clears MARGIN_THRESHOLD (the extra work has to be worth it).
+ */
+export function getRecommendation(
+  grossSTRAnnual: number,
+  longLetMonthly: number,
+): Pick<Recommendation, 'recommendation' | 'upliftPct' | 'trueSTRNet' | 'trueLLNet'> {
+  const trueSTRNet = (grossSTRAnnual * TRUE_NET_PCT) - FIXED_COSTS_ANNUAL;
+  const trueLLNet = (longLetMonthly * 12) * (1 - LL_AGENT_FEE);
+  const upliftPct = (trueSTRNet - trueLLNet) / trueLLNet;
+  return {
+    recommendation: upliftPct >= MARGIN_THRESHOLD ? 'SHORT_LET' : 'LONG_LET',
+    upliftPct,
+    trueSTRNet,
+    trueLLNet,
+  };
+}
+
+/**
+ * Fallback long-let rent estimator for when the landlord selects "Not sure".
+ *
+ * TODO: Wire this up to a real lookup — e.g. the PropertyData long-let
+ * valuation already fetched during analysis, or a dedicated comparables
+ * service keyed on postcode + bedrooms. Returns null for now, which signals
+ * the caller to fall back to the PropertyData valuation so a decision can
+ * still be produced.
+ */
+export function estimateLongLet(
+  _postcode: string,
+  _bedrooms: number,
+): number | null {
+  // Not yet implemented — see TODO above.
+  return null;
 }
 
 // ─── Risk Assessment ─────────────────────────────────────────────

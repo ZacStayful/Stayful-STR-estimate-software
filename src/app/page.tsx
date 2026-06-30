@@ -313,6 +313,8 @@ export default function HomePage() {
   const [outdoorSpace, setOutdoorSpace] = useState("none");
   const [monthlyMortgage, setMonthlyMortgage] = useState("");
   const [monthlyBills, setMonthlyBills] = useState("");
+  const [longLetMonthly, setLongLetMonthly] = useState("");
+  const [longLetNotSure, setLongLetNotSure] = useState(false);
 
   // ── Session timer: pushed to Monday via sendBeacon on tab close ──
   const sessionStartRef = useRef(Date.now());
@@ -369,6 +371,9 @@ export default function HomePage() {
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [showPresentation, setShowPresentation] = useState(false);
+  // The qualification decision screen shows first; the detailed report is
+  // revealed via "See the full breakdown".
+  const [showBreakdown, setShowBreakdown] = useState(false);
   const [progress, setProgress] = useState(0);
   const [completedStages, setCompletedStages] = useState<Set<string>>(new Set());
   const [currentMessage, setCurrentMessage] = useState("");
@@ -507,6 +512,7 @@ export default function HomePage() {
     setProgress(0);
     setCompletedStages(new Set());
     setCurrentMessage("Starting analysis...");
+    setShowBreakdown(false);
 
     try {
       const res = await fetch("/api/analyse", {
@@ -522,6 +528,8 @@ export default function HomePage() {
           parking,
           outdoorSpace,
           propertyType,
+          longLetNotSure,
+          ...(!longLetNotSure && longLetMonthly !== "" && { longLetMonthly: Number(longLetMonthly) }),
           ...(monthlyMortgage !== "" && { monthlyMortgage: Number(monthlyMortgage) }),
           ...(monthlyBills !== "" && { monthlyBills: Number(monthlyBills) }),
         }),
@@ -621,6 +629,7 @@ export default function HomePage() {
     setPostcode("");
     setEntryMode("auto");
     setSelectedAutoAddress(null);
+    setShowBreakdown(false);
   };
 
   // ─── Loading State ──────────────────────────────────────────────
@@ -688,6 +697,113 @@ export default function HomePage() {
             Gathering data from Airbtics, PropertyData, Google Places, and
             Ticketmaster. This usually takes 10-20 seconds.
           </p>
+        </div>
+      </main>
+    );
+  }
+
+  // ─── Decision Screen ────────────────────────────────────────────
+  // Shown first, before any detailed numbers. Presents the binary short-let
+  // vs long-let recommendation. Only offers "Book a call" when short-let wins.
+
+  if (result && result.recommendation && !showBreakdown) {
+    const rec = result.recommendation;
+    const isShortLet = rec.recommendation === "SHORT_LET";
+    const upliftWhole = Math.round(rec.upliftPct * 100);
+    const isEstimatedLongLet = rec.longLetSource !== "user";
+
+    return (
+      <main className="flex min-h-screen flex-col items-center justify-center bg-background px-4 py-12">
+        <div className="flex w-full max-w-xl flex-col items-center gap-8 text-center">
+          <Image
+            alt="Stayful"
+            width={160}
+            height={52}
+            className="h-11 w-auto"
+            src="/images/stayful-logo.png"
+            priority
+          />
+
+          <Card className="w-full overflow-hidden border-0 shadow-lg">
+            {/* Headline band */}
+            <div className={`px-6 py-8 ${isShortLet ? "bg-primary text-primary-foreground" : "bg-foreground text-background"}`}>
+              <div className="mb-3 flex items-center justify-center gap-2">
+                {isShortLet ? (
+                  <TrendingUp className="h-5 w-5" />
+                ) : (
+                  <Home className="h-5 w-5" />
+                )}
+                <span className="text-sm font-medium uppercase tracking-wider opacity-90">
+                  Our Recommendation
+                </span>
+              </div>
+              <h1 className="text-3xl font-bold sm:text-4xl">
+                {isShortLet ? "Short-Let Recommended" : "Long-Let Recommended"}
+              </h1>
+              <p className="mt-3 text-lg font-semibold sm:text-xl">
+                {isShortLet ? (
+                  <>+{upliftWhole}% more income with short-let</>
+                ) : rec.upliftPct < 0 ? (
+                  <>Long-let currently earns more income</>
+                ) : (
+                  <>Short-let would add only +{upliftWhole}% — not enough to justify the extra work</>
+                )}
+              </p>
+            </div>
+
+            <CardContent className="flex flex-col items-center gap-5 px-6 py-8">
+              {isShortLet ? (
+                <p className="max-w-md text-sm text-muted-foreground">
+                  Based on your numbers, short-letting this property looks like the
+                  stronger option. Book a quick call and we&apos;ll walk you through
+                  exactly how to get started.
+                </p>
+              ) : (
+                <p className="max-w-md text-sm text-muted-foreground">
+                  Based on your numbers, short-let isn&apos;t the right fit right
+                  now — but circumstances change. We&apos;ll keep your report on file.
+                </p>
+              )}
+
+              <div className="flex w-full flex-col items-center gap-3 sm:flex-row sm:justify-center">
+                <Button
+                  variant={isShortLet ? "secondary" : "default"}
+                  size="lg"
+                  className="w-full sm:w-auto"
+                  onClick={() => setShowBreakdown(true)}
+                >
+                  <BarChart3 className="mr-2 h-4 w-4" />
+                  See the full breakdown
+                </Button>
+
+                {isShortLet && (
+                  <Button
+                    size="lg"
+                    className="w-full sm:w-auto"
+                    onClick={() => {
+                      trackCtaClick("book_call");
+                      window.open("https://calendly.com/zac-stayful/call", "_blank");
+                    }}
+                  >
+                    <Calendar className="mr-2 h-4 w-4" />
+                    Book a call
+                  </Button>
+                )}
+              </div>
+
+              {isEstimatedLongLet && (
+                <p className="max-w-md text-xs text-muted-foreground">
+                  Long-let comparison based on an estimated market rent. Tell us
+                  the actual figure on a call for a precise decision.
+                </p>
+              )}
+            </CardContent>
+          </Card>
+
+          <Button variant="ghost" size="sm" onClick={handleReset}>
+            <ArrowLeft className="mr-1.5 h-3.5 w-3.5" />
+            New Analysis
+          </Button>
         </div>
       </main>
     );
@@ -1151,6 +1267,12 @@ export default function HomePage() {
         >
           {/* Top header with action buttons */}
           <div className="flex items-center justify-end gap-2 px-6 py-3 border-b border-border bg-card/50">
+            {r.recommendation && (
+              <Button variant="ghost" size="sm" onClick={() => setShowBreakdown(false)}>
+                <ArrowLeft className="mr-1.5 h-3.5 w-3.5" />
+                Back to recommendation
+              </Button>
+            )}
             <Button variant="secondary" size="sm" onClick={handleReset}>
               <ArrowLeft className="mr-1.5 h-3.5 w-3.5" />
               New Analysis
@@ -3106,36 +3228,50 @@ export default function HomePage() {
               </Card>
             </div>
 
-            {/* CTA Card */}
-            <Card className="bg-primary text-primary-foreground">
-              <CardContent className="flex flex-col items-center gap-4 py-10 text-center">
-                <h2 className="text-2xl font-bold">Ready to maximise your rental income?</h2>
-                <p className="max-w-lg text-sm text-primary-foreground/80">
-                  Let Stayful handle the hard work while you earn more from your
-                  property. Book your profitability action plan to get started.
-                </p>
-                <div className="flex flex-wrap items-center gap-3">
-                  <div className="flex items-center gap-2 text-sm font-medium text-primary-foreground/80">
-                    <Phone className="h-4 w-4" />
-                    <span>07471 321 997</span>
+            {/* CTA Card — only offer a call when short-let is the recommendation.
+                When long-let is recommended, no dead end and no pressure. */}
+            {r.recommendation?.recommendation === "LONG_LET" ? (
+              <Card className="bg-muted/40">
+                <CardContent className="flex flex-col items-center gap-3 py-10 text-center">
+                  <Home className="h-6 w-6 text-muted-foreground" />
+                  <h2 className="text-xl font-bold text-foreground">Long-let looks like the better fit right now</h2>
+                  <p className="max-w-lg text-sm text-muted-foreground">
+                    Based on your numbers, short-let isn&apos;t the right fit right now —
+                    but circumstances change. We&apos;ll keep your report on file.
+                  </p>
+                </CardContent>
+              </Card>
+            ) : (
+              <Card className="bg-primary text-primary-foreground">
+                <CardContent className="flex flex-col items-center gap-4 py-10 text-center">
+                  <h2 className="text-2xl font-bold">Ready to maximise your rental income?</h2>
+                  <p className="max-w-lg text-sm text-primary-foreground/80">
+                    Let Stayful handle the hard work while you earn more from your
+                    property. Book your profitability action plan to get started.
+                  </p>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <div className="flex items-center gap-2 text-sm font-medium text-primary-foreground/80">
+                      <Phone className="h-4 w-4" />
+                      <span>07471 321 997</span>
+                    </div>
+                    <Button
+                      variant="secondary"
+                      size="lg"
+                      onClick={() => {
+                        trackCtaClick("book_call");
+                        window.open(
+                          "https://calendly.com/zac-stayful/call",
+                          "_blank"
+                        );
+                      }}
+                    >
+                      <Calendar className="mr-2 h-4 w-4" />
+                      Book a Free Consultation
+                    </Button>
                   </div>
-                  <Button
-                    variant="secondary"
-                    size="lg"
-                    onClick={() => {
-                      trackCtaClick("book_call");
-                      window.open(
-                        "https://calendly.com/zac-stayful/call",
-                        "_blank"
-                      );
-                    }}
-                  >
-                    <Calendar className="mr-2 h-4 w-4" />
-                    Book a Free Consultation
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
+                </CardContent>
+              </Card>
+            )}
           </section>
 
           </div>
@@ -3464,6 +3600,39 @@ export default function HomePage() {
                       <option value="roof_terrace">Roof terrace</option>
                     </select>
                   </div>
+                </div>
+
+                {/* Current long-term let rent — feeds the qualification decision */}
+                <div className="space-y-2">
+                  <Label htmlFor="longLetMonthly" className="flex items-center gap-2">
+                    <Home className="h-4 w-4" aria-hidden="true" />
+                    What would this property currently rent for as a standard long-term let, per month?
+                  </Label>
+                  <div className="relative">
+                    <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">£</span>
+                    <Input
+                      type="number"
+                      id="longLetMonthly"
+                      min={0}
+                      placeholder="e.g. 1200"
+                      className="pl-7"
+                      value={longLetMonthly}
+                      disabled={longLetNotSure}
+                      onChange={(e) => setLongLetMonthly(e.target.value)}
+                    />
+                  </div>
+                  <label className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <input
+                      type="checkbox"
+                      checked={longLetNotSure}
+                      onChange={(e) => {
+                        setLongLetNotSure(e.target.checked);
+                        if (e.target.checked) setLongLetMonthly("");
+                      }}
+                      className="h-4 w-4 rounded border-input text-primary focus:ring-2 focus:ring-ring"
+                    />
+                    Not sure — estimate this for me
+                  </label>
                 </div>
 
                 <div className="space-y-2">

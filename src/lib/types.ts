@@ -149,6 +149,25 @@ export interface FinancialSummary {
   breakEvenOccupancy: number;
 }
 
+// ─── Qualification Decision ──────────────────────────────────────
+export type RecommendationDecision = 'SHORT_LET' | 'LONG_LET';
+
+// Where the long-let monthly figure used in the decision came from:
+//  - 'user'                 → landlord entered it on the intake form
+//  - 'estimate'             → estimateLongLet() returned a value (future)
+//  - 'propertydata_fallback'→ "Not sure" + estimate unavailable, fell back to
+//                             the PropertyData valuation
+export type LongLetSource = 'user' | 'estimate' | 'propertydata_fallback';
+
+export interface Recommendation {
+  recommendation: RecommendationDecision;
+  upliftPct: number;          // (trueSTRNet - trueLLNet) / trueLLNet
+  trueSTRNet: number;
+  trueLLNet: number;
+  longLetMonthly: number;     // the GBP/mo figure actually used in the decision
+  longLetSource: LongLetSource;
+}
+
 // ─── Property Verdict ────────────────────────────────────────────
 export type VerdictFit = 'strong' | 'moderate' | 'weak';
 
@@ -208,6 +227,10 @@ export interface AnalysisResult {
   dataQuality: DataQuality;
   risk: RiskProfile;
   verdict: PropertyVerdict;
+  // Binary short-let vs long-let qualification decision. Optional so existing
+  // fixtures remain valid; absent when no long-let figure is available to
+  // decide against.
+  recommendation?: Recommendation;
   createdAt: string;
   updatedAt: string;
   // PriceLabs cross-validation, if available. confidence='unverified'
