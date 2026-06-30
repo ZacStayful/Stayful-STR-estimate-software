@@ -83,7 +83,7 @@ import { AddressAutocomplete, splitAddressAndPostcode } from "@/components/Addre
 import { AccuracyPanel } from "@/components/AccuracyPanel";
 import { SetupCalculator } from "@/components/SetupCalculator";
 import type { AnalysisResult, RiskLevel, VerdictFit } from "@/lib/types";
-import { MARGIN_THRESHOLD } from "@/lib/analysis";
+import { MARGIN_THRESHOLD, LL_AGENT_FEE, FIXED_BILLS_MONTHLY, FIXED_SOFTWARE_MONTHLY, getCostBreakdown } from "@/lib/analysis";
 import { DEMO_MAP } from "@/lib/demo-data";
 import { initTracker, endSession, trackCtaClick } from "@/lib/tracker";
 import {
@@ -718,9 +718,26 @@ export default function HomePage() {
     const llNet = Math.round(rec.trueLLNet);
     const leftoverDiff = strNet - llNet;                 // extra in pocket with short-let
     const thresholdWhole = Math.round(MARGIN_THRESHOLD * 100); // e.g. 50
+    const llFeeWhole = Math.round(LL_AGENT_FEE * 100);   // 10 (% management fee)
     // What short-let must clear to be recommended: long-let net + the margin.
     const requiredStrNet = Math.round(rec.trueLLNet * (1 + MARGIN_THRESHOLD));
     const shortfall = requiredStrNet - strNet;           // how far short (when long-let wins)
+    // Monthly equivalents (every figure is shown both annually and monthly).
+    const mo = (annual: number) => gbp(Math.round(annual / 12));
+
+    // Itemised step-down from gross → Net Revenue (report) → True Take-Home.
+    const cb = getCostBreakdown(result.shortLet.annualRevenue);
+    const bridgeSteps: { label: string; value: number; kind: "total" | "deduct" | "subtotal" | "final"; note?: string }[] = [
+      { label: "Gross short-let income", value: Math.round(cb.gross), kind: "total" },
+      { label: "Booking platform fee (15%)", value: -Math.round(cb.platform), kind: "deduct" },
+      { label: "Management fee (15%)", value: -Math.round(cb.managementBase), kind: "deduct" },
+      { label: "Cleaning & laundry (18%)", value: -Math.round(cb.cleaning), kind: "deduct" },
+      { label: "Net Revenue", value: Math.round(cb.netRevenue), kind: "subtotal", note: "the figure shown in the full report" },
+      { label: "VAT on management", value: -Math.round(cb.managementVat), kind: "deduct" },
+      { label: "Maintenance (5%)", value: -Math.round(cb.maintenance), kind: "deduct" },
+      { label: `Bills & software (£${FIXED_BILLS_MONTHLY} + £${FIXED_SOFTWARE_MONTHLY}/mo)`, value: -Math.round(cb.fixed), kind: "deduct" },
+      { label: "True Take-Home", value: Math.round(cb.trueTakeHome), kind: "final", note: "what the recommendation is based on" },
+    ];
 
     return (
       <main className="flex min-h-screen flex-col items-center justify-center bg-background px-4 py-12">
@@ -752,40 +769,98 @@ export default function HomePage() {
               </h1>
               <p className="mt-3 text-lg font-semibold sm:text-xl">
                 {isShortLet ? (
-                  <>{gbp(leftoverDiff)} more in your pocket per year <span className="opacity-80 font-normal">(+{upliftWhole}%)</span></>
+                  <>{gbp(leftoverDiff)}/yr ({mo(leftoverDiff)}/mo) more in your pocket <span className="opacity-80 font-normal">(+{upliftWhole}%)</span></>
                 ) : leftoverDiff < 0 ? (
-                  <>Long-let leaves you {gbp(-leftoverDiff)} more per year</>
+                  <>Long-let leaves you {gbp(-leftoverDiff)}/yr ({mo(-leftoverDiff)}/mo) more</>
                 ) : (
-                  <>Short-let adds just {gbp(leftoverDiff)}/yr <span className="opacity-80 font-normal">(+{upliftWhole}%)</span></>
+                  <>Short-let adds just {gbp(leftoverDiff)}/yr ({mo(leftoverDiff)}/mo) <span className="opacity-80 font-normal">(+{upliftWhole}%)</span></>
                 )}
               </p>
             </div>
 
             <CardContent className="flex flex-col items-center gap-5 px-6 py-8">
-              {/* Money left over: short-let vs long-let, after all running costs */}
+              {/* Head-to-head: short-let true take-home vs long-let with a
+                  management company. Both annual and monthly. */}
               <div className="grid w-full grid-cols-2 gap-3">
-                <div className={`rounded-lg p-4 ${isShortLet ? "bg-primary/10 ring-1 ring-primary/20" : "bg-muted/50"}`}>
-                  <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Short-let leaves you</p>
-                  <p className="mt-1 text-2xl font-bold text-foreground">{gbp(strNet)}<span className="text-sm font-normal text-muted-foreground">/yr</span></p>
-                  <p className="text-xs text-muted-foreground">{gbp(Math.round(strNet / 12))}/mo after costs</p>
+                <div className={`rounded-lg p-4 text-left ${isShortLet ? "bg-primary/10 ring-1 ring-primary/20" : "bg-muted/50"}`}>
+                  <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Short-let — true take-home</p>
+                  <p className="mt-1 text-2xl font-bold text-foreground leading-tight">{gbp(strNet)}<span className="text-sm font-normal text-muted-foreground">/yr</span></p>
+                  <p className="text-sm font-semibold text-foreground">{mo(strNet)}<span className="text-xs font-normal text-muted-foreground">/mo</span></p>
+                  <p className="mt-0.5 text-[11px] text-muted-foreground">after all fees, costs &amp; bills</p>
                 </div>
-                <div className={`rounded-lg p-4 ${!isShortLet ? "bg-foreground/5 ring-1 ring-foreground/15" : "bg-muted/50"}`}>
-                  <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Long-let leaves you</p>
-                  <p className="mt-1 text-2xl font-bold text-foreground">{gbp(llNet)}<span className="text-sm font-normal text-muted-foreground">/yr</span></p>
-                  <p className="text-xs text-muted-foreground">{gbp(Math.round(llNet / 12))}/mo after fees</p>
+                <div className={`rounded-lg p-4 text-left ${!isShortLet ? "bg-foreground/5 ring-1 ring-foreground/15" : "bg-muted/50"}`}>
+                  <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Long-let — managed</p>
+                  <p className="mt-1 text-2xl font-bold text-foreground leading-tight">{gbp(llNet)}<span className="text-sm font-normal text-muted-foreground">/yr</span></p>
+                  <p className="text-sm font-semibold text-foreground">{mo(llNet)}<span className="text-xs font-normal text-muted-foreground">/mo</span></p>
+                  <p className="mt-0.5 text-[11px] text-muted-foreground">after a {llFeeWhole}% management fee</p>
                 </div>
               </div>
 
-              {/* Plain-money difference line */}
-              <p className="text-sm font-semibold text-foreground">
-                {leftoverDiff >= 0 ? (
-                  <>That&apos;s <span className={isShortLet ? "text-success" : ""}>{gbp(leftoverDiff)} more per year</span> with short-let.</>
-                ) : (
-                  <>That&apos;s <span className="text-foreground">{gbp(-leftoverDiff)} more per year</span> with long-let.</>
-                )}
-              </p>
+              {/* Net difference between the two — the headline comparison */}
+              <div className={`w-full rounded-lg p-4 text-center ${isShortLet ? "bg-success/10 ring-1 ring-success/25" : "bg-muted/40 ring-1 ring-border"}`}>
+                <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                  Net difference {leftoverDiff >= 0 ? "in favour of short-let" : "in favour of long-let"}
+                </p>
+                <p className={`mt-1 text-3xl font-bold ${isShortLet ? "text-success" : "text-foreground"}`}>
+                  {gbp(Math.abs(leftoverDiff))}<span className="text-base font-normal text-muted-foreground">/yr</span>
+                </p>
+                <p className="text-base font-semibold text-foreground">
+                  {mo(Math.abs(leftoverDiff))}<span className="text-xs font-normal text-muted-foreground">/mo</span>
+                  <span className="ml-2 text-sm font-normal text-muted-foreground">
+                    more with {leftoverDiff >= 0 ? "short-let" : "long-let"}
+                  </span>
+                </p>
+              </div>
 
-              {/* Our criteria — explained in money terms */}
+              {/* Waterfall bridge: reconciles the report's Net Revenue with the
+                  decision's true take-home so the higher report figure makes sense. */}
+              <div className="w-full rounded-lg border border-border bg-card p-4 text-left">
+                <p className="text-sm font-semibold text-foreground">Where your take-home comes from</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  The full report shows <span className="font-medium">Net Revenue</span>. The recommendation goes
+                  further — taking off VAT, maintenance and your bills — to show what you actually keep.
+                </p>
+                <div className="mt-3 space-y-1">
+                  {bridgeSteps.map((step) => {
+                    const isDeduct = step.kind === "deduct";
+                    const isFinal = step.kind === "final";
+                    const isSub = step.kind === "subtotal";
+                    return (
+                      <div
+                        key={step.label}
+                        className={`flex items-baseline justify-between gap-2 rounded px-2 py-1.5 ${
+                          isFinal ? "bg-primary/10 ring-1 ring-primary/20"
+                            : isSub ? "bg-muted/60"
+                            : ""
+                        } ${isSub || isFinal ? "mt-1.5 border-t border-border/0" : ""}`}
+                      >
+                        <div className="min-w-0">
+                          <span className={`text-sm ${isFinal || isSub ? "font-semibold text-foreground" : "text-muted-foreground"}`}>
+                            {step.label}
+                          </span>
+                          {step.note && (
+                            <span className="block text-[10px] text-muted-foreground">{step.note}</span>
+                          )}
+                        </div>
+                        <div className="shrink-0 text-right">
+                          <span className={`text-sm tabular-nums ${
+                            isDeduct ? "text-destructive"
+                              : isFinal ? "font-bold text-primary"
+                              : "font-semibold text-foreground"
+                          }`}>
+                            {isDeduct ? "−" : ""}{gbp(Math.abs(step.value))}<span className="text-[10px] font-normal text-muted-foreground">/yr</span>
+                          </span>
+                          <span className="block text-[10px] tabular-nums text-muted-foreground">
+                            {isDeduct ? "−" : ""}{mo(Math.abs(step.value))}/mo
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Our criteria — explained in money terms, annual + monthly */}
               <div className="w-full rounded-lg border border-border bg-muted/30 p-4 text-left">
                 <p className="text-sm font-semibold text-foreground">How we decide</p>
                 <p className="mt-1.5 text-sm text-muted-foreground">
@@ -795,12 +870,12 @@ export default function HomePage() {
                   maintenance, bills and software).
                 </p>
                 <p className="mt-2 text-sm text-muted-foreground">
-                  A long-let here leaves <span className="font-semibold text-foreground">{gbp(llNet)}/yr</span>, so short-let needs to clear{" "}
-                  <span className="font-semibold text-foreground">{gbp(requiredStrNet)}/yr</span> to be worth it.
+                  A managed long-let here leaves <span className="font-semibold text-foreground">{gbp(llNet)}/yr</span> ({mo(llNet)}/mo),
+                  so short-let needs to clear <span className="font-semibold text-foreground">{gbp(requiredStrNet)}/yr</span> ({mo(requiredStrNet)}/mo) to be worth it.
                   {isShortLet ? (
-                    <> Yours comes out at <span className="font-semibold text-success">{gbp(strNet)}/yr</span> — it clears the bar.</>
+                    <> Yours comes out at <span className="font-semibold text-success">{gbp(strNet)}/yr</span> ({mo(strNet)}/mo) — it clears the bar.</>
                   ) : (
-                    <> Yours comes out at <span className="font-semibold text-foreground">{gbp(strNet)}/yr</span>{shortfall > 0 ? <>, about {gbp(shortfall)} short.</> : <>.</>}</>
+                    <> Yours comes out at <span className="font-semibold text-foreground">{gbp(strNet)}/yr</span> ({mo(strNet)}/mo){shortfall > 0 ? <>, about {gbp(shortfall)}/yr ({mo(shortfall)}/mo) short.</> : <>.</>}</>
                   )}
                 </p>
               </div>

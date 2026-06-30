@@ -78,12 +78,50 @@ export function calculateFinancials(
 // are deliberately more conservative ("true net") than the headline numbers
 // shown on the detailed report, so the decision reflects real take-home.
 
-const TRUE_NET_PCT = 0.44;          // after platform 15%, mgmt 15%+VAT (18%), cleaning 18%, maintenance 5%
-const FIXED_COSTS_ANNUAL = 5904;    // £450/mo bills + £42/mo software, x12
-const LL_AGENT_FEE = 0.10;          // standard long-let management fee
+// Short-let running costs, as fractions of gross revenue. The first three
+// (platform, managementBase, cleaning) are exactly what the full report
+// deducts to reach its headline "Net Revenue". The decision goes further and
+// also removes managementVat + maintenance + the fixed costs below — that gap
+// is what the decision screen's bridge explains.
+export const STR_COST_RATES = {
+  platform: 0.15,        // booking platform fee
+  managementBase: 0.15,  // Stayful management fee (ex-VAT)
+  managementVat: 0.03,   // VAT on the 15% management fee (15% × 20%)
+  cleaning: 0.18,        // cleaning & laundry
+  maintenance: 0.05,     // ongoing maintenance
+} as const;
+
+// Fixed monthly costs a short-let carries that a long-let does not (the tenant
+// pays bills on a long-let). Exported so the UI can show the assumptions.
+export const FIXED_BILLS_MONTHLY = 450;
+export const FIXED_SOFTWARE_MONTHLY = 42;
+
+// Derived from the rates above so the bridge always reconciles to the decision.
+const TRUE_NET_PCT =
+  1 - (STR_COST_RATES.platform + STR_COST_RATES.managementBase + STR_COST_RATES.managementVat + STR_COST_RATES.cleaning + STR_COST_RATES.maintenance); // 0.44
+const FIXED_COSTS_ANNUAL = (FIXED_BILLS_MONTHLY + FIXED_SOFTWARE_MONTHLY) * 12; // 5904
+
+export const LL_AGENT_FEE = 0.10;   // standard long-let management-company fee
 // Uplift required to recommend short-let. Exported so the decision screen can
 // explain the criteria in plain money terms (single source of truth).
 export const MARGIN_THRESHOLD = 0.50;
+
+/**
+ * Itemised step-down from gross short-let revenue to true take-home, used to
+ * render the decision-screen bridge. The first block (to netRevenue) mirrors
+ * the full report's headline net; the second block is what the decision adds.
+ */
+export function getCostBreakdown(grossSTRAnnual: number) {
+  const platform = grossSTRAnnual * STR_COST_RATES.platform;
+  const managementBase = grossSTRAnnual * STR_COST_RATES.managementBase;
+  const cleaning = grossSTRAnnual * STR_COST_RATES.cleaning;
+  const netRevenue = grossSTRAnnual - platform - managementBase - cleaning; // report's "Net Revenue"
+  const managementVat = grossSTRAnnual * STR_COST_RATES.managementVat;
+  const maintenance = grossSTRAnnual * STR_COST_RATES.maintenance;
+  const fixed = FIXED_COSTS_ANNUAL;
+  const trueTakeHome = netRevenue - managementVat - maintenance - fixed;
+  return { gross: grossSTRAnnual, platform, managementBase, cleaning, netRevenue, managementVat, maintenance, fixed, trueTakeHome };
+}
 
 /**
  * Core decision formula. Compares the true net short-let income against the
