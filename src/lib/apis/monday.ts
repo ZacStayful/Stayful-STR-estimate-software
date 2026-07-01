@@ -38,22 +38,22 @@ const DEFAULTS = {
   statusColumnId: "status5",                // main "Status" column
 };
 
-// Status-label text for the Recommendation column, keyed by decision.
-const RECOMMENDATION_LABELS: Record<string, string> = {
-  SHORT_LET: "Short-Let",
-  LONG_LET: "Long-Let",
+// Status columns are written by their numeric label id ("index"), NOT by label
+// text, so renaming a label on the board can never break the sync (a single bad
+// label rejects the whole atomic multi-column write). Ids verified on the board.
+const RECOMMENDATION_INDEX: Record<string, number> = {
+  SHORT_LET: 1, // color_mm4tkwqv id 1 = "Short-Let"
+  LONG_LET: 2,  // id 2 = "Long-Let"
 };
 
-// Exact existing labels on the "Qualified" status column (color_mm4t61wc).
-// Keep these verbatim — Monday matches status writes by label text.
-const QUALIFIED_LABELS: Record<LeadQualification, string> = {
-  qualified: "Qualified (50%)",
-  medium: "Medium (30%)",
-  unqualified: "Not unqualified (-30%)",
+const QUALIFIED_INDEX: Record<LeadQualification, number> = {
+  medium: 0,      // color_mm4t61wc id 0 = "Medium (30%)"
+  qualified: 1,   // id 1 = "Qualified (50%)"
+  unqualified: 2, // id 2 = "unqualified (-30%)"
 };
 
-// Label on status5 that an unqualified lead is moved to.
-const ABANDONED_STATUS_LABEL = "Abandoned";
+// status5 id 2 = "Abandoned" — where an unqualified lead is moved.
+const ABANDONED_STATUS_INDEX = 2;
 
 function envConfig() {
   // Accept either env var name. This project deploys with MONDAY_API_KEY (the
@@ -157,7 +157,7 @@ async function updateItemColumns(
   token: string,
   boardId: string,
   itemId: string,
-  columnValues: Record<string, string | number | { label: string }>,
+  columnValues: Record<string, string | number | { label: string } | { index: number } | null>,
 ): Promise<boolean> {
   const mutation = `
     mutation ($boardId: ID!, $itemId: ID!, $values: JSON!) {
@@ -213,7 +213,7 @@ export async function syncAnalysisToMonday(
   }
 
   // Text columns require string values in Monday's API
-  const columnValues: Record<string, string | { label: string }> = {
+  const columnValues: Record<string, string | { label: string } | { index: number }> = {
     [cfg.longTermColumnId]: String(Math.round(longTermLetNetAnnual)),
     [cfg.dealAnalyserColumnId]: String(Math.round(stayfulNetRevenue)),
   };
@@ -224,19 +224,19 @@ export async function syncAnalysisToMonday(
   //                           inflated headline difference
   //  • Recommendation status ← Short-Let / Long-Let
   if (recommendation) {
-    const label = RECOMMENDATION_LABELS[recommendation.recommendation];
+    const recIndex = RECOMMENDATION_INDEX[recommendation.recommendation];
     columnValues[cfg.longTermColumnId] = String(Math.round(recommendation.longLetMonthly * 12));
     columnValues[cfg.strProfitColumnId] = String(Math.round(recommendation.trueSTRNet - recommendation.trueLLNet));
-    if (label) {
-      columnValues[cfg.recommendationColumnId] = { label };
+    if (recIndex !== undefined) {
+      columnValues[cfg.recommendationColumnId] = { index: recIndex };
     }
 
     // Lead qualification band (test phase): ≥50% qualified, 30–50% medium,
     // <30% unqualified. Unqualified leads are also moved to status5 = Abandoned.
     const band: LeadQualification = getLeadQualification(recommendation.upliftPct);
-    columnValues[cfg.qualifiedColumnId] = { label: QUALIFIED_LABELS[band] };
+    columnValues[cfg.qualifiedColumnId] = { index: QUALIFIED_INDEX[band] };
     if (band === "unqualified") {
-      columnValues[cfg.statusColumnId] = { label: ABANDONED_STATUS_LABEL };
+      columnValues[cfg.statusColumnId] = { index: ABANDONED_STATUS_INDEX };
     }
   }
 
