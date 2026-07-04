@@ -296,6 +296,75 @@ export async function uploadPdfToMonday(
   }
 }
 
+/**
+ * Counts how many report files are attached to the Monday lead matching this
+ * email. The analyser uploads one PDF per completed analysis (see
+ * uploadPdfToMonday), so this file count is the durable usage counter for the
+ * paywall: a lead that already holds the free-analysis limit of PDFs has used
+ * up their free runs.
+ *
+ * Returns 0 when Monday isn't configured, no lead matches the email, or the
+ * file column is empty — so the gate fails open (never blocks) if the CRM is
+ * unreachable or the address isn't a known lead.
+ */
+export async function getPdfReportCount(email: string): Promise<number> {
+  const cfg = envConfig();
+  if (!cfg) return 0;
+  if (!email || !email.includes("@")) return 0;
+
+  const fileColumnId = process.env.MONDAY_FILE_COLUMN_ID || DEFAULTS.fileColumnId;
+
+  const query = `
+    query ($boardId: ID!, $emailColumnId: String!, $email: String!, $fileCols: [String!]) {
+      items_page_by_column_values(
+        board_id: $boardId,
+        columns: [{ column_id: $emailColumnId, column_values: [$email] }],
+        limit: 1
+      ) {
+        items {
+          id
+          column_values(ids: $fileCols) { id value }
+        }
+      }
+    }
+  `;
+
+  type ItemsResult = {
+    items_page_by_column_values: {
+      items: Array<{ id: string; column_values: Array<{ id: string; value: string | null }> }>;
+    };
+  };
+
+  const fetchFileValue = async (emailValue: string): Promise<string | null | undefined> => {
+    const data = await mondayQuery<ItemsResult>(cfg.token, query, {
+      boardId: cfg.boardId,
+      emailColumnId: cfg.emailColumnId,
+      email: emailValue,
+      fileCols: [fileColumnId],
+    });
+    const item = data?.items_page_by_column_values?.items?.[0];
+    if (!item) return undefined; // no lead found
+    const col = item.column_values?.find((c) => c.id === fileColumnId) ?? item.column_values?.[0];
+    return col?.value ?? null; // null = lead exists but column empty
+  };
+
+  let value = await fetchFileValue(email);
+  if (value === undefined) {
+    // Fallback: retry lowercased to handle case mismatches (mirrors findItemIdByEmail).
+    const lower = email.toLowerCase();
+    if (lower !== email) value = await fetchFileValue(lower);
+  }
+  if (!value) return 0;
+
+  try {
+    const parsed = JSON.parse(value) as { files?: unknown[] };
+    return Array.isArray(parsed.files) ? parsed.files.length : 0;
+  } catch (err) {
+    console.error("[Monday] Could not parse file column value:", err);
+    return 0;
+  }
+}
+
 function formatDuration(seconds: number): string {
   if (seconds < 60) return `${seconds}s`;
   const m = Math.floor(seconds / 60);

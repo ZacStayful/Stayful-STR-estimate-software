@@ -6,6 +6,7 @@ import { getNearbyAmenities } from '@/lib/apis/google-places';
 import { getNearbyEvents } from '@/lib/apis/ticketmaster';
 import { fetchPriceLabsRevenueEstimate, buildCrossValidation } from '@/lib/apis/pricelabs';
 import { calculateFinancials, assessRisk, generateVerdict, getRecommendation, estimateLongLet } from '@/lib/analysis';
+import { isBlocked, recordUsage, isUnlimited, FREE_ANALYSIS_LIMIT, PAYMENT_URL } from '@/lib/usage';
 
 // ─── Rate Limiter (in-memory, per IP) ────────────────────────────
 // 10 requests per IP per 60-second window. Protects against API credit abuse.
@@ -71,15 +72,49 @@ export async function POST(request: Request) {
   }
 
   // Validate input
-  const { address, postcode, email, bedrooms, guests, bathrooms, parking, outdoorSpace, propertyType, monthlyMortgage, monthlyBills, longLetMonthly, longLetNotSure } = body as {
+  const { address, postcode, email, bedrooms, guests, bathrooms, parking, outdoorSpace, propertyType, monthlyMortgage, monthlyBills, longLetMonthly, longLetNotSure, priorUses } = body as {
     address: unknown; postcode: unknown; email: unknown;
     bedrooms: unknown; guests: unknown;
     bathrooms: unknown; parking: unknown; outdoorSpace: unknown;
     propertyType: unknown;
     monthlyMortgage: unknown; monthlyBills: unknown;
     longLetMonthly: unknown; longLetNotSure: unknown;
+    priorUses: unknown;
   };
   const emailStr = typeof email === 'string' && email.includes('@') ? email.trim() : null;
+
+  // ─── Usage gate ────────────────────────────────────────────────
+  // Free analyses are capped at FREE_ANALYSIS_LIMIT per email (owner exempt).
+  // Durable source of truth: the number of report PDFs already attached to the
+  // lead's Monday item — the analyser uploads one PDF per completed analysis,
+  // so a lead already holding FREE_ANALYSIS_LIMIT reports has used up their free
+  // runs and reverts to the paywall. A localStorage-backed count (priorUses) is
+  // the fallback for emails not yet on the board. Either signal reaching the
+  // limit trips the paywall. The Monday check fails open if the CRM is
+  // unreachable or the email isn't a known lead.
+  if (emailStr && !isUnlimited(emailStr)) {
+    let blocked = isBlocked(emailStr, priorUses);
+    if (!blocked) {
+      try {
+        const { getPdfReportCount } = await import('@/lib/apis/monday');
+        const reportCount = await getPdfReportCount(emailStr);
+        blocked = reportCount >= FREE_ANALYSIS_LIMIT;
+      } catch (err) {
+        console.error('[Usage gate] Monday report-count check failed:', err);
+      }
+    }
+    if (blocked) {
+      return Response.json(
+        {
+          error: `You've used your ${FREE_ANALYSIS_LIMIT} free analyses. To keep using the analyser, continue at ${PAYMENT_URL}.`,
+          paymentRequired: true,
+          paymentUrl: PAYMENT_URL,
+          freeLimit: FREE_ANALYSIS_LIMIT,
+        },
+        { status: 402 },
+      );
+    }
+  }
 
   // Long-let monthly rent the landlord entered (GBP). "Not sure" → undefined here
   // and resolved later via estimateLongLet() / PropertyData fallback.
@@ -446,7 +481,12 @@ export async function POST(request: Request) {
           propertyValuation,
         };
 
-        send({ stage: 'complete', progress: 100, message: 'Analysis complete', data: result });
+        // Count this produced estimate against the email's free allowance.
+        // The client mirrors this in localStorage and reports it back on the
+        // next request so the limit persists across serverless restarts.
+        const usageCount = emailStr && !isUnlimited(emailStr) ? recordUsage(emailStr) : 0;
+
+        send({ stage: 'complete', progress: 100, message: 'Analysis complete', data: result, usageCount });
 
         // Monday.com CRM sync + PDF upload — awaited before closing stream
         // so Vercel doesn't kill the function before they complete.
