@@ -391,6 +391,40 @@ function TakeHomeBridge({
   );
 }
 
+// ─── Analyser usage gate (client side) ───────────────────────────
+// The server (src/lib/usage.ts) is authoritative, but its in-memory count
+// resets on every serverless redeploy. We mirror the per-email count in
+// localStorage and report it on each request so the "free analyses" limit
+// survives cold-starts on a per-browser basis. Owner email is never counted.
+const ANALYSER_PAYMENT_URL = "https://intelligence.stayful.co.uk";
+const ANALYSER_USAGE_KEY = "stayful_analyser_uses";
+
+function readUsageCount(email: string): number {
+  if (typeof window === "undefined" || !email) return 0;
+  try {
+    const raw = localStorage.getItem(ANALYSER_USAGE_KEY);
+    const map = raw ? (JSON.parse(raw) as Record<string, number>) : {};
+    const n = map[email.trim().toLowerCase()];
+    return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function recordUsageCount(email: string, count: number): void {
+  if (typeof window === "undefined" || !email) return;
+  try {
+    const raw = localStorage.getItem(ANALYSER_USAGE_KEY);
+    const map = raw ? (JSON.parse(raw) as Record<string, number>) : {};
+    const key = email.trim().toLowerCase();
+    const safe = Number.isFinite(count) && count > 0 ? Math.floor(count) : 0;
+    map[key] = Math.max(map[key] ?? 0, safe);
+    localStorage.setItem(ANALYSER_USAGE_KEY, JSON.stringify(map));
+  } catch {
+    // localStorage unavailable — soft gate falls back to server-side only
+  }
+}
+
 export default function HomePage() {
   const [address, setAddress] = useState("");
   const [postcode, setPostcode] = useState("");
@@ -459,6 +493,8 @@ export default function HomePage() {
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Set when the email has exhausted its free analyses (HTTP 402 from /api/analyse).
+  const [paywall, setPaywall] = useState<{ paymentUrl: string; freeLimit: number } | null>(null);
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [showPresentation, setShowPresentation] = useState(false);
   // The qualification decision screen shows first; the detailed report is
@@ -599,6 +635,7 @@ export default function HomePage() {
     e.preventDefault();
     setLoading(true);
     setError(null);
+    setPaywall(null);
     setProgress(0);
     setCompletedStages(new Set());
     setCurrentMessage("Starting analysis...");
@@ -612,6 +649,9 @@ export default function HomePage() {
           address,
           postcode,
           email,
+          // Prior free-analysis count for this email, kept in localStorage so
+          // the server-side limit survives serverless cold-starts.
+          priorUses: readUsageCount(email),
           bedrooms: Number(bedrooms),
           guests: Number(guests),
           bathrooms: Number(bathrooms),
@@ -626,7 +666,16 @@ export default function HomePage() {
       });
 
       if (!res.ok) {
-        const data = await res.json();
+        const data = await res.json().catch(() => ({}));
+        // 402 → email has used up its free analyses; show the paywall.
+        if (res.status === 402 || data.paymentRequired) {
+          setPaywall({
+            paymentUrl: data.paymentUrl || ANALYSER_PAYMENT_URL,
+            freeLimit: data.freeLimit ?? 2,
+          });
+          setLoading(false);
+          return;
+        }
         setError(data.error || "Something went wrong. Please try again.");
         setLoading(false);
         return;
@@ -689,6 +738,11 @@ export default function HomePage() {
               }
 
               if (event.stage === "complete" && event.data) {
+                // Mirror the server's usage count so this browser reports it on
+                // the next request (keeps the free-analysis limit persistent).
+                if (typeof event.usageCount === "number" && event.usageCount > 0) {
+                  recordUsageCount(email, event.usageCount);
+                }
                 setResult(event.data as AnalysisResult);
                 setLoading(false);
                 return;
@@ -715,6 +769,7 @@ export default function HomePage() {
   const handleReset = () => {
     setResult(null);
     setError(null);
+    setPaywall(null);
     setAddress("");
     setPostcode("");
     setEntryMode("auto");
@@ -787,6 +842,65 @@ export default function HomePage() {
             Gathering data from Airbtics, PropertyData, Google Places, and
             Ticketmaster. This usually takes 10-20 seconds.
           </p>
+        </div>
+      </main>
+    );
+  }
+
+  // ─── Paywall Screen ─────────────────────────────────────────────
+  // Shown when the entered email has exhausted its free analyses. The only
+  // way forward is the paid product at intelligence.stayful.co.uk.
+
+  if (paywall) {
+    return (
+      <main className="flex min-h-screen flex-col items-center justify-center bg-background px-4 py-12">
+        <div className="flex w-full max-w-md flex-col items-center gap-8 text-center">
+          <Image
+            alt="Stayful"
+            width={160}
+            height={52}
+            className="h-11 w-auto"
+            src="/images/stayful-logo.png"
+            priority
+          />
+
+          <Card className="w-full overflow-hidden border-0 shadow-lg">
+            <div className="bg-primary px-6 py-8 text-primary-foreground">
+              <div className="mb-3 flex items-center justify-center gap-2">
+                <Sparkles className="h-5 w-5" />
+                <span className="text-sm font-medium uppercase tracking-wider opacity-90">
+                  Free analyses used
+                </span>
+              </div>
+              <h1 className="text-2xl font-bold sm:text-3xl">
+                You&apos;ve used your {paywall.freeLimit} free analyses
+              </h1>
+            </div>
+
+            <CardContent className="flex flex-col items-center gap-5 px-6 py-8">
+              <p className="text-sm text-muted-foreground">
+                Thanks for putting the analyser to work. To keep running property
+                estimates, unlock unlimited access with Stayful Intelligence.
+              </p>
+
+              <Button
+                size="lg"
+                className="w-full"
+                onClick={() => window.open(paywall.paymentUrl, "_blank")}
+              >
+                <ExternalLink className="mr-2 h-4 w-4" />
+                Continue at intelligence.stayful.co.uk
+              </Button>
+
+              <button
+                type="button"
+                onClick={handleReset}
+                className="text-xs text-muted-foreground underline-offset-2 hover:underline"
+              >
+                Use a different email
+              </button>
+            </CardContent>
+          </Card>
         </div>
       </main>
     );

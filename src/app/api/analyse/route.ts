@@ -6,6 +6,7 @@ import { getNearbyAmenities } from '@/lib/apis/google-places';
 import { getNearbyEvents } from '@/lib/apis/ticketmaster';
 import { fetchPriceLabsRevenueEstimate, buildCrossValidation } from '@/lib/apis/pricelabs';
 import { calculateFinancials, assessRisk, generateVerdict, getRecommendation, estimateLongLet } from '@/lib/analysis';
+import { isBlocked, recordUsage, isUnlimited, FREE_ANALYSIS_LIMIT, PAYMENT_URL } from '@/lib/usage';
 
 // ─── Rate Limiter (in-memory, per IP) ────────────────────────────
 // 10 requests per IP per 60-second window. Protects against API credit abuse.
@@ -71,15 +72,33 @@ export async function POST(request: Request) {
   }
 
   // Validate input
-  const { address, postcode, email, bedrooms, guests, bathrooms, parking, outdoorSpace, propertyType, monthlyMortgage, monthlyBills, longLetMonthly, longLetNotSure } = body as {
+  const { address, postcode, email, bedrooms, guests, bathrooms, parking, outdoorSpace, propertyType, monthlyMortgage, monthlyBills, longLetMonthly, longLetNotSure, priorUses } = body as {
     address: unknown; postcode: unknown; email: unknown;
     bedrooms: unknown; guests: unknown;
     bathrooms: unknown; parking: unknown; outdoorSpace: unknown;
     propertyType: unknown;
     monthlyMortgage: unknown; monthlyBills: unknown;
     longLetMonthly: unknown; longLetNotSure: unknown;
+    priorUses: unknown;
   };
   const emailStr = typeof email === 'string' && email.includes('@') ? email.trim() : null;
+
+  // ─── Usage gate ────────────────────────────────────────────────
+  // Once an email has produced FREE_ANALYSIS_LIMIT estimates it must pay to
+  // keep using the analyser (owner email is exempt). `priorUses` is the
+  // browser's localStorage count, reconciled server-side so the limit survives
+  // serverless cold-starts. See src/lib/usage.ts for the persistence model.
+  if (emailStr && isBlocked(emailStr, priorUses)) {
+    return Response.json(
+      {
+        error: `You've used your ${FREE_ANALYSIS_LIMIT} free analyses. To keep using the analyser, continue at ${PAYMENT_URL}.`,
+        paymentRequired: true,
+        paymentUrl: PAYMENT_URL,
+        freeLimit: FREE_ANALYSIS_LIMIT,
+      },
+      { status: 402 },
+    );
+  }
 
   // Long-let monthly rent the landlord entered (GBP). "Not sure" → undefined here
   // and resolved later via estimateLongLet() / PropertyData fallback.
@@ -446,7 +465,12 @@ export async function POST(request: Request) {
           propertyValuation,
         };
 
-        send({ stage: 'complete', progress: 100, message: 'Analysis complete', data: result });
+        // Count this produced estimate against the email's free allowance.
+        // The client mirrors this in localStorage and reports it back on the
+        // next request so the limit persists across serverless restarts.
+        const usageCount = emailStr && !isUnlimited(emailStr) ? recordUsage(emailStr) : 0;
+
+        send({ stage: 'complete', progress: 100, message: 'Analysis complete', data: result, usageCount });
 
         // Monday.com CRM sync + PDF upload — awaited before closing stream
         // so Vercel doesn't kill the function before they complete.
