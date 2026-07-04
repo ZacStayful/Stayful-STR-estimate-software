@@ -84,20 +84,36 @@ export async function POST(request: Request) {
   const emailStr = typeof email === 'string' && email.includes('@') ? email.trim() : null;
 
   // ─── Usage gate ────────────────────────────────────────────────
-  // Once an email has produced FREE_ANALYSIS_LIMIT estimates it must pay to
-  // keep using the analyser (owner email is exempt). `priorUses` is the
-  // browser's localStorage count, reconciled server-side so the limit survives
-  // serverless cold-starts. See src/lib/usage.ts for the persistence model.
-  if (emailStr && isBlocked(emailStr, priorUses)) {
-    return Response.json(
-      {
-        error: `You've used your ${FREE_ANALYSIS_LIMIT} free analyses. To keep using the analyser, continue at ${PAYMENT_URL}.`,
-        paymentRequired: true,
-        paymentUrl: PAYMENT_URL,
-        freeLimit: FREE_ANALYSIS_LIMIT,
-      },
-      { status: 402 },
-    );
+  // Free analyses are capped at FREE_ANALYSIS_LIMIT per email (owner exempt).
+  // Durable source of truth: the number of report PDFs already attached to the
+  // lead's Monday item — the analyser uploads one PDF per completed analysis,
+  // so a lead already holding FREE_ANALYSIS_LIMIT reports has used up their free
+  // runs and reverts to the paywall. A localStorage-backed count (priorUses) is
+  // the fallback for emails not yet on the board. Either signal reaching the
+  // limit trips the paywall. The Monday check fails open if the CRM is
+  // unreachable or the email isn't a known lead.
+  if (emailStr && !isUnlimited(emailStr)) {
+    let blocked = isBlocked(emailStr, priorUses);
+    if (!blocked) {
+      try {
+        const { getPdfReportCount } = await import('@/lib/apis/monday');
+        const reportCount = await getPdfReportCount(emailStr);
+        blocked = reportCount >= FREE_ANALYSIS_LIMIT;
+      } catch (err) {
+        console.error('[Usage gate] Monday report-count check failed:', err);
+      }
+    }
+    if (blocked) {
+      return Response.json(
+        {
+          error: `You've used your ${FREE_ANALYSIS_LIMIT} free analyses. To keep using the analyser, continue at ${PAYMENT_URL}.`,
+          paymentRequired: true,
+          paymentUrl: PAYMENT_URL,
+          freeLimit: FREE_ANALYSIS_LIMIT,
+        },
+        { status: 402 },
+      );
+    }
   }
 
   // Long-let monthly rent the landlord entered (GBP). "Not sure" → undefined here
