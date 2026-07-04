@@ -743,6 +743,9 @@ export default function HomePage() {
                 if (typeof event.usageCount === "number" && event.usageCount > 0) {
                   recordUsageCount(email, event.usageCount);
                 }
+                if (typeof window !== "undefined" && (window as any).fbq) {
+                  (window as any).fbq("track", "Lead");
+                }
                 setResult(event.data as AnalysisResult);
                 setLoading(false);
                 return;
