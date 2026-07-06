@@ -1,24 +1,24 @@
-// ─── Analyser Usage Gate ──────────────────────────────────────────
-// Limits how many free estimates each email address can run. After the
-// free limit is reached the analyser stops producing estimates and the user
-// is pushed to the paid product at intelligence.stayful.co.uk. One email is
-// always exempt (the owner) — configurable via ANALYSER_UNLIMITED_EMAILS.
+// ─── Analyser Usage Gate (per-browser) ────────────────────────────
+// Limits how many free estimates each BROWSER (device) can run, regardless of
+// which email is entered. After the free limit the analyser stops producing
+// estimates and the user is pushed to the paid product at
+// intelligence.stayful.co.uk. One email is always exempt (the owner) —
+// configurable via ANALYSER_UNLIMITED_EMAILS.
 //
-// Persistence model (no database is wired up in this project):
-//   • Server-side in-memory Map — authoritative backstop, but per-instance and
-//     reset on redeploy/cold-start (same trade-off as the rate limiter in
-//     /api/analyse and the session store in /api/track).
-//   • The client also keeps a per-email count in localStorage and reports it on
-//     every request; the server merges the two with max() so the limit survives
-//     serverless cold-starts and redeploys on a per-browser basis without any
-//     new infrastructure.
-// This is therefore a SOFT paywall: a determined user who clears their browser
-// storage can reset their own count. That is an accepted limitation of gating
-// without a shared datastore. To make it hard, back getUsageCount/recordUsage
-// with a durable store (Vercel KV, a Monday column, etc.).
+// Why per-browser and not per-email/server:
+//   • Per-email was trivially bypassed — enter a new email, get another 2.
+//   • There is no shared datastore, and a serverless in-memory count resets on
+//     every cold-start/redeploy, so the server cannot be the source of truth.
+//   • The browser's localStorage is the natural per-device counter. The client
+//     reports its running count on each request; the server validates it, and
+//     returns the incremented count for the client to persist.
+// This is therefore a SOFT gate: clearing browser storage (or a fresh
+// incognito window) resets the count. That is an accepted limitation of gating
+// a lead funnel without accounts. To harden it, back the count with a device
+// cookie or a durable per-lead store.
 
-// Number of free estimates allowed per email before the paywall kicks in.
-// "Used more than 2 times" ⇒ uses 1 and 2 are free, the 3rd is blocked.
+// Number of free estimates allowed per browser before the paywall kicks in.
+// "2 free" ⇒ runs 1 and 2 are free, the 3rd is blocked.
 export const FREE_ANALYSIS_LIMIT = 2;
 
 // Where blocked users are sent to keep using the analyser.
@@ -33,50 +33,36 @@ const UNLIMITED_EMAILS: Set<string> = new Set(
     .filter(Boolean),
 );
 
-// email (normalised) -> count of estimates produced
-const usageMap = new Map<string, number>();
-
 export function normaliseEmail(email: string): string {
   return email.trim().toLowerCase();
 }
 
-export function isUnlimited(email: string): boolean {
-  return UNLIMITED_EMAILS.has(normaliseEmail(email));
+export function isUnlimited(email: string | null | undefined): boolean {
+  return !!email && UNLIMITED_EMAILS.has(normaliseEmail(email));
+}
+
+/** Coerce a client-reported browser count to a safe non-negative integer. */
+function safeCount(value: unknown): number {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
 }
 
 /**
- * Merge a client-reported prior count (from localStorage) into the server
- * store. Never lowers the stored count — this is what lets the soft limit
- * survive instance restarts. Returns the reconciled count.
+ * Whether this browser has exhausted its free estimates and must pay.
+ * `browserUses` is the count the browser reports from localStorage. The owner
+ * email is always exempt (so testing never trips the gate).
  */
-export function reconcileClientCount(email: string, clientCount: unknown): number {
-  const key = normaliseEmail(email);
-  const raw = Number(clientCount);
-  const safe = Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 0;
-  const merged = Math.max(usageMap.get(key) ?? 0, safe);
-  usageMap.set(key, merged);
-  return merged;
-}
-
-/** Current known usage count for an email (server + any reconciled client hint). */
-export function getUsageCount(email: string): number {
-  return usageMap.get(normaliseEmail(email)) ?? 0;
-}
-
-/**
- * Whether this email has exhausted its free estimates and must pay. Reconciles
- * the client-reported count first so a redeploy doesn't hand out free runs.
- */
-export function isBlocked(email: string, clientCount: unknown = 0): boolean {
+export function isBrowserBlocked(email: string | null | undefined, browserUses: unknown): boolean {
   if (isUnlimited(email)) return false;
-  return reconcileClientCount(email, clientCount) >= FREE_ANALYSIS_LIMIT;
+  return safeCount(browserUses) >= FREE_ANALYSIS_LIMIT;
 }
 
-/** Record that an estimate was produced for this email. Returns the new count. */
-export function recordUsage(email: string): number {
+/**
+ * The browser's new usage count after this analysis, for the client to persist.
+ * The owner never increments (returns 0, which the client merges with max() so
+ * it never lowers an existing count).
+ */
+export function nextBrowserCount(email: string | null | undefined, browserUses: unknown): number {
   if (isUnlimited(email)) return 0;
-  const key = normaliseEmail(email);
-  const next = (usageMap.get(key) ?? 0) + 1;
-  usageMap.set(key, next);
-  return next;
+  return safeCount(browserUses) + 1;
 }

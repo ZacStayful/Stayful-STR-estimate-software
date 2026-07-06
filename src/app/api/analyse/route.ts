@@ -6,7 +6,20 @@ import { getNearbyAmenities } from '@/lib/apis/google-places';
 import { getNearbyEvents } from '@/lib/apis/ticketmaster';
 import { fetchPriceLabsRevenueEstimate, buildCrossValidation } from '@/lib/apis/pricelabs';
 import { calculateFinancials, assessRisk, generateVerdict, getRecommendation, estimateLongLet } from '@/lib/analysis';
-import { isBlocked, recordUsage, isUnlimited, FREE_ANALYSIS_LIMIT, PAYMENT_URL } from '@/lib/usage';
+import { isBrowserBlocked, nextBrowserCount, FREE_ANALYSIS_LIMIT, PAYMENT_URL } from '@/lib/usage';
+
+// This route renders the PDF with @react-pdf/renderer, which needs the Node
+// runtime (not Edge).
+export const runtime = 'nodejs';
+
+// The analysis pipeline makes ~8 external API calls and then, AFTER emitting
+// the 'complete' SSE event, renders the branded PDF and uploads it to Monday
+// (plus the CRM sync). That trailing CRM work is the last thing to run, so it
+// is the first casualty if the function is cut off at the platform's default
+// execution ceiling (~10s on Vercel Hobby) — the lead already has their result
+// but the PDF never lands in Monday. Give the function enough budget for the
+// pipeline + the trailing render/upload to finish.
+export const maxDuration = 60;
 
 // ─── Rate Limiter (in-memory, per IP) ────────────────────────────
 // 10 requests per IP per 60-second window. Protects against API credit abuse.
@@ -84,36 +97,28 @@ export async function POST(request: Request) {
   const emailStr = typeof email === 'string' && email.includes('@') ? email.trim() : null;
 
   // ─── Usage gate ────────────────────────────────────────────────
-  // Free analyses are capped at FREE_ANALYSIS_LIMIT per email (owner exempt).
-  // Durable source of truth: the number of report PDFs already attached to the
-  // lead's Monday item — the analyser uploads one PDF per completed analysis,
-  // so a lead already holding FREE_ANALYSIS_LIMIT reports has used up their free
-  // runs and reverts to the paywall. A localStorage-backed count (priorUses) is
-  // the fallback for emails not yet on the board. Either signal reaching the
-  // limit trips the paywall. The Monday check fails open if the CRM is
-  // unreachable or the email isn't a known lead.
-  if (emailStr && !isUnlimited(emailStr)) {
-    let blocked = isBlocked(emailStr, priorUses);
-    if (!blocked) {
-      try {
-        const { getPdfReportCount } = await import('@/lib/apis/monday');
-        const reportCount = await getPdfReportCount(emailStr);
-        blocked = reportCount >= FREE_ANALYSIS_LIMIT;
-      } catch (err) {
-        console.error('[Usage gate] Monday report-count check failed:', err);
-      }
-    }
-    if (blocked) {
-      return Response.json(
-        {
-          error: `You've used your ${FREE_ANALYSIS_LIMIT} free analyses. To keep using the analyser, continue at ${PAYMENT_URL}.`,
-          paymentRequired: true,
-          paymentUrl: PAYMENT_URL,
-          freeLimit: FREE_ANALYSIS_LIMIT,
-        },
-        { status: 402 },
-      );
-    }
+  // Soft, per-BROWSER cap: FREE_ANALYSIS_LIMIT free analyses per device
+  // regardless of which email is entered (owner email exempt), then the lead is
+  // forwarded to the paid product. `priorUses` is the browser's localStorage
+  // count reported on each request; the browser is the source of truth (a
+  // serverless in-memory count can't identify a device and resets on
+  // cold-start). See src/lib/usage.ts.
+  //
+  // NOTE: intentionally NOT gated on the count of PDFs already attached to the
+  // lead in Monday. That durable check retroactively blocked every lead who had
+  // ever been analysed (each analysis uploads one report PDF), so established
+  // leads were forwarded to the paywall on their next visit — pre-empting the
+  // qualification decision screen and suppressing the new report.
+  if (isBrowserBlocked(emailStr, priorUses)) {
+    return Response.json(
+      {
+        error: `You've used your ${FREE_ANALYSIS_LIMIT} free analyses. To keep using the analyser, continue at ${PAYMENT_URL}.`,
+        paymentRequired: true,
+        paymentUrl: PAYMENT_URL,
+        freeLimit: FREE_ANALYSIS_LIMIT,
+      },
+      { status: 402 },
+    );
   }
 
   // Long-let monthly rent the landlord entered (GBP). "Not sure" → undefined here
@@ -481,10 +486,11 @@ export async function POST(request: Request) {
           propertyValuation,
         };
 
-        // Count this produced estimate against the email's free allowance.
-        // The client mirrors this in localStorage and reports it back on the
-        // next request so the limit persists across serverless restarts.
-        const usageCount = emailStr && !isUnlimited(emailStr) ? recordUsage(emailStr) : 0;
+        // Count this produced estimate against the browser's free allowance.
+        // The browser persists this and reports it on the next request, so the
+        // per-device limit holds without any server-side state. Owner → 0 (the
+        // client merges with max(), so it never lowers an existing count).
+        const usageCount = nextBrowserCount(emailStr, priorUses);
 
         send({ stage: 'complete', progress: 100, message: 'Analysis complete', data: result, usageCount });
 
@@ -500,6 +506,7 @@ export async function POST(request: Request) {
                 result.financials.longLetNetAnnual,
                 result.financials.shortLetNetAnnual,
                 result.recommendation,
+                { address: result.property.address, postcode: result.property.postcode },
               ),
               (async () => {
                 const React = await import('react');
@@ -510,7 +517,7 @@ export async function POST(request: Request) {
                 const element = React.createElement(StayfulReport, { data });
                 const buffer = await (renderToBuffer as (e: unknown) => Promise<Buffer>)(element);
                 const filename = `Stayful_Property_Analysis_${sanitiseAddressForFilename(result.property.address)}.pdf`;
-                await uploadPdfToMonday(emailStr, buffer, filename);
+                await uploadPdfToMonday(emailStr, buffer, filename, { address: result.property.address, postcode: result.property.postcode });
               })(),
             ]);
           } catch (err) {
