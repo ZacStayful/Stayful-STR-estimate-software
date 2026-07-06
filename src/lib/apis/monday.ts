@@ -27,6 +27,7 @@ const MONDAY_API_VERSION = "2024-10";
 const DEFAULTS = {
   boardId: "5891626711",
   emailColumnId: "text_mkygb5xx",
+  addressColumnId: "text6",                 // "Address" — property the lead enquired about
   longTermColumnId: "text_mm2dsnw7",
   dealAnalyserColumnId: "text_mm2dkavd",
   fileColumnId: "files__1",
@@ -67,6 +68,7 @@ function envConfig() {
     token,
     boardId: process.env.MONDAY_BOARD_ID || DEFAULTS.boardId,
     emailColumnId: process.env.MONDAY_EMAIL_COLUMN_ID || DEFAULTS.emailColumnId,
+    addressColumnId: process.env.MONDAY_ADDRESS_COLUMN_ID || DEFAULTS.addressColumnId,
     longTermColumnId: process.env.MONDAY_LONG_TERM_LET_COLUMN_ID || DEFAULTS.longTermColumnId,
     dealAnalyserColumnId: process.env.MONDAY_DEAL_ANALYSER_COLUMN_ID || DEFAULTS.dealAnalyserColumnId,
     strProfitColumnId: process.env.MONDAY_STR_PROFIT_COLUMN_ID || DEFAULTS.strProfitColumnId,
@@ -150,6 +152,161 @@ async function findItemIdByEmail(
   return null;
 }
 
+// ── Address-based lead matching ──────────────────────────────────
+// Leads arrive on the board via the enquiry form, which stores the property
+// address in the Address column (text6). A lead who then runs the analyser
+// enters that same property address, so when the email doesn't resolve their
+// row (they used a different email than the one on the board, or a typo) we can
+// still find the right lead by the property they enquired about. Matching is
+// anchored on the postcode — the one part of a free-text UK address that
+// survives spelling differences (see "Pevril" vs "Peveril") — with the house
+// number as the tiebreaker, and it refuses to guess when the property is
+// ambiguous, so an analysis is never written onto the wrong lead.
+
+type LeadCandidate = { id: string; email: string; address: string };
+type LeadRef = { email?: string | null; address?: string | null; postcode?: string | null };
+
+function normaliseLoose(s: string): string {
+  return s.toUpperCase().replace(/[^A-Z0-9]/g, "");
+}
+
+// Leading house token, e.g. "3a Peveril Street" → "3A".
+function leadingToken(address?: string | null): string | null {
+  if (!address) return null;
+  const first = address.trim().split(/[\s,]+/)[0] ?? "";
+  const norm = normaliseLoose(first);
+  return norm.length ? norm : null;
+}
+
+// UK postcodes are stored inconsistently ("NG7 4AJ" vs "NG74AJ"); contains_text
+// is a literal substring match, so search for the spaced and compact forms.
+function postcodeVariants(postcode: string): string[] {
+  const compact = postcode.toUpperCase().replace(/\s+/g, "");
+  const variants = new Set<string>();
+  const asEntered = postcode.trim().toUpperCase();
+  if (asEntered) variants.add(asEntered);
+  if (compact.length >= 5) variants.add(`${compact.slice(0, compact.length - 3)} ${compact.slice(-3)}`);
+  if (compact) variants.add(compact);
+  return [...variants];
+}
+
+function toCandidates(
+  items: Array<{ id: string; column_values: Array<{ id: string; text: string | null }> }>,
+  emailColumnId: string,
+  addressColumnId: string,
+): LeadCandidate[] {
+  return items.map((it) => ({
+    id: it.id,
+    email: it.column_values.find((c) => c.id === emailColumnId)?.text ?? "",
+    address: it.column_values.find((c) => c.id === addressColumnId)?.text ?? "",
+  }));
+}
+
+type CandidateItems = { items: Array<{ id: string; column_values: Array<{ id: string; text: string | null }> }> };
+
+async function searchLeadsByEmail(
+  token: string, boardId: string, emailColumnId: string, addressColumnId: string, email: string,
+): Promise<LeadCandidate[]> {
+  const query = `
+    query ($boardId: ID!, $columnId: String!, $email: String!, $cols: [String!]) {
+      items_page_by_column_values(
+        board_id: $boardId,
+        columns: [{ column_id: $columnId, column_values: [$email] }],
+        limit: 25
+      ) {
+        items { id column_values(ids: $cols) { id text } }
+      }
+    }
+  `;
+  const tried = new Set<string>();
+  for (const value of [email, email.toLowerCase()]) {
+    if (tried.has(value)) continue;
+    tried.add(value);
+    const data = await mondayQuery<{ items_page_by_column_values: CandidateItems }>(
+      token, query, { boardId, columnId: emailColumnId, email: value, cols: [emailColumnId, addressColumnId] },
+    );
+    const items = data?.items_page_by_column_values?.items ?? [];
+    if (items.length) return toCandidates(items, emailColumnId, addressColumnId);
+  }
+  return [];
+}
+
+async function searchLeadsByPostcode(
+  token: string, boardId: string, emailColumnId: string, addressColumnId: string, postcode: string,
+): Promise<LeadCandidate[]> {
+  const query = `
+    query ($boardId: ID!, $qp: ItemsQuery!, $cols: [String!]) {
+      boards(ids: [$boardId]) {
+        items_page(limit: 25, query_params: $qp) {
+          items { id column_values(ids: $cols) { id text } }
+        }
+      }
+    }
+  `;
+  for (const variant of postcodeVariants(postcode)) {
+    const data = await mondayQuery<{ boards: Array<{ items_page: CandidateItems }> }>(
+      token, query, {
+        boardId,
+        qp: { rules: [{ column_id: addressColumnId, compare_value: [variant], operator: "contains_text" }] },
+        cols: [emailColumnId, addressColumnId],
+      },
+    );
+    const items = data?.boards?.[0]?.items_page?.items ?? [];
+    if (items.length) return toCandidates(items, emailColumnId, addressColumnId);
+  }
+  return [];
+}
+
+/**
+ * Resolve the Management Leads item for an analyser run. Email is the primary
+ * key; when it doesn't resolve a single lead, fall back to the enquiry property
+ * (postcode + house number) stored in the Address column. Returns the item id,
+ * or null — it never guesses when the property is ambiguous.
+ */
+async function findLeadItemId(
+  cfg: NonNullable<ReturnType<typeof envConfig>>,
+  ref: LeadRef,
+): Promise<string | null> {
+  const email = ref.email?.trim();
+  const postcode = ref.postcode?.trim();
+  const houseTok = leadingToken(ref.address);
+
+  const emailItems = email && email.includes("@")
+    ? await searchLeadsByEmail(cfg.token, cfg.boardId, cfg.emailColumnId, cfg.addressColumnId, email)
+    : [];
+  const postcodeItems = postcode
+    ? await searchLeadsByPostcode(cfg.token, cfg.boardId, cfg.emailColumnId, cfg.addressColumnId, postcode)
+    : [];
+
+  // 1. Strongest: the same row is found by BOTH the email and the property.
+  if (emailItems.length && postcodeItems.length) {
+    const both = emailItems.find((e) => postcodeItems.some((p) => p.id === e.id));
+    if (both) return both.id;
+  }
+
+  // 2. Email match. Disambiguate by property when the email is on several rows.
+  if (emailItems.length === 1) return emailItems[0].id;
+  if (emailItems.length > 1) {
+    if (postcode) {
+      const byPc = emailItems.filter((e) => normaliseLoose(e.address).includes(normaliseLoose(postcode)));
+      if (byPc.length === 1) return byPc[0].id;
+    }
+    if (houseTok) {
+      const byHouse = emailItems.filter((e) => leadingToken(e.address) === houseTok);
+      if (byHouse.length === 1) return byHouse[0].id;
+    }
+    return emailItems[0].id; // email is a strong signal; take the first row
+  }
+
+  // 3. No email match — resolve purely by the enquiry property.
+  if (postcodeItems.length === 1) return postcodeItems[0].id;
+  if (postcodeItems.length > 1 && houseTok) {
+    const byHouse = postcodeItems.filter((p) => leadingToken(p.address) === houseTok);
+    if (byHouse.length === 1) return byHouse[0].id;
+  }
+  return null;
+}
+
 /**
  * Updates the two money-tracking columns on a given item.
  */
@@ -195,20 +352,22 @@ export async function syncAnalysisToMonday(
     longLetMonthly: number;
     upliftPct: number;
   },
+  property?: { address?: string | null; postcode?: string | null },
 ): Promise<void> {
   const cfg = envConfig();
   if (!cfg) {
     console.log("[Monday] Sync skipped — env vars not configured");
     return;
   }
-  if (!email || !email.includes("@")) {
-    console.log("[Monday] Sync skipped — invalid email");
+  const hasEmail = !!email && email.includes("@");
+  if (!hasEmail && !property?.postcode) {
+    console.log("[Monday] Sync skipped — no email or postcode to match on");
     return;
   }
 
-  const itemId = await findItemIdByEmail(cfg.token, cfg.boardId, cfg.emailColumnId, email);
+  const itemId = await findLeadItemId(cfg, { email, address: property?.address, postcode: property?.postcode });
   if (!itemId) {
-    console.log(`[Monday] No lead found for email (sync skipped): ${email}`);
+    console.log(`[Monday] No lead found (sync skipped): email=${email} postcode=${property?.postcode ?? "?"}`);
     return;
   }
 
@@ -256,14 +415,16 @@ export async function uploadPdfToMonday(
   email: string,
   pdfBuffer: Buffer | Uint8Array,
   filename: string,
+  property?: { address?: string | null; postcode?: string | null },
 ): Promise<void> {
   const cfg = envConfig();
   if (!cfg) return;
-  if (!email || !email.includes("@")) return;
+  const hasEmail = !!email && email.includes("@");
+  if (!hasEmail && !property?.postcode) return;
 
-  const itemId = await findItemIdByEmail(cfg.token, cfg.boardId, cfg.emailColumnId, email);
+  const itemId = await findLeadItemId(cfg, { email, address: property?.address, postcode: property?.postcode });
   if (!itemId) {
-    console.log(`[Monday] PDF upload skipped — no lead for: ${email}`);
+    console.log(`[Monday] PDF upload skipped — no lead for: email=${email} postcode=${property?.postcode ?? "?"}`);
     return;
   }
 

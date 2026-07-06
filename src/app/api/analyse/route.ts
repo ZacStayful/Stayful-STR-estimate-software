@@ -506,6 +506,7 @@ export async function POST(request: Request) {
                 result.financials.longLetNetAnnual,
                 result.financials.shortLetNetAnnual,
                 result.recommendation,
+                { address: result.property.address, postcode: result.property.postcode },
               ),
               (async () => {
                 const React = await import('react');
@@ -516,7 +517,7 @@ export async function POST(request: Request) {
                 const element = React.createElement(StayfulReport, { data });
                 const buffer = await (renderToBuffer as (e: unknown) => Promise<Buffer>)(element);
                 const filename = `Stayful_Property_Analysis_${sanitiseAddressForFilename(result.property.address)}.pdf`;
-                await uploadPdfToMonday(emailStr, buffer, filename);
+                await uploadPdfToMonday(emailStr, buffer, filename, { address: result.property.address, postcode: result.property.postcode });
               })(),
             ]);
           } catch (err) {
