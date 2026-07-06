@@ -8,6 +8,19 @@ import { fetchPriceLabsRevenueEstimate, buildCrossValidation } from '@/lib/apis/
 import { calculateFinancials, assessRisk, generateVerdict, getRecommendation, estimateLongLet } from '@/lib/analysis';
 import { isBlocked, recordUsage, isUnlimited, FREE_ANALYSIS_LIMIT, PAYMENT_URL } from '@/lib/usage';
 
+// This route renders the PDF with @react-pdf/renderer, which needs the Node
+// runtime (not Edge).
+export const runtime = 'nodejs';
+
+// The analysis pipeline makes ~8 external API calls and then, AFTER emitting
+// the 'complete' SSE event, renders the branded PDF and uploads it to Monday
+// (plus the CRM sync). That trailing CRM work is the last thing to run, so it
+// is the first casualty if the function is cut off at the platform's default
+// execution ceiling (~10s on Vercel Hobby) — the lead already has their result
+// but the PDF never lands in Monday. Give the function enough budget for the
+// pipeline + the trailing render/upload to finish.
+export const maxDuration = 60;
+
 // ─── Rate Limiter (in-memory, per IP) ────────────────────────────
 // 10 requests per IP per 60-second window. Protects against API credit abuse.
 const RATE_LIMIT_WINDOW_MS = 60_000;
