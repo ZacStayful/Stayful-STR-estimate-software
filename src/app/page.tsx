@@ -392,34 +392,33 @@ function TakeHomeBridge({
 }
 
 // ─── Analyser usage gate (client side) ───────────────────────────
-// The server (src/lib/usage.ts) is authoritative, but its in-memory count
-// resets on every serverless redeploy. We mirror the per-email count in
-// localStorage and report it on each request so the "free analyses" limit
-// survives cold-starts on a per-browser basis. Owner email is never counted.
+// Per-BROWSER free-analysis counter: a single integer in localStorage counting
+// how many analyses this device has run, regardless of which email is entered.
+// It's reported on every request and the server gates on it (see
+// src/lib/usage.ts) — the browser is the source of truth because a serverless
+// count can't identify a device and resets on cold-start. Owner runs don't
+// increment it. Clearing storage / incognito resets the count (soft gate).
 const ANALYSER_PAYMENT_URL = "https://intelligence.stayful.co.uk";
-const ANALYSER_USAGE_KEY = "stayful_analyser_uses";
+// New key (was a per-email map under "stayful_analyser_uses"); a fresh key
+// avoids parsing the old map shape as an integer.
+const ANALYSER_USAGE_KEY = "stayful_analyser_browser_uses";
 
-function readUsageCount(email: string): number {
-  if (typeof window === "undefined" || !email) return 0;
+function readUsageCount(): number {
+  if (typeof window === "undefined") return 0;
   try {
-    const raw = localStorage.getItem(ANALYSER_USAGE_KEY);
-    const map = raw ? (JSON.parse(raw) as Record<string, number>) : {};
-    const n = map[email.trim().toLowerCase()];
+    const n = Number(localStorage.getItem(ANALYSER_USAGE_KEY));
     return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
   } catch {
     return 0;
   }
 }
 
-function recordUsageCount(email: string, count: number): void {
-  if (typeof window === "undefined" || !email) return;
+function recordUsageCount(count: number): void {
+  if (typeof window === "undefined") return;
   try {
-    const raw = localStorage.getItem(ANALYSER_USAGE_KEY);
-    const map = raw ? (JSON.parse(raw) as Record<string, number>) : {};
-    const key = email.trim().toLowerCase();
     const safe = Number.isFinite(count) && count > 0 ? Math.floor(count) : 0;
-    map[key] = Math.max(map[key] ?? 0, safe);
-    localStorage.setItem(ANALYSER_USAGE_KEY, JSON.stringify(map));
+    const next = Math.max(readUsageCount(), safe);
+    localStorage.setItem(ANALYSER_USAGE_KEY, String(next));
   } catch {
     // localStorage unavailable — soft gate falls back to server-side only
   }
@@ -649,9 +648,9 @@ export default function HomePage() {
           address,
           postcode,
           email,
-          // Prior free-analysis count for this email, kept in localStorage so
-          // the server-side limit survives serverless cold-starts.
-          priorUses: readUsageCount(email),
+          // This browser's running free-analysis count (localStorage), so the
+          // per-device limit holds across serverless cold-starts.
+          priorUses: readUsageCount(),
           bedrooms: Number(bedrooms),
           guests: Number(guests),
           bathrooms: Number(bathrooms),
@@ -738,10 +737,10 @@ export default function HomePage() {
               }
 
               if (event.stage === "complete" && event.data) {
-                // Mirror the server's usage count so this browser reports it on
-                // the next request (keeps the free-analysis limit persistent).
+                // Persist this browser's new usage count so it reports it on
+                // the next request (keeps the per-device free limit).
                 if (typeof event.usageCount === "number" && event.usageCount > 0) {
-                  recordUsageCount(email, event.usageCount);
+                  recordUsageCount(event.usageCount);
                 }
                 if (typeof window !== "undefined" && (window as any).fbq) {
                   (window as any).fbq("track", "Lead");

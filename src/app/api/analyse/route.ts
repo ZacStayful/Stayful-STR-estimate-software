@@ -6,7 +6,7 @@ import { getNearbyAmenities } from '@/lib/apis/google-places';
 import { getNearbyEvents } from '@/lib/apis/ticketmaster';
 import { fetchPriceLabsRevenueEstimate, buildCrossValidation } from '@/lib/apis/pricelabs';
 import { calculateFinancials, assessRisk, generateVerdict, getRecommendation, estimateLongLet } from '@/lib/analysis';
-import { isBlocked, recordUsage, isUnlimited, FREE_ANALYSIS_LIMIT, PAYMENT_URL } from '@/lib/usage';
+import { isBrowserBlocked, nextBrowserCount, FREE_ANALYSIS_LIMIT, PAYMENT_URL } from '@/lib/usage';
 
 // This route renders the PDF with @react-pdf/renderer, which needs the Node
 // runtime (not Edge).
@@ -97,20 +97,19 @@ export async function POST(request: Request) {
   const emailStr = typeof email === 'string' && email.includes('@') ? email.trim() : null;
 
   // ─── Usage gate ────────────────────────────────────────────────
-  // Soft, per-browser cap: FREE_ANALYSIS_LIMIT free analyses per email (owner
-  // exempt), then the lead is forwarded to the paid product. `priorUses` is the
-  // browser's localStorage count, reconciled server-side with an in-memory Map
-  // so the limit survives serverless cold-starts on a per-browser basis. See
-  // src/lib/usage.ts for the persistence model.
+  // Soft, per-BROWSER cap: FREE_ANALYSIS_LIMIT free analyses per device
+  // regardless of which email is entered (owner email exempt), then the lead is
+  // forwarded to the paid product. `priorUses` is the browser's localStorage
+  // count reported on each request; the browser is the source of truth (a
+  // serverless in-memory count can't identify a device and resets on
+  // cold-start). See src/lib/usage.ts.
   //
   // NOTE: intentionally NOT gated on the count of PDFs already attached to the
   // lead in Monday. That durable check retroactively blocked every lead who had
   // ever been analysed (each analysis uploads one report PDF), so established
   // leads were forwarded to the paywall on their next visit — pre-empting the
-  // qualification decision screen and suppressing the new report. The soft
-  // per-browser count keeps the "2 free then forward" behaviour without
-  // punishing existing leads.
-  if (emailStr && isBlocked(emailStr, priorUses)) {
+  // qualification decision screen and suppressing the new report.
+  if (isBrowserBlocked(emailStr, priorUses)) {
     return Response.json(
       {
         error: `You've used your ${FREE_ANALYSIS_LIMIT} free analyses. To keep using the analyser, continue at ${PAYMENT_URL}.`,
@@ -487,10 +486,11 @@ export async function POST(request: Request) {
           propertyValuation,
         };
 
-        // Count this produced estimate against the email's free allowance.
-        // The client mirrors this in localStorage and reports it back on the
-        // next request so the limit persists across serverless restarts.
-        const usageCount = emailStr && !isUnlimited(emailStr) ? recordUsage(emailStr) : 0;
+        // Count this produced estimate against the browser's free allowance.
+        // The browser persists this and reports it on the next request, so the
+        // per-device limit holds without any server-side state. Owner → 0 (the
+        // client merges with max(), so it never lowers an existing count).
+        const usageCount = nextBrowserCount(emailStr, priorUses);
 
         send({ stage: 'complete', progress: 100, message: 'Analysis complete', data: result, usageCount });
 
