@@ -97,36 +97,29 @@ export async function POST(request: Request) {
   const emailStr = typeof email === 'string' && email.includes('@') ? email.trim() : null;
 
   // ─── Usage gate ────────────────────────────────────────────────
-  // Free analyses are capped at FREE_ANALYSIS_LIMIT per email (owner exempt).
-  // Durable source of truth: the number of report PDFs already attached to the
-  // lead's Monday item — the analyser uploads one PDF per completed analysis,
-  // so a lead already holding FREE_ANALYSIS_LIMIT reports has used up their free
-  // runs and reverts to the paywall. A localStorage-backed count (priorUses) is
-  // the fallback for emails not yet on the board. Either signal reaching the
-  // limit trips the paywall. The Monday check fails open if the CRM is
-  // unreachable or the email isn't a known lead.
-  if (emailStr && !isUnlimited(emailStr)) {
-    let blocked = isBlocked(emailStr, priorUses);
-    if (!blocked) {
-      try {
-        const { getPdfReportCount } = await import('@/lib/apis/monday');
-        const reportCount = await getPdfReportCount(emailStr);
-        blocked = reportCount >= FREE_ANALYSIS_LIMIT;
-      } catch (err) {
-        console.error('[Usage gate] Monday report-count check failed:', err);
-      }
-    }
-    if (blocked) {
-      return Response.json(
-        {
-          error: `You've used your ${FREE_ANALYSIS_LIMIT} free analyses. To keep using the analyser, continue at ${PAYMENT_URL}.`,
-          paymentRequired: true,
-          paymentUrl: PAYMENT_URL,
-          freeLimit: FREE_ANALYSIS_LIMIT,
-        },
-        { status: 402 },
-      );
-    }
+  // Soft, per-browser cap: FREE_ANALYSIS_LIMIT free analyses per email (owner
+  // exempt), then the lead is forwarded to the paid product. `priorUses` is the
+  // browser's localStorage count, reconciled server-side with an in-memory Map
+  // so the limit survives serverless cold-starts on a per-browser basis. See
+  // src/lib/usage.ts for the persistence model.
+  //
+  // NOTE: intentionally NOT gated on the count of PDFs already attached to the
+  // lead in Monday. That durable check retroactively blocked every lead who had
+  // ever been analysed (each analysis uploads one report PDF), so established
+  // leads were forwarded to the paywall on their next visit — pre-empting the
+  // qualification decision screen and suppressing the new report. The soft
+  // per-browser count keeps the "2 free then forward" behaviour without
+  // punishing existing leads.
+  if (emailStr && isBlocked(emailStr, priorUses)) {
+    return Response.json(
+      {
+        error: `You've used your ${FREE_ANALYSIS_LIMIT} free analyses. To keep using the analyser, continue at ${PAYMENT_URL}.`,
+        paymentRequired: true,
+        paymentUrl: PAYMENT_URL,
+        freeLimit: FREE_ANALYSIS_LIMIT,
+      },
+      { status: 402 },
+    );
   }
 
   // Long-let monthly rent the landlord entered (GBP). "Not sure" → undefined here
