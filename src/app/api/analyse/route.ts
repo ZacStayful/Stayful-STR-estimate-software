@@ -6,7 +6,7 @@ import { getNearbyAmenities } from '@/lib/apis/google-places';
 import { getNearbyEvents } from '@/lib/apis/ticketmaster';
 import { fetchPriceLabsRevenueEstimate, buildCrossValidation } from '@/lib/apis/pricelabs';
 import { calculateFinancials, assessRisk, generateVerdict, getRecommendation, estimateLongLet } from '@/lib/analysis';
-import { isBrowserBlocked, nextBrowserCount, FREE_ANALYSIS_LIMIT, PAYMENT_URL } from '@/lib/usage';
+import { isUnlimited, FREE_ANALYSIS_LIMIT, PAYMENT_URL } from '@/lib/usage';
 
 // This route renders the PDF with @react-pdf/renderer, which needs the Node
 // runtime (not Edge).
@@ -85,40 +85,45 @@ export async function POST(request: Request) {
   }
 
   // Validate input
-  const { address, postcode, email, bedrooms, guests, bathrooms, parking, outdoorSpace, propertyType, monthlyMortgage, monthlyBills, longLetMonthly, longLetNotSure, priorUses } = body as {
+  const { address, postcode, email, bedrooms, guests, bathrooms, parking, outdoorSpace, propertyType, monthlyMortgage, monthlyBills, longLetMonthly, longLetNotSure } = body as {
     address: unknown; postcode: unknown; email: unknown;
     bedrooms: unknown; guests: unknown;
     bathrooms: unknown; parking: unknown; outdoorSpace: unknown;
     propertyType: unknown;
     monthlyMortgage: unknown; monthlyBills: unknown;
     longLetMonthly: unknown; longLetNotSure: unknown;
-    priorUses: unknown;
   };
   const emailStr = typeof email === 'string' && email.includes('@') ? email.trim() : null;
 
   // ─── Usage gate ────────────────────────────────────────────────
-  // Soft, per-BROWSER cap: FREE_ANALYSIS_LIMIT free analyses per device
-  // regardless of which email is entered (owner email exempt), then the lead is
-  // forwarded to the paid product. `priorUses` is the browser's localStorage
-  // count reported on each request; the browser is the source of truth (a
-  // serverless in-memory count can't identify a device and resets on
-  // cold-start). See src/lib/usage.ts.
-  //
-  // NOTE: intentionally NOT gated on the count of PDFs already attached to the
-  // lead in Monday. That durable check retroactively blocked every lead who had
-  // ever been analysed (each analysis uploads one report PDF), so established
-  // leads were forwarded to the paywall on their next visit — pre-empting the
-  // qualification decision screen and suppressing the new report.
-  if (isBrowserBlocked(emailStr, priorUses)) {
-    return Response.json(
-      {
-        error: `You've used your ${FREE_ANALYSIS_LIMIT} free analyses. To keep using the analyser, continue at ${PAYMENT_URL}.`,
-        paymentRequired: true,
-        paymentUrl: PAYMENT_URL,
-        freeLimit: FREE_ANALYSIS_LIMIT,
-      },
-      { status: 402 },
-    );
+  // Cap free analyses at FREE_ANALYSIS_LIMIT per EMAIL (owner exempt), then
+  // forward the lead to the paid product. The count is a durable per-email
+  // counter on the lead's Monday item ("Analyser Uses"), incremented once per
+  // completed analysis below. It counts forward from when the column was added,
+  // so established leads keep their free runs (not retroactively blocked), and
+  // it's keyed by email — never the device — so it can't over-block a shared
+  // browser. Fails open: an email that isn't a known lead, or any CRM error,
+  // is allowed through, so genuine new users are never wrongly gated.
+  if (emailStr && !isUnlimited(emailStr)) {
+    let useCount = 0;
+    try {
+      const { getAnalyserUseCount } = await import('@/lib/apis/monday');
+      useCount = await getAnalyserUseCount(emailStr);
+    } catch (err) {
+      console.error('[Usage gate] Monday use-count check failed (allowing):', err);
+    }
+    if (useCount >= FREE_ANALYSIS_LIMIT) {
+      console.log(`[Usage gate] Blocking ${emailStr}: ${useCount} use(s) ≥ limit ${FREE_ANALYSIS_LIMIT}`);
+      return Response.json(
+        {
+          error: `You've used your ${FREE_ANALYSIS_LIMIT} free analyses. To keep using the analyser, continue at ${PAYMENT_URL}.`,
+          paymentRequired: true,
+          paymentUrl: PAYMENT_URL,
+          freeLimit: FREE_ANALYSIS_LIMIT,
+        },
+        { status: 402 },
+      );
+    }
   }
 
   // Long-let monthly rent the landlord entered (GBP). "Not sure" → undefined here
@@ -486,21 +491,18 @@ export async function POST(request: Request) {
           propertyValuation,
         };
 
-        // Count this produced estimate against the browser's free allowance.
-        // The browser persists this and reports it on the next request, so the
-        // per-device limit holds without any server-side state. Owner → 0 (the
-        // client merges with max(), so it never lowers an existing count).
-        const usageCount = nextBrowserCount(emailStr, priorUses);
-
-        send({ stage: 'complete', progress: 100, message: 'Analysis complete', data: result, usageCount });
+        send({ stage: 'complete', progress: 100, message: 'Analysis complete', data: result });
 
         // Monday.com CRM sync + PDF upload — awaited before closing stream
         // so Vercel doesn't kill the function before they complete.
         if (emailStr) {
           try {
-            const { syncAnalysisToMonday, uploadPdfToMonday } = await import('@/lib/apis/monday');
-            // Run sync and PDF generation in parallel
+            const { syncAnalysisToMonday, uploadPdfToMonday, incrementAnalyserUseCount } = await import('@/lib/apis/monday');
+            // Run sync, PDF generation, and the usage-counter increment in
+            // parallel. The increment counts this completed run toward the
+            // email's free-analysis allowance (skipped for the exempt owner).
             await Promise.allSettled([
+              isUnlimited(emailStr) ? Promise.resolve() : incrementAnalyserUseCount(emailStr),
               syncAnalysisToMonday(
                 emailStr,
                 result.financials.longLetNetAnnual,
