@@ -392,37 +392,11 @@ function TakeHomeBridge({
 }
 
 // ─── Analyser usage gate (client side) ───────────────────────────
-// Per-BROWSER free-analysis counter: a single integer in localStorage counting
-// how many analyses this device has run, regardless of which email is entered.
-// It's reported on every request and the server gates on it (see
-// src/lib/usage.ts) — the browser is the source of truth because a serverless
-// count can't identify a device and resets on cold-start. Owner runs don't
-// increment it. Clearing storage / incognito resets the count (soft gate).
+// The server is the single source of truth for the usage limit — it counts the
+// analyser runs recorded on the lead's Monday item (see src/lib/usage.ts) and
+// returns HTTP 402 when the free limit is reached. The client only reacts to
+// that 402 by showing the paywall; it keeps no local count of its own.
 const ANALYSER_PAYMENT_URL = "https://intelligence.stayful.co.uk";
-// New key (was a per-email map under "stayful_analyser_uses"); a fresh key
-// avoids parsing the old map shape as an integer.
-const ANALYSER_USAGE_KEY = "stayful_analyser_browser_uses";
-
-function readUsageCount(): number {
-  if (typeof window === "undefined") return 0;
-  try {
-    const n = Number(localStorage.getItem(ANALYSER_USAGE_KEY));
-    return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
-  } catch {
-    return 0;
-  }
-}
-
-function recordUsageCount(count: number): void {
-  if (typeof window === "undefined") return;
-  try {
-    const safe = Number.isFinite(count) && count > 0 ? Math.floor(count) : 0;
-    const next = Math.max(readUsageCount(), safe);
-    localStorage.setItem(ANALYSER_USAGE_KEY, String(next));
-  } catch {
-    // localStorage unavailable — soft gate falls back to server-side only
-  }
-}
 
 export default function HomePage() {
   const [address, setAddress] = useState("");
@@ -648,9 +622,6 @@ export default function HomePage() {
           address,
           postcode,
           email,
-          // This browser's running free-analysis count (localStorage), so the
-          // per-device limit holds across serverless cold-starts.
-          priorUses: readUsageCount(),
           bedrooms: Number(bedrooms),
           guests: Number(guests),
           bathrooms: Number(bathrooms),
@@ -737,11 +708,6 @@ export default function HomePage() {
               }
 
               if (event.stage === "complete" && event.data) {
-                // Persist this browser's new usage count so it reports it on
-                // the next request (keeps the per-device free limit).
-                if (typeof event.usageCount === "number" && event.usageCount > 0) {
-                  recordUsageCount(event.usageCount);
-                }
                 if (typeof window !== "undefined" && (window as any).fbq) {
                   (window as any).fbq("track", "Lead");
                 }

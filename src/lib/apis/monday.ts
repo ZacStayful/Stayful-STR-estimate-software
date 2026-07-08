@@ -31,6 +31,7 @@ const DEFAULTS = {
   longTermColumnId: "text_mm2dsnw7",
   dealAnalyserColumnId: "text_mm2dkavd",
   fileColumnId: "files__1",
+  analyserUsesColumnId: "numeric_mm5221b0", // "Analyser Uses" — usage-gate counter
   timeOnSiteColumnId: "text_mm1ysvmg",
   // Qualification decision columns
   strProfitColumnId: "text_mm2eawgk",       // "STR Profit" — true uplift figure
@@ -334,6 +335,76 @@ async function updateItemColumns(
     { boardId, itemId, values: valuesJson },
   );
   return Boolean(data?.change_multiple_column_values?.id);
+}
+
+// ── Analyser usage counter ───────────────────────────────────────
+// Durable per-email count of analyser runs, stored in the "Analyser Uses"
+// number column on the lead's item. This backs the free-analysis paywall.
+// It counts FORWARD from when the column was introduced (existing leads start
+// at 0), so established leads are not retroactively blocked, and it is keyed by
+// the lead — never by device — so it can't over-block a shared browser.
+
+function analyserUsesColumnId(): string {
+  return process.env.MONDAY_ANALYSER_USES_COLUMN_ID || DEFAULTS.analyserUsesColumnId;
+}
+
+async function readUseCount(
+  cfg: NonNullable<ReturnType<typeof envConfig>>,
+  itemId: string,
+): Promise<number> {
+  const colId = analyserUsesColumnId();
+  const query = `
+    query ($ids: [ID!], $cols: [String!]) {
+      items(ids: $ids) { column_values(ids: $cols) { id text } }
+    }
+  `;
+  const data = await mondayQuery<{
+    items: Array<{ column_values: Array<{ id: string; text: string | null }> }>;
+  }>(cfg.token, query, { ids: [itemId], cols: [colId] });
+  const text = data?.items?.[0]?.column_values?.find((c) => c.id === colId)?.text ?? "";
+  const n = parseInt(text, 10);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+/**
+ * How many analyser runs this email's lead has recorded. Returns 0 when Monday
+ * isn't configured, the email isn't a known lead, or the column is empty — so
+ * the usage gate fails open and never wrongly blocks a genuine new user.
+ */
+export async function getAnalyserUseCount(email: string): Promise<number> {
+  const cfg = envConfig();
+  if (!cfg) return 0;
+  if (!email || !email.includes("@")) return 0;
+
+  const itemId = await findItemIdByEmail(cfg.token, cfg.boardId, cfg.emailColumnId, email);
+  if (!itemId) return 0;
+  return readUseCount(cfg, itemId);
+}
+
+/**
+ * Increment the analyser-use counter for this email's lead by one. No-op when
+ * Monday isn't configured or the email isn't a known lead (nothing to count
+ * against). Fails silently — a CRM hiccup must never break the analysis.
+ */
+export async function incrementAnalyserUseCount(email: string): Promise<void> {
+  const cfg = envConfig();
+  if (!cfg) return;
+  if (!email || !email.includes("@")) return;
+
+  const itemId = await findItemIdByEmail(cfg.token, cfg.boardId, cfg.emailColumnId, email);
+  if (!itemId) {
+    console.log(`[Monday] Analyser-use increment skipped — no lead for: ${email}`);
+    return;
+  }
+  const current = await readUseCount(cfg, itemId);
+  const ok = await updateItemColumns(cfg.token, cfg.boardId, itemId, {
+    [analyserUsesColumnId()]: String(current + 1),
+  });
+  if (ok) {
+    console.log(`[Monday] Analyser uses for ${email} → ${current + 1}`);
+  } else {
+    console.error(`[Monday] Analyser-use increment failed for ${email} (item ${itemId})`);
+  }
 }
 
 /**
