@@ -495,6 +495,12 @@ export async function POST(request: Request) {
 
         send({ stage: 'complete', progress: 100, message: 'Analysis complete', data: result });
 
+        // Derive the report figures once, up front: the storage insert below
+        // and the PDF generation in the Monday block (further down) both need
+        // them, so we compute here and reuse rather than calling twice.
+        const { deriveReportData } = await import('@/lib/pdf/derive');
+        const reportData = deriveReportData(result);
+
         // ── Persist the completed report (fire-and-forget) ──────────
         // Pure side-effect: the lead's estimate has ALREADY been flushed to
         // the client via the 'complete' event above, so nothing here can slow
@@ -519,12 +525,23 @@ export async function POST(request: Request) {
                 bedrooms: result.property.bedrooms,
                 adr: result.shortLet.averageDailyRate,
                 occupancy: result.shortLet.occupancyRate,
-                annual_revenue: result.shortLet.annualRevenue,
+                // Headline figures, taken from the same derived report the PDF
+                // renders from, so stored numbers match what the lead is shown.
+                gross_revenue: reportData.overview.grossRevenue,
+                net_revenue: reportData.overview.netRevenue,
+                property_value_low: reportData.overview.valueConservative,
+                property_value_high: reportData.overview.valueUpper,
                 // PropertyData sale valuation — null when the call failed or
                 // the key is missing.
                 purchase_price: result.propertyValuation?.estimatedValue ?? null,
                 lead_email: emailStr,
                 source: 'analyser',
+                // Live analyser writes are complete, not PDF-extracted — the
+                // extraction_* / filename columns exist for the Monday backfill
+                // pipeline, so mark this row as a clean, non-extracted save.
+                filename: null,
+                extraction_status: 'ok',
+                extraction_error: null,
                 raw_response: result,
               })
               .select('id')
@@ -560,10 +577,10 @@ export async function POST(request: Request) {
               (async () => {
                 const React = await import('react');
                 const { renderToBuffer } = await import('@react-pdf/renderer');
-                const { deriveReportData, sanitiseAddressForFilename } = await import('@/lib/pdf/derive');
+                const { sanitiseAddressForFilename } = await import('@/lib/pdf/derive');
                 const { StayfulReport } = await import('@/lib/pdf/StayfulReport');
-                const data = deriveReportData(result);
-                const element = React.createElement(StayfulReport, { data });
+                // Reuse the reportData derived above — don't re-derive.
+                const element = React.createElement(StayfulReport, { data: reportData });
                 const buffer = await (renderToBuffer as (e: unknown) => Promise<Buffer>)(element);
                 const filename = `Stayful_Property_Analysis_${sanitiseAddressForFilename(result.property.address)}.pdf`;
                 await uploadPdfToMonday(emailStr, buffer, filename, { address: result.property.address, postcode: result.property.postcode });
