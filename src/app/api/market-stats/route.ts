@@ -1,4 +1,5 @@
 import { getSupabase } from '@/lib/supabase';
+import { occupancyToPercent } from '@/lib/utils/occupancy';
 
 // ─── Market Explorer aggregation endpoint ──────────────────────────
 // Internal only — same x-internal-secret gate as /api/reports/count.
@@ -20,9 +21,13 @@ import { getSupabase } from '@/lib/supabase';
 //
 // Units, matching what the frontend expects (NOT the raw DB units):
 //   avg_adr                  GBP/night, rounded to the nearest pound
-//   avg_occupancy            PERCENTAGE 0–100, one decimal place
-//                             (analyser_reports.occupancy is stored as a
-//                             0–1 fraction — converted here, not upstream)
+//   avg_occupancy            PERCENTAGE 0–100, one decimal place.
+//                             analyser_reports.occupancy holds MIXED units —
+//                             the live analyser writes a 0–1 fraction, the
+//                             Monday PDF-backfill rows stored a 0–100 percentage
+//                             — so each row is normalised via occupancyToPercent
+//                             (value ≤ 1 → ×100; value > 1 → already a %), not a
+//                             blind ×100 which would turn 55.6 into 5560.
 //   avg_gross_revenue / avg_net_revenue
 //   avg_property_value_low / avg_property_value_high
 //                             GBP, rounded to the nearest pound
@@ -162,7 +167,7 @@ export async function GET(request: Request) {
         sample_count: groupRows.length,
         avg_adr: average(groupRows.map((r) => r.adr), 0),
         avg_occupancy: average(
-          groupRows.map((r) => (r.occupancy === null ? null : r.occupancy * 100)),
+          groupRows.map((r) => occupancyToPercent(r.occupancy)),
           1,
         ),
         avg_gross_revenue: average(groupRows.map((r) => r.gross_revenue), 0),
