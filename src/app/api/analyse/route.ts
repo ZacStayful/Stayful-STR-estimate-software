@@ -1,14 +1,6 @@
-import type { PropertyInput, AnalysisResult, ShortLetData, LongLetData, DemandDrivers, NearbyEvent, DataQuality, Recommendation, LongLetSource } from '@/lib/types';
-import { geocodePostcode } from '@/lib/apis/geocode';
-import { getShortLetData } from '@/lib/apis/airbtics';
-import { getLongLetData, getFloorArea, fetchPropertyValuation } from '@/lib/apis/propertydata';
-import { getNearbyAmenities } from '@/lib/apis/google-places';
-import { getNearbyEvents } from '@/lib/apis/ticketmaster';
-import { fetchPriceLabsRevenueEstimate, buildCrossValidation } from '@/lib/apis/pricelabs';
-import { calculateFinancials, assessRisk, generateVerdict, getRecommendation, estimateLongLet } from '@/lib/analysis';
 import { isUnlimited, FREE_ANALYSIS_LIMIT, PAYMENT_URL } from '@/lib/usage';
-import { getSupabase } from '@/lib/supabase';
-import { extractPostcodeArea } from '@/lib/utils/postcode';
+import { normaliseAnalysisInput } from '@/lib/pipeline/input';
+import { runAnalysis } from '@/lib/pipeline/runAnalysis';
 
 // This route renders the PDF with @react-pdf/renderer, which needs the Node
 // runtime (not Edge).
@@ -43,13 +35,16 @@ function isRateLimited(ip: string): boolean {
   return false;
 }
 
-// Clean up stale entries every 5 minutes to prevent memory leak
-setInterval(() => {
+// Clean up stale entries every 5 minutes to prevent memory leak.
+// unref'd so the timer never by itself keeps the process alive.
+const rateLimitCleanup = setInterval(() => {
   const now = Date.now();
   for (const [ip, entry] of rateLimitMap) {
     if (now > entry.resetAt) rateLimitMap.delete(ip);
   }
 }, 300_000);
+// Node's Timeout has unref(); the DOM's numeric handle does not.
+(rateLimitCleanup as unknown as { unref?: () => void }).unref?.();
 
 // ─── SSE Helper ──────────────────────────────────────────────────
 function sseEvent(data: Record<string, unknown>): string {
@@ -86,16 +81,12 @@ export async function POST(request: Request) {
     );
   }
 
-  // Validate input
-  const { address, postcode, email, bedrooms, guests, bathrooms, parking, outdoorSpace, propertyType, monthlyMortgage, monthlyBills, longLetMonthly, longLetNotSure } = body as {
-    address: unknown; postcode: unknown; email: unknown;
-    bedrooms: unknown; guests: unknown;
-    bathrooms: unknown; parking: unknown; outdoorSpace: unknown;
-    propertyType: unknown;
-    monthlyMortgage: unknown; monthlyBills: unknown;
-    longLetMonthly: unknown; longLetNotSure: unknown;
-  };
-  const emailStr = typeof email === 'string' && email.includes('@') ? email.trim() : null;
+  // Validate + map input. Shared with the bulk upload so a spreadsheet row and
+  // a form submission are normalised identically.
+  const normalised = normaliseAnalysisInput(body);
+  const emailStr = typeof body.email === 'string' && body.email.includes('@')
+    ? (body.email as string).trim()
+    : null;
 
   // ─── Usage gate ────────────────────────────────────────────────
   // Cap free analyses at FREE_ANALYSIS_LIMIT per EMAIL (owner exempt), then
@@ -128,93 +119,9 @@ export async function POST(request: Request) {
     }
   }
 
-  // Long-let monthly rent the landlord entered (GBP). "Not sure" → undefined here
-  // and resolved later via estimateLongLet() / PropertyData fallback.
-  const longLetMonthlyInput = Number(longLetMonthly);
-  const hasLongLetMonthly = !longLetNotSure && Number.isFinite(longLetMonthlyInput) && longLetMonthlyInput > 0;
-
-  const bathroomCount = Number(bathrooms);
-  const validBathrooms = Number.isFinite(bathroomCount) && bathroomCount >= 1 ? bathroomCount : undefined;
-
-  // Parking: map user selection to API numeric value
-  const parkingMap: Record<string, number> = {
-    'no_parking': 0,
-    'on_street': 0,
-    'allocated': 1,
-    'garage': 1,
-    'driveway_1': 1,
-    'driveway_2': 2,
-  };
-  const validParking = typeof parking === 'string' && parking in parkingMap ? parking : 'no_parking';
-  const parkingValue = parkingMap[validParking] ?? 0;
-  const validHasParking = validParking !== 'no_parking' && validParking !== 'on_street';
-
-  // Outdoor space: map to PropertyData format
-  const outdoorMap: Record<string, string> = {
-    'none': 'none',
-    'balcony': 'balcony_terrace',
-    'garden': 'garden',
-    'roof_terrace': 'balcony_terrace',
-  };
-  const validOutdoorSpace = typeof outdoorSpace === 'string' && outdoorSpace in outdoorMap
-    ? outdoorMap[outdoorSpace]
-    : 'none';
-
-  // Changed from 'very_high' to 'average' — hardcoded 1.38x condition multiplier
-  // was inflating every property estimate by 38% regardless of actual finish quality.
-  // PMI applies no quality multiplier to the headline figure.
-  const validFinishQuality = 'average';
-  const validSpecialFeatures: string[] = [];
-
-  if (!address || typeof address !== 'string' || (address as string).trim().length === 0) {
-    return Response.json(
-      { error: 'A valid property address is required.' },
-      { status: 400 },
-    );
+  if (!normalised.ok) {
+    return Response.json({ error: normalised.error }, { status: 400 });
   }
-
-  if (!postcode || typeof postcode !== 'string' || (postcode as string).trim().length < 3) {
-    return Response.json(
-      { error: 'A valid UK postcode is required.' },
-      { status: 400 },
-    );
-  }
-
-  const bedroomCount = Number(bedrooms);
-  if (!Number.isFinite(bedroomCount) || bedroomCount < 0 || bedroomCount > 10) {
-    return Response.json(
-      { error: 'Bedrooms must be a number between 0 and 10.' },
-      { status: 400 },
-    );
-  }
-
-  const guestCount = Number(guests);
-  if (!Number.isFinite(guestCount) || guestCount < 1 || guestCount > 16) {
-    return Response.json(
-      { error: 'Guests must be a number between 1 and 16.' },
-      { status: 400 },
-    );
-  }
-
-  const property: PropertyInput = {
-    address: (address as string).trim(),
-    postcode: (postcode as string).trim().toUpperCase(),
-    bedrooms: bedroomCount,
-    guests: guestCount,
-  };
-
-  // Map property type to PropertyData format
-  const propertyTypeMap: Record<string, string> = {
-    'Flat': 'flat',
-    'Terraced': 'terraced_house',
-    'Semi-detached': 'semi-detached_house',
-    'Detached': 'detached_house',
-    // Legacy values (backwards compat)
-    'Terraced House': 'terraced_house',
-    'Semi-Detached House': 'semi-detached_house',
-    'Detached House': 'detached_house',
-  };
-  const mappedPropertyType = propertyType ? propertyTypeMap[propertyType as string] ?? 'flat' : 'flat';
 
   // ─── Streaming SSE Response ──────────────────────────────────
   const stream = new ReadableStream({
@@ -224,372 +131,12 @@ export async function POST(request: Request) {
       };
 
       try {
-        // ── Group 1 (parallel): Geocoding + (Short-let + Long-let) ──
-        send({ stage: 'geocoding', progress: 10, message: 'Locating property...' });
-
-        const geocodePromise = geocodePostcode(property.postcode);
-        // Get floor area + build year from /floor-areas before calling valuation
-        const floorAreaPromise = getFloorArea(property.postcode, property.address, property.bedrooms);
-
-        // Wait for geocoding first — short-let now needs coordinates for nearby listings
-        let coordinates: { lat: number; lng: number };
-        try {
-          coordinates = await geocodePromise;
-        } catch (err) {
-          console.error('Geocoding failed:', err);
-          send({ stage: 'error', progress: 0, message: 'Could not geocode the provided postcode. Please check it and try again.' });
-          controller.close();
-          return;
-        }
-
-        send({ stage: 'geocoding', progress: 20, message: 'Property located' });
-
-        // Wait for floor area data before starting long-let call
-        const floorArea = await floorAreaPromise;
-
-        // Long-let figure: when the landlord told us what the property rents
-        // for as a standard long-term let, that IS the comparison figure — we
-        // bypass the PropertyData valuation entirely and run every downstream
-        // long-let number (financials, comparison, decision) off their figure.
-        // Only fall back to the PropertyData API when they didn't provide one
-        // (or chose "Not sure").
-        const longLetPromise: Promise<LongLetData> = hasLongLetMonthly
-          ? Promise.resolve({
-              monthlyRent: longLetMonthlyInput,
-              estimateHigh: longLetMonthlyInput,
-              estimateLow: longLetMonthlyInput,
-              comparables: [],
-            })
-          : getLongLetData(property.postcode, property.bedrooms, {
-              propertyType: mappedPropertyType,
-              constructionDate: floorArea.constructionDate,
-              internalArea: floorArea.squareFeet,
-              ...(validBathrooms && { bathrooms: validBathrooms }),
-              finishQuality: validFinishQuality,
-              outdoorSpace: validOutdoorSpace,
-              offStreetParking: parkingValue,
-            });
-
-        // Now fetch short-let (needs coords) + long-let in parallel
-        const shortLetPromise = getShortLetData(
-          property.postcode,
-          property.bedrooms,
-          property.guests,
-          coordinates.lat,
-          coordinates.lng,
-          {
-            bathrooms: validBathrooms,
-            hasParking: validHasParking,
-            parkingSpaces: parkingValue,            // V3: for ADR feature multiplier
-            finishQuality: validFinishQuality || undefined,
-            outdoorSpace: validOutdoorSpace,        // V3
-            propertyType: mappedPropertyType,       // V3
-            specialFeatures: validSpecialFeatures,  // V3
-          },
-        );
-        // PriceLabs Revenue Estimator is gated behind PRICELABS_AS_PRIMARY
-        // env var. When unset (the default), PriceLabs is NOT called at all
-        // — saves trial credits and keeps the existing Airbtics-V4 pipeline
-        // as the sole headline source. To re-enable PriceLabs as primary,
-        // set PRICELABS_AS_PRIMARY=true in Vercel and redeploy.
-        //
-        // When enabled and successful, PriceLabs RE OVERRIDES the V4
-        // headline below. When it fails (missing key, 401, 429 quota
-        // exhausted, 500), V4 result stays unchanged.
-        const priceLabsEnabled = process.env.PRICELABS_AS_PRIMARY === 'true';
-        const priceLabsPromise: Promise<Awaited<ReturnType<typeof fetchPriceLabsRevenueEstimate>>> = priceLabsEnabled
-          ? fetchPriceLabsRevenueEstimate({
-              address: property.address,
-              bedrooms: property.bedrooms,
-              lat: coordinates.lat,
-              lng: coordinates.lng,
-              currency: 'GBP',
-            })
-          : Promise.resolve(null);
-        if (!priceLabsEnabled) {
-          console.log('[PriceLabs RE] disabled (PRICELABS_AS_PRIMARY not set) — using Airbtics-V4 only');
-        }
-
-        // Sale valuation runs in parallel — never blocks or throws
-        const saleValuationPromise = fetchPropertyValuation(
-          property.postcode,
-          property.bedrooms,
-          mappedPropertyType,
-        );
-
-        const [shortLetResult, longLetResult, priceLabsResult, saleValuationResult] = await Promise.allSettled([
-          shortLetPromise,
-          longLetPromise,
-          priceLabsPromise,
-          saleValuationPromise,
-        ]);
-
-        const shortLetRaw = shortLetResult.status === 'fulfilled'
-          ? shortLetResult.value
-          : {
-              data: {
-                annualRevenue: 0,
-                monthlyRevenue: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] as ShortLetData['monthlyRevenue'],
-                occupancyRate: 0,
-                averageDailyRate: 0,
-                activeListings: 0,
-                comparables: [],
-              },
-              quality: {
-                comparablesFound: 0, comparablesTarget: 12,
-                searchRadiusKm: 0, searchBroadened: false, level: 'low' as const,
-                disclaimer: 'Unable to fetch short-term rental data. Book a web meeting with Stayful for a personalised assessment.',
-              },
-            };
-        const shortLet: ShortLetData = shortLetRaw.data;
-        const dataQuality: DataQuality = shortLetRaw.quality;
-
-        const longLet: LongLetData = longLetResult.status === 'fulfilled'
-          ? longLetResult.value
-          : {
-              monthlyRent: 0,
-              estimateHigh: 0,
-              estimateLow: 0,
-              comparables: [],
-            };
-
-        if (shortLetResult.status === 'rejected') {
-          console.error('Airbtics API failed:', shortLetResult.reason);
-        }
-        if (longLetResult.status === 'rejected') {
-          console.error('PropertyData API failed:', longLetResult.reason);
-        }
-
-        send({ stage: 'short_let', progress: 40, message: 'Short-let revenue data received' });
-        send({ stage: 'long_let', progress: 50, message: 'Long-let valuation received' });
-
-        // ── Group 2 (parallel, needs geocoding): Amenities + Events ──
-        send({ stage: 'amenities', progress: 55, message: 'Finding nearby amenities & transport...' });
-
-        const [amenitiesResult, eventsResult] = await Promise.allSettled([
-          getNearbyAmenities(coordinates.lat, coordinates.lng),
-          getNearbyEvents(coordinates.lat, coordinates.lng),
-        ]);
-
-        const demandDrivers: DemandDrivers = amenitiesResult.status === 'fulfilled'
-          ? amenitiesResult.value
-          : {
-              hospitals: [],
-              universities: [],
-              airports: [],
-              trainStations: [],
-              busStations: [],
-              subwayStations: [],
-            };
-
-        const nearbyEvents: { events: NearbyEvent[]; totalEvents: number } =
-          eventsResult.status === 'fulfilled'
-            ? eventsResult.value
-            : { events: [], totalEvents: 0 };
-
-        if (amenitiesResult.status === 'rejected') {
-          console.error('Google Places API failed:', amenitiesResult.reason);
-        }
-        if (eventsResult.status === 'rejected') {
-          console.error('Ticketmaster API failed:', eventsResult.reason);
-        }
-
-        send({ stage: 'amenities', progress: 75, message: 'Nearby amenities found' });
-        send({ stage: 'events', progress: 80, message: 'Local events discovered' });
-
-        // ── Final: Run analysis ──────────────────────────────────────
-        send({ stage: 'analysis', progress: 90, message: 'Running financial analysis...' });
-
-        // PriceLabs Revenue Estimator override.
-        // If the trial/subscription returned a successful estimate, it
-        // becomes the primary headline source — we overwrite shortLet.* with
-        // PriceLabs values BEFORE running financials. The V4-on-Airbtics
-        // result is preserved in crossValidation.airbticsRevenue for
-        // transparency but no longer drives the headline.
-        const priceLabsData = priceLabsResult.status === 'fulfilled' ? priceLabsResult.value : null;
-        if (priceLabsResult.status === 'rejected') {
-          console.error('[PriceLabs RE] promise rejected:', priceLabsResult.reason);
-        }
-
-        const propertyValuation = saleValuationResult.status === 'fulfilled'
-          ? saleValuationResult.value
-          : null;
-        if (saleValuationResult.status === 'rejected') {
-          console.error('[PropertyData] sale valuation promise rejected:', (saleValuationResult as PromiseRejectedResult).reason);
-        }
-        const crossValidation = buildCrossValidation(shortLet.annualRevenue, priceLabsData);
-
-        if (priceLabsData) {
-          // Override headline: replace V4 numbers with PriceLabs RE numbers.
-          // Comparables stay as Airbtics-sourced (PriceLabs RE doesn't
-          // expose individual comp listings, only aggregates).
-          shortLet.annualRevenue = priceLabsData.annualRevenue;
-          shortLet.averageDailyRate = priceLabsData.adr;
-          shortLet.occupancyRate = priceLabsData.occupancy;
-          // PriceLabs gives us 12 monthly values — use directly.
-          // Cast required: ShortLetData expects a fixed-length tuple.
-          const padded: number[] = [...priceLabsData.monthlyRevenue];
-          while (padded.length < 12) padded.push(0);
-          shortLet.monthlyRevenue = padded.slice(0, 12) as ShortLetData['monthlyRevenue'];
-          console.log(`[PriceLabs RE] overrode headline: was £${crossValidation.airbticsRevenue}, now £${priceLabsData.annualRevenue} (range £${priceLabsData.rangeLow}-£${priceLabsData.rangeHigh})`);
-        }
-        console.log(`[PriceLabs RE] crossValidation: source=${crossValidation.source}, confidence=${crossValidation.confidence}, divergence=${crossValidation.divergencePct?.toFixed(1) ?? 'n/a'}%`);
-
-        // Re-run financials with the (possibly overridden) shortLet values
-        const financials = calculateFinancials(shortLet, longLet);
-        const risk = assessRisk(shortLet, longLet, demandDrivers, nearbyEvents);
-        const verdict = generateVerdict(financials, risk);
-
-        // ── Qualification decision: short-let vs long-let ──
-        // Resolve the long-let monthly figure to compare against:
-        //   1. landlord's entered figure, else
-        //   2. estimateLongLet() (currently a stub → null), else
-        //   3. PropertyData valuation fallback.
-        let longLetMonthlyForDecision = 0;
-        let longLetSource: LongLetSource = 'user';
-        if (hasLongLetMonthly) {
-          longLetMonthlyForDecision = longLetMonthlyInput;
-          longLetSource = 'user';
-        } else {
-          const estimated = estimateLongLet(property.postcode, property.bedrooms);
-          if (estimated != null && estimated > 0) {
-            longLetMonthlyForDecision = estimated;
-            longLetSource = 'estimate';
-          } else {
-            longLetMonthlyForDecision = longLet.monthlyRent;
-            longLetSource = 'propertydata_fallback';
-          }
-        }
-
-        // Only produce a decision when we have both a gross STR projection and a
-        // positive long-let figure to compare against (avoids divide-by-zero).
-        let recommendation: Recommendation | undefined;
-        if (shortLet.annualRevenue > 0 && longLetMonthlyForDecision > 0) {
-          const decision = getRecommendation(shortLet.annualRevenue, longLetMonthlyForDecision);
-          recommendation = {
-            ...decision,
-            longLetMonthly: longLetMonthlyForDecision,
-            longLetSource,
-          };
-        }
-
-        const now = new Date().toISOString();
-
-        const result: AnalysisResult = {
-          property,
-          coordinates,
-          shortLet,
-          longLet,
-          demandDrivers,
-          nearbyEvents,
-          financials,
-          dataQuality,
-          risk,
-          verdict,
-          recommendation,
-          createdAt: now,
-          updatedAt: now,
-          crossValidation,
-          propertyValuation,
-        };
-
-        send({ stage: 'complete', progress: 100, message: 'Analysis complete', data: result });
-
-        // Derive the report figures once, up front: the storage insert below
-        // and the PDF generation in the Monday block (further down) both need
-        // them, so we compute here and reuse rather than calling twice.
-        const { deriveReportData } = await import('@/lib/pdf/derive');
-        const reportData = deriveReportData(result);
-
-        // ── Persist the completed report (fire-and-forget) ──────────
-        // Pure side-effect: the lead's estimate has ALREADY been flushed to
-        // the client via the 'complete' event above, so nothing here can slow
-        // or alter what they receive. A failed write is swallowed and logged —
-        // it must never break a live estimate. This data later feeds the
-        // Market Explorer aggregation in Stayful Intelligence.
-        try {
-          const supabase = getSupabase();
-          if (!supabase) {
-            console.warn('[storage] Supabase not configured (SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY unset) — skipping report save');
-          } else {
-            const postcodeArea =
-              extractPostcodeArea(result.property.postcode) ??
-              extractPostcodeArea(result.property.address);
-
-            const { data, error } = await supabase
-              .from('analyser_reports')
-              .insert({
-                address: result.property.address,
-                postcode: result.property.postcode,
-                postcode_area: postcodeArea,
-                bedrooms: result.property.bedrooms,
-                adr: result.shortLet.averageDailyRate,
-                occupancy: result.shortLet.occupancyRate,
-                // Headline figures, taken from the same derived report the PDF
-                // renders from, so stored numbers match what the lead is shown.
-                gross_revenue: reportData.overview.grossRevenue,
-                net_revenue: reportData.overview.netRevenue,
-                property_value_low: reportData.overview.valueConservative,
-                property_value_high: reportData.overview.valueUpper,
-                // PropertyData sale valuation — null when the call failed or
-                // the key is missing.
-                purchase_price: result.propertyValuation?.estimatedValue ?? null,
-                lead_email: emailStr,
-                source: 'analyser',
-                // Live analyser writes are complete, not PDF-extracted — the
-                // extraction_* / filename columns exist for the Monday backfill
-                // pipeline, so mark this row as a clean, non-extracted save.
-                filename: null,
-                extraction_status: 'ok',
-                extraction_error: null,
-                raw_response: result,
-              })
-              .select('id')
-              .single();
-
-            if (error) {
-              console.error('[storage] failed to save report:', error);
-            } else {
-              console.log('[storage] report saved:', data.id);
-            }
-          }
-        } catch (err) {
-          console.error('[storage] failed to save report:', err);
-        }
-
-        // Monday.com CRM sync + PDF upload — awaited before closing stream
-        // so Vercel doesn't kill the function before they complete.
-        if (emailStr) {
-          try {
-            const { syncAnalysisToMonday, uploadPdfToMonday, incrementAnalyserUseCount } = await import('@/lib/apis/monday');
-            // Run sync, PDF generation, and the usage-counter increment in
-            // parallel. The increment counts this completed run toward the
-            // email's free-analysis allowance (skipped for the exempt owner).
-            await Promise.allSettled([
-              isUnlimited(emailStr) ? Promise.resolve() : incrementAnalyserUseCount(emailStr),
-              syncAnalysisToMonday(
-                emailStr,
-                result.financials.longLetNetAnnual,
-                result.financials.shortLetNetAnnual,
-                result.recommendation,
-                { address: result.property.address, postcode: result.property.postcode },
-              ),
-              (async () => {
-                const React = await import('react');
-                const { renderToBuffer } = await import('@react-pdf/renderer');
-                const { sanitiseAddressForFilename } = await import('@/lib/pdf/derive');
-                const { StayfulReport } = await import('@/lib/pdf/StayfulReport');
-                // Reuse the reportData derived above — don't re-derive.
-                const element = React.createElement(StayfulReport, { data: reportData });
-                const buffer = await (renderToBuffer as (e: unknown) => Promise<Buffer>)(element);
-                const filename = `Stayful_Property_Analysis_${sanitiseAddressForFilename(result.property.address)}.pdf`;
-                await uploadPdfToMonday(emailStr, buffer, filename, { address: result.property.address, postcode: result.property.postcode });
-              })(),
-            ]);
-          } catch (err) {
-            console.error('[Monday] CRM sync error:', err);
-          }
-        }
+        // runAnalysis emits the same stage/progress/message events this route
+        // used to send inline, and performs the storage + CRM side effects
+        // after the 'complete' event. It never throws.
+        await runAnalysis(normalised.input, {
+          onProgress: (event) => send({ ...event }),
+        });
       } catch (err) {
         console.error('Unexpected error in /api/analyse:', err);
         send({ stage: 'error', progress: 0, message: 'An unexpected error occurred. Please try again.' });

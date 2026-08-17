@@ -195,13 +195,19 @@ const REPORT_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours (reports don't chan
 const marketIdCache = new Map<string, { id: number | null; expiresAt: number }>();
 const CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
 
-// Clean up stale cache entries every 10 minutes
-setInterval(() => {
+// Clean up stale cache entries every 10 minutes.
+// unref'd so this housekeeping timer never by itself keeps the process alive —
+// without it, merely importing this module pins the event loop open, which
+// hangs any short-lived process (the test runner, one-shot scripts). The timer
+// still fires normally for as long as the server is running.
+const marketIdCacheCleanup = setInterval(() => {
   const now = Date.now();
   for (const [key, entry] of marketIdCache) {
     if (now > entry.expiresAt) marketIdCache.delete(key);
   }
 }, 600_000);
+// Node's Timeout has unref(); the DOM's numeric handle does not.
+(marketIdCacheCleanup as unknown as { unref?: () => void }).unref?.();
 
 /**
  * Calculates distance in km between two lat/lng points using the Haversine formula.
