@@ -63,6 +63,19 @@ const GEOCODE_ERROR_MESSAGE =
   'Could not geocode the provided postcode. Please check it and try again.';
 const GENERIC_ERROR_MESSAGE = 'An unexpected error occurred. Please try again.';
 
+// The pre-'complete' events, replayed verbatim by the PIPELINE_FAKE path so a
+// dry run exercises the same UI transitions a real one does.
+const FAKE_SEQUENCE: ReadonlyArray<[string, number, string]> = [
+  ['geocoding', 10, 'Locating property...'],
+  ['geocoding', 20, 'Property located'],
+  ['short_let', 40, 'Short-let revenue data received'],
+  ['long_let', 50, 'Long-let valuation received'],
+  ['amenities', 55, 'Finding nearby amenities & transport...'],
+  ['amenities', 75, 'Nearby amenities found'],
+  ['events', 80, 'Local events discovered'],
+  ['analysis', 90, 'Running financial analysis...'],
+];
+
 export async function runAnalysis(
   input: NormalisedInput,
   options: RunAnalysisOptions = {},
@@ -75,6 +88,29 @@ export async function runAnalysis(
   } = input;
 
   try {
+    // ── Zero-credit dry run ──────────────────────────────────────
+    // PIPELINE_FAKE=1 short-circuits every external call with deterministic
+    // figures, so the bulk machinery can be exercised end to end for £0.
+    // Emits the same event sequence so the UI path is exercised too.
+    if (process.env.PIPELINE_FAKE === '1') {
+      const { fakeAnalysis } = await import('../bulk/fake.ts');
+      for (const [stage, progress, message] of FAKE_SEQUENCE) {
+        emit({ stage, progress, message });
+      }
+      const result = fakeAnalysis(input);
+      emit({ stage: 'complete', progress: 100, message: 'Analysis complete', data: result });
+      const sideEffects = await persistAndSync(result, {
+        email: emailStr,
+        phone,
+        source: options.reportSource ?? 'analyser',
+        incrementUsage: options.incrementUsage !== false,
+        mondayItemId: options.mondayItemId ?? null,
+        gate: options.sideEffectGate,
+        renderLock: options.renderLock,
+      });
+      return { ok: true, result, ...sideEffects };
+    }
+
     // ── Group 1 (parallel): Geocoding + (Short-let + Long-let) ──
     emit({ stage: 'geocoding', progress: 10, message: 'Locating property...' });
 

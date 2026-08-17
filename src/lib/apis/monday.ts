@@ -342,6 +342,17 @@ async function updateItemColumns(
   itemId: string,
   columnValues: Record<string, string | number | { label: string } | { index: number } | null>,
 ): Promise<boolean> {
+  const valuesJson = JSON.stringify(columnValues);
+
+  // MONDAY_DRY_RUN=1 — log exactly what would be written and report success,
+  // without touching the board. Lets a whole bulk job be rehearsed against the
+  // REAL board (matching included, which is the part most worth testing on
+  // real data) while mutating nothing.
+  if (process.env.MONDAY_DRY_RUN === "1") {
+    console.log(`[Monday][DRY RUN] would write to item ${itemId}: ${valuesJson}`);
+    return true;
+  }
+
   const mutation = `
     mutation ($boardId: ID!, $itemId: ID!, $values: JSON!) {
       change_multiple_column_values(
@@ -353,7 +364,6 @@ async function updateItemColumns(
       }
     }
   `;
-  const valuesJson = JSON.stringify(columnValues);
   const data = await mondayQuery<{ change_multiple_column_values: { id: string } }>(
     token,
     mutation,
@@ -541,6 +551,14 @@ export async function uploadPdfToMonday(
   }
 
   const fileColumnId = process.env.MONDAY_FILE_COLUMN_ID || DEFAULTS.fileColumnId;
+
+  if (process.env.MONDAY_DRY_RUN === "1") {
+    console.log(
+      `[Monday][DRY RUN] would upload ${filename} (${pdfBuffer.length} bytes) ` +
+      `to item ${itemId} column ${fileColumnId}`,
+    );
+    return;
+  }
 
   try {
     const query = `mutation ($file: File!) { add_file_to_column(item_id: ${itemId}, column_id: "${fileColumnId}", file: $file) { id } }`;
