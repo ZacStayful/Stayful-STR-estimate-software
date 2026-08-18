@@ -22,7 +22,22 @@ export interface SendResult {
 }
 
 export function isEmailConfigured(): boolean {
-  return Boolean(process.env.RESEND_API_KEY && process.env.ADMIN_EMAIL_FROM);
+  return missingEmailConfig().length === 0;
+}
+
+/**
+ * Which of the required variables are absent.
+ *
+ * Named individually because "email is not configured" sends you looking at
+ * both, and the usual cause is one of them — either set for the wrong
+ * environment, or added after the deployment was built, since Vercel binds
+ * variables at build time and an existing deployment never picks up new ones.
+ */
+export function missingEmailConfig(): string[] {
+  const missing: string[] = [];
+  if (!process.env.RESEND_API_KEY) missing.push("RESEND_API_KEY");
+  if (!process.env.ADMIN_EMAIL_FROM) missing.push("ADMIN_EMAIL_FROM");
+  return missing;
 }
 
 export async function sendEmail(params: {

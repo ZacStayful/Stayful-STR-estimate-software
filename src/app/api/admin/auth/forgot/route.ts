@@ -1,7 +1,7 @@
 import { after } from 'next/server';
 import { isAdminAreaEnabled, isAllowedAdmin, normaliseAdminEmail } from '@/lib/auth/allowlist';
 import { createResetToken } from '@/lib/auth/reset';
-import { isEmailConfigured, resetEmail, sendEmail } from '@/lib/email/send';
+import { missingEmailConfig, resetEmail, sendEmail } from '@/lib/email/send';
 
 export const runtime = 'nodejs';
 
@@ -76,10 +76,16 @@ export async function POST(request: Request) {
   // faster for the user either way.
   const origin = baseUrl(request);
   after(async () => {
-    if (!isEmailConfigured()) {
+    const missing = missingEmailConfig();
+    if (missing.length) {
       // Worth shouting about: the user is now waiting for an email that is
-      // never coming.
-      console.error('[admin] reset requested but email is not configured — set RESEND_API_KEY and ADMIN_EMAIL_FROM');
+      // never coming. Name the missing variables — and the usual cause, which
+      // is not that they were never set.
+      console.error(
+        `[admin] reset requested but email is not configured — missing ${missing.join(' and ')}. ` +
+          `If it is set in Vercel, check it covers this environment, and note that variables bind ` +
+          `at build time: a deployment created before the variable existed will never see it.`,
+      );
       return;
     }
 
