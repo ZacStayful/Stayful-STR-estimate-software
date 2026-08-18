@@ -1,6 +1,8 @@
 import { cookies } from 'next/headers';
 import { isAdminAreaEnabled, isAllowedAdmin, normaliseAdminEmail } from '@/lib/auth/allowlist';
-import { verifyAdminPassword } from '@/lib/auth/password';
+// Reads the database first, falling back to ADMIN_PASSWORD_HASHES when an
+// address has no row yet — so this keeps working before and after a reset.
+import { verifyPassword } from '@/lib/auth/store';
 import { ADMIN_COOKIE, SESSION_COOKIE_OPTIONS, createSessionToken } from '@/lib/auth/session';
 
 export const runtime = 'nodejs';
@@ -66,7 +68,7 @@ export async function POST(request: Request) {
 
   if (!email || !password) return reject();
   if (!isAllowedAdmin(email)) return reject();
-  if (!(await verifyAdminPassword(email, password))) return reject();
+  if (!(await verifyPassword(email, password))) return reject();
 
   const token = createSessionToken(email);
   if (!token) return Response.json({ error: 'Not found' }, { status: 404 });

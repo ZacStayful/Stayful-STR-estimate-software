@@ -170,12 +170,15 @@ Reconcile after each: succeeded row count vs `analyser_reports` where
 
 ## Setup
 
-1. Apply the migration in `supabase/migrations/` (creates `bulk_jobs`,
-   `bulk_job_rows`, the claim function, and enables RLS).
+1. Apply the migrations in `supabase/migrations/` (creates `bulk_jobs`,
+   `bulk_job_rows`, the claim function, `admin_users`, `admin_password_resets`,
+   and enables RLS).
 2. Set `ADMIN_EMAILS`, `ADMIN_SESSION_SECRET`, `ADMIN_PASSWORD_HASHES`
    (`node scripts/hash-admin-password.mjs <email>`), `CRON_SECRET` and
    `INTERNAL_API_SECRET`. Without the first two, the whole admin area 404s.
-3. Deploy. `vercel.json` registers the worker cron (production only).
+3. Optionally set `RESEND_API_KEY` and `ADMIN_EMAIL_FROM` to enable
+   "Forgot password?". Everything else works without them.
+4. Deploy. `vercel.json` registers the worker cron (production only).
 
 ### Running on Vercel Hobby
 
@@ -235,14 +238,41 @@ The admin area lives at `/admin/bulk`, reachable from the **Staff login** link i
 the footer of the main calculator page. There is no other link to it, and it is
 `noindex`'d and disallowed in `robots.txt`.
 
-Sign in with your `@stayful.co.uk` address and the password whose hash is in
-`ADMIN_PASSWORD_HASHES`.
+Sign in with your `@stayful.co.uk` address and your password. **Show** next to
+the password box reveals what you're typing, for when a long password won't go
+in right.
 
-### Changing the password
+### Forgot password
 
-Passwords are never stored — only a scrypt hash of them, in the
-`ADMIN_PASSWORD_HASHES` env var. So "what is the password?" cannot be answered
-from the deployment; if it's lost, set a new one:
+Click **Forgot password?** on the sign-in page with your email filled in. A
+one-time link arrives by email; it lasts an hour, works once, and signs you in
+as soon as you've set the new password.
+
+A few deliberate behaviours worth knowing, so they don't look like faults:
+
+- **The confirmation message is always the same** — "If that address has an
+  admin account, a reset link is on its way" — whether or not the address is an
+  admin. Otherwise the page would tell a stranger who has access. So a typo'd
+  address looks exactly like a successful request; if no email arrives, check
+  the spelling first.
+- **Requesting a new link kills the previous one.** If you click twice, use the
+  newest email.
+- **Five requests per 15 minutes**, after which they're quietly ignored (same
+  message, no email). Wait it out.
+
+Nothing sends unless `RESEND_API_KEY` and `ADMIN_EMAIL_FROM` are set — see
+`.env.example`. If they're missing, the request is still accepted and the server
+logs `reset requested but email is not configured`, so **check the Vercel logs
+before assuming the link is lost in a spam folder.**
+
+The first reset also migrates you off the env var: from then on your hash lives
+in the `admin_users` table, and `ADMIN_PASSWORD_HASHES` is ignored for your
+address.
+
+### Setting a password without email
+
+Still available, and the way to bootstrap a new admin before they have a
+password at all:
 
 ```bash
 node scripts/hash-admin-password.mjs zac@stayful.co.uk
@@ -262,5 +292,10 @@ their entry to `ADMIN_PASSWORD_HASHES`, comma-separated:
 zac@stayful.co.uk:<hash>:<salt>,someone@stayful.co.uk:<hash>:<salt>
 ```
 
+Note this only works for an address that has **not** reset its password since —
+once a row exists in `admin_users`, that hash wins and the env var is ignored
+for that address. Use **Forgot password?** instead, or clear the row.
+
 Removing an address from `ADMIN_EMAILS` revokes it immediately, including any
-session already signed in — the allowlist is re-checked on every request.
+session already signed in and any unredeemed reset link — the allowlist is
+re-checked on every request and again when a reset link is redeemed.
