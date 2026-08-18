@@ -3531,6 +3531,18 @@ export default function HomePage() {
               <p>
                 &copy; {new Date().getFullYear()} Stayful. All rights reserved.
               </p>
+              {/* Staff entry point to the bulk analyser. Deliberately plain and
+                  low-contrast: leads see this page, so it should read as
+                  housekeeping rather than an invitation. It is password-gated
+                  and noindex'd either way. */}
+              <p className="mt-4">
+                <a
+                  href="/admin/bulk"
+                  className="text-xs text-muted-foreground/60 underline underline-offset-2 hover:text-foreground"
+                >
+                  Staff login
+                </a>
+              </p>
             </div>
           </footer>
         </div>
@@ -3925,6 +3937,17 @@ export default function HomePage() {
           <p className="mt-2">
             Data sourced from Airbtics, PropertyData, Google Places, Ticketmaster,
             and public market research.
+          </p>
+          {/* Staff entry point to the bulk analyser — see the note on the other
+              footer. Both render paths need it, or the link disappears once a
+              lead has run an analysis. */}
+          <p className="mt-4">
+            <a
+              href="/admin/bulk"
+              className="text-xs text-muted-foreground/60 underline underline-offset-2 hover:text-foreground"
+            >
+              Staff login
+            </a>
           </p>
         </div>
       </footer>

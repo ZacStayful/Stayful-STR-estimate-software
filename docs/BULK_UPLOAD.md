@@ -226,3 +226,41 @@ minute-by-minute heartbeat without upgrading.
 **"Call recordings"** — not `files__1` ("Deal Analyser") where the PDF is
 actually written. The `/report` page therefore returns the wrong file. Not
 touched here; worth a separate fix.
+
+---
+
+## Signing in
+
+The admin area lives at `/admin/bulk`, reachable from the **Staff login** link in
+the footer of the main calculator page. There is no other link to it, and it is
+`noindex`'d and disallowed in `robots.txt`.
+
+Sign in with your `@stayful.co.uk` address and the password whose hash is in
+`ADMIN_PASSWORD_HASHES`.
+
+### Changing the password
+
+Passwords are never stored — only a scrypt hash of them, in the
+`ADMIN_PASSWORD_HASHES` env var. So "what is the password?" cannot be answered
+from the deployment; if it's lost, set a new one:
+
+```bash
+node scripts/hash-admin-password.mjs zac@stayful.co.uk
+```
+
+It prompts twice (hidden), then prints a line like:
+
+```
+zac@stayful.co.uk:<long hash>:<salt>
+```
+
+Paste that as the whole value of `ADMIN_PASSWORD_HASHES` in Vercel and redeploy.
+To give someone else access, add their address to `ADMIN_EMAILS` and append
+their entry to `ADMIN_PASSWORD_HASHES`, comma-separated:
+
+```
+zac@stayful.co.uk:<hash>:<salt>,someone@stayful.co.uk:<hash>:<salt>
+```
+
+Removing an address from `ADMIN_EMAILS` revokes it immediately, including any
+session already signed in — the allowlist is re-checked on every request.
