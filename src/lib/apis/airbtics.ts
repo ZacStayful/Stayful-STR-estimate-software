@@ -26,6 +26,7 @@ import type {
   AdrMultipliers,
   AnnualisationMeta,
 } from '../types';
+import { getCachedReportId, setCachedReportId, forgetCachedReportId } from './report-cache.ts';
 import {
   BED_GAP_BOOST_PER_BED,
   GUEST_GAP_SHRINK_THRESHOLD,
@@ -188,20 +189,27 @@ void GOOD_OPERATOR_UPLIFT;
 // ─── In-memory cache for report IDs ─────────────────────────────
 // Reading existing reports is FREE. Cache report_id by postcode+bedrooms
 // so the same property only costs $0.50 once.
-const reportCache = new Map<string, { reportId: string; expiresAt: number }>();
+// Report ids are cached in Postgres via ./report-cache.ts — a module-level Map
+// would die with each serverless invocation and so never hit in production.
 const REPORT_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours (reports don't change that fast)
 
 // ─── In-memory cache for market_id lookups ──────────────────────
 const marketIdCache = new Map<string, { id: number | null; expiresAt: number }>();
 const CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
 
-// Clean up stale cache entries every 10 minutes
-setInterval(() => {
+// Clean up stale cache entries every 10 minutes.
+// unref'd so this housekeeping timer never by itself keeps the process alive —
+// without it, merely importing this module pins the event loop open, which
+// hangs any short-lived process (the test runner, one-shot scripts). The timer
+// still fires normally for as long as the server is running.
+const marketIdCacheCleanup = setInterval(() => {
   const now = Date.now();
   for (const [key, entry] of marketIdCache) {
     if (now > entry.expiresAt) marketIdCache.delete(key);
   }
 }, 600_000);
+// Node's Timeout has unref(); the DOM's numeric handle does not.
+(marketIdCacheCleanup as unknown as { unref?: () => void }).unref?.();
 
 /**
  * Calculates distance in km between two lat/lng points using the Haversine formula.
@@ -458,14 +466,18 @@ async function fetchReportAll(
   const accommodates = guests;
   const bathrooms = formBathrooms ?? Math.max(1, Math.ceil(bedrooms * 0.75));
 
-  // Check cache first — reading existing reports is FREE
+  // Check cache first — reading existing reports is FREE.
+  // Backed by Postgres (see ./report-cache.ts), because a module-level Map dies
+  // with the serverless invocation and so almost never hits in production.
   const cacheKey = `${postcode.replace(/\s+/g, '').toUpperCase()}_${bedrooms}bed`;
-  const cached = reportCache.get(cacheKey);
-  if (cached && Date.now() < cached.expiresAt) {
-    console.log(`Airbtics report/all: using cached report ${cached.reportId} (FREE)`);
-    const cachedResult = await readReport(cached.reportId, apiKey);
+  const cachedReportId = await getCachedReportId(cacheKey);
+  if (cachedReportId) {
+    console.log(`Airbtics report/all: using cached report ${cachedReportId} (FREE)`);
+    const cachedResult = await readReport(cachedReportId, apiKey);
     if (cachedResult) return cachedResult;
-    // Cache miss (report deleted?) — fall through to create new one
+    // Unreadable (deleted upstream?) — drop it and buy a new one.
+    console.log(`Airbtics report/all: cached report ${cachedReportId} unreadable, discarding`);
+    await forgetCachedReportId(cacheKey);
   }
 
   // Step 1: Create report ($0.50)
@@ -516,8 +528,9 @@ async function fetchReportAll(
 
   console.log(`Airbtics report/all: created report ${reportId}, polling...`);
 
-  // Cache the report ID for 24h — future reads are FREE
-  reportCache.set(cacheKey, { reportId, expiresAt: Date.now() + REPORT_CACHE_TTL_MS });
+  // Persist the report id for 24h — future reads are FREE, and a bulk row that
+  // gets killed after paying for this report will reuse it rather than re-buy.
+  await setCachedReportId(cacheKey, reportId, REPORT_CACHE_TTL_MS);
 
   // Step 2: Poll for completion
   const startTime = Date.now();
