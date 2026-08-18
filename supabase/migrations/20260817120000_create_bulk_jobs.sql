@@ -166,6 +166,31 @@ begin
 end;
 $$;
 
+-- The function is SECURITY DEFINER because it must bypass RLS to claim rows.
+-- But Supabase exposes every public function at /rest/v1/rpc/<name>, and
+-- EXECUTE defaults to PUBLIC — so without this it is callable by the `anon`
+-- role using nothing but the publishable key, which would let anyone claim or
+-- stall bulk job rows and defeat the RLS enabled below. (Supabase's own
+-- database linter flags exactly this: lint 0028.) Only server code holding the
+-- service-role key ever calls it.
+revoke all on function public.claim_bulk_rows(int, uuid, int, int) from public;
+
+-- anon / authenticated / service_role are Supabase-managed roles that do not
+-- exist in a plain Postgres, so guard the grants — this migration also has to
+-- apply against a vanilla instance (see scripts/verify-claim-rpc.sh).
+do $$
+begin
+  if exists (select 1 from pg_roles where rolname = 'anon') then
+    execute 'revoke all on function public.claim_bulk_rows(int, uuid, int, int) from anon';
+  end if;
+  if exists (select 1 from pg_roles where rolname = 'authenticated') then
+    execute 'revoke all on function public.claim_bulk_rows(int, uuid, int, int) from authenticated';
+  end if;
+  if exists (select 1 from pg_roles where rolname = 'service_role') then
+    execute 'grant execute on function public.claim_bulk_rows(int, uuid, int, int) to service_role';
+  end if;
+end $$;
+
 -- ─── Row level security ──────────────────────────────────────────
 --
 -- Every one of these tables is only ever touched by the service-role key from
@@ -173,9 +198,9 @@ $$;
 -- nothing today and denies everything to any other key.
 --
 -- analyser_reports is included deliberately. It holds lead emails, addresses
--- and the full raw_response, and it has been readable by the anon key all
--- along; nothing uses that key today, but the moment anything does, this is
--- the difference between a private table and a public one.
+-- and the full raw_response. RLS is already enabled on it in production
+-- (turned on via the dashboard rather than a migration), so this is a no-op
+-- there — kept so the intent is explicit and a fresh environment matches.
 alter table bulk_jobs        enable row level security;
 alter table bulk_job_rows    enable row level security;
 alter table analyser_reports enable row level security;
