@@ -2,8 +2,9 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "crons": [
     {
+      "_comment": "Safety-net sweep. Hobby plans allow DAILY cron only, so this cannot be the primary drive mechanism — the worker self-chains via after() to keep a job moving, and this catches anything that stalled. On Pro, change the schedule to '* * * * *' for a proper minute-by-minute heartbeat; see docs/BULK_UPLOAD.md.",
       "path": "/api/admin/bulk/worker",
-      "schedule": "* * * * *"
+      "schedule": "0 3 * * *"
     }
   ]
 }

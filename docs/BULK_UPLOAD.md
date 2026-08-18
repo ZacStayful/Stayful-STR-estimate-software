@@ -175,8 +175,43 @@ Reconcile after each: succeeded row count vs `analyser_reports` where
 2. Set `ADMIN_EMAILS`, `ADMIN_SESSION_SECRET`, `ADMIN_PASSWORD_HASHES`
    (`node scripts/hash-admin-password.mjs <email>`), `CRON_SECRET` and
    `INTERNAL_API_SECRET`. Without the first two, the whole admin area 404s.
-3. Deploy. `vercel.json` registers the worker cron (every minute, production
-   only).
+3. Deploy. `vercel.json` registers the worker cron (production only).
+
+### Vercel plan — read this before the first real batch
+
+The shipped configuration is deliberately valid on **Hobby**, but Hobby imposes
+two limits that matter:
+
+| | Hobby | Pro |
+|---|---|---|
+| Cron frequency | **daily only** | any, incl. every minute |
+| Function `maxDuration` | **60s** | 300s |
+
+**The 60s ceiling is the significant one.** A worst-case row takes ~70s —
+Airbtics alone polls for up to 25s, plus the PDF render and two Monday calls.
+That is longer than the entire function limit, so a slow property is killed
+*after* its Airbtics report has been paid for. The claim later goes stale, the
+row is retried, and it may be killed again until `max_attempts` is exhausted —
+costing roughly £1 and still failing.
+
+No amount of tuning fixes that: one unit of work can exceed the whole budget.
+Most rows (30–45s) are fine; slow ones are not.
+
+On Hobby the job is driven by the worker **self-chaining** after each
+invocation, with the daily cron as a safety net. That works, but a dropped
+chain link stalls the job until the next daily sweep rather than the next
+minute.
+
+**On Pro**, make these two changes to get the design as intended:
+
+- `vercel.json` → `"schedule": "* * * * *"`
+- `src/app/api/admin/bulk/worker/route.ts` → `export const maxDuration = 300`,
+  and set `BULK_WORKER_BUDGET_MS=280000`
+
+An alternative to upgrading: point an external scheduler (n8n, for instance) at
+`GET /api/admin/bulk/worker` with the `x-internal-secret` header every minute
+while a job is running. That restores the heartbeat without Pro — but it does
+not fix the 60s ceiling, only the drive frequency.
 
 ---
 

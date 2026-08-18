@@ -13,14 +13,31 @@ import { runAnalysis } from '@/lib/pipeline/runAnalysis';
 import { getLeadQualification } from '@/lib/analysis';
 
 export const runtime = 'nodejs';
-// Vercel Pro allows up to 300s. A worst-case row is ~70s (Airbtics alone polls
-// for up to 25s), so this fits several rows with room to finish cleanly.
-export const maxDuration = 300;
+// 60 is the ceiling on Vercel Hobby. Route segment config must be a static
+// literal, so this cannot be read from the environment — on Pro, raise it to
+// 300 and set BULK_WORKER_BUDGET_MS to match. See docs/BULK_UPLOAD.md.
+export const maxDuration = 60;
 
-const BUDGET_MS = 300_000;
-// Reserve enough to let one worst-case row finish and the job be finalised,
-// rather than being cut off mid-write.
-const RESERVE_MS = 75_000;
+// How long this invocation may keep claiming new work. Must stay under the
+// deployed maxDuration with room for in-flight rows to land.
+function budgetMs(): number {
+  const n = Number(process.env.BULK_WORKER_BUDGET_MS);
+  return Number.isFinite(n) && n > 0 ? n : 55_000;
+}
+
+// Reserve enough to let in-flight rows finish and the job be finalised, rather
+// than being cut off mid-write.
+//
+// NOTE on Hobby: a worst-case row (~70s — Airbtics alone polls up to 25s, plus
+// the PDF render and two Monday calls) exceeds the 60s function ceiling
+// outright, so no reserve can guarantee it completes. Such a row is killed
+// after its Airbtics report has been paid for, reclaimed once the claim goes
+// stale, and retried. This is a real limitation of running on Hobby, not a
+// tuning problem — see docs/BULK_UPLOAD.md.
+function reserveMs(): number {
+  return Math.min(20_000, Math.floor(budgetMs() * 0.4));
+}
+
 const STAGGER_MS = 500;
 
 /**
@@ -160,6 +177,7 @@ export async function GET(request: Request) {
   }
 
   const started = Date.now();
+  const claimDeadline = budgetMs() - reserveMs();
   const claimToken = randomUUID();
   const renderLock = createRenderLock();
   const breaker = new ConsecutiveFailureBreaker();
@@ -167,7 +185,7 @@ export async function GET(request: Request) {
   let processed = 0;
 
   try {
-    while (Date.now() - started < BUDGET_MS - RESERVE_MS) {
+    while (Date.now() - started < claimDeadline) {
       const rows = await claimRows({
         limit: rowConcurrency(),
         claimToken,
