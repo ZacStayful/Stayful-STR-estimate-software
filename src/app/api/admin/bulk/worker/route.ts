@@ -56,6 +56,32 @@ function createRenderLock() {
   };
 }
 
+/**
+ * Fire a successor invocation.
+ *
+ * Uses `after()` so the request goes out once this response has been flushed,
+ * and is never awaited — the job is already durable in Postgres, so a failed
+ * kick costs latency, not correctness. Cron remains the final backstop.
+ */
+function kickSelf(request: Request): void {
+  const secret = internalSecret();
+  if (!secret) {
+    console.log('[bulk] cannot chain (INTERNAL_API_SECRET unset) — falling back to cron');
+    return;
+  }
+  const origin = process.env.VERCEL_URL
+    ? `https://${process.env.VERCEL_URL}`
+    : new URL(request.url).origin;
+
+  after(() => {
+    void fetch(`${origin}/api/admin/bulk/worker`, {
+      headers: { 'x-internal-secret': secret },
+    }).catch((err) => {
+      console.log('[bulk] chain kick failed, cron will pick it up:', err?.message ?? err);
+    });
+  });
+}
+
 function authorise(request: Request): boolean {
   // Vercel Cron sends this automatically when CRON_SECRET is set.
   const cronSecret = process.env.CRON_SECRET;
@@ -183,6 +209,7 @@ export async function GET(request: Request) {
   const breaker = new ConsecutiveFailureBreaker();
   const touchedJobs = new Set<string>();
   let processed = 0;
+  let chainedAhead = false;
 
   try {
     while (Date.now() - started < claimDeadline) {
@@ -192,11 +219,26 @@ export async function GET(request: Request) {
         maxInflight: maxInflight(),
       });
 
-      // Nothing to do. This is the common case — cron fires every minute, so
-      // the idle path has to be cheap.
+      // Nothing to do — the common and cheapest path.
       if (rows.length === 0) break;
 
       for (const row of rows) touchedJobs.add(row.job_id);
+
+      // ── Chain AHEAD, before doing the work ──────────────────────
+      // The successor used to be kicked at the very end of this handler, which
+      // meant an invocation killed mid-row (Vercel Hobby cuts functions off at
+      // 60s) took the whole chain down with it and the job idled until the next
+      // cron sweep — which on Hobby is only daily.
+      //
+      // Firing it now means the successor is already running before this
+      // invocation can die. Overlap is safe by construction: claiming is atomic
+      // (FOR UPDATE SKIP LOCKED) so two workers never get the same row, and
+      // p_max_inflight still caps how many run at once. Each invocation spawns
+      // exactly one successor, so the number of live chains stays flat.
+      if (!chainedAhead) {
+        chainedAhead = true;
+        kickSelf(request);
+      }
 
       const results = await Promise.allSettled(
         rows.map((row, i) =>
@@ -229,27 +271,16 @@ export async function GET(request: Request) {
 
     await finaliseJobs(touchedJobs);
 
-    // Chain straight into another invocation if work remains, so the job
-    // doesn't idle until the next cron tick. Cron remains the durability
-    // guarantee — this only removes the gap.
     let remaining = 0;
     for (const jobId of touchedJobs) {
       const counts = countByStatus(await getJobRows(jobId));
       remaining += counts.pending;
     }
-    if (remaining > 0) {
-      const secret = internalSecret();
-      const origin = process.env.VERCEL_URL
-        ? `https://${process.env.VERCEL_URL}`
-        : new URL(request.url).origin;
-      if (secret) {
-        after(() => {
-          void fetch(`${origin}/api/admin/bulk/worker`, {
-            headers: { 'x-internal-secret': secret },
-          }).catch(() => {});
-        });
-      }
-    }
+
+    // Belt and braces: if work remains and we somehow never chained ahead (an
+    // invocation that claimed nothing on its first pass, then found work), kick
+    // a successor now.
+    if (remaining > 0 && !chainedAhead) kickSelf(request);
 
     return Response.json({ processed, remaining });
   } catch (err) {

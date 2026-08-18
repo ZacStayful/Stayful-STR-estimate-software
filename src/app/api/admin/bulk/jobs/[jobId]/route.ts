@@ -1,11 +1,12 @@
 import { requireAdminApi } from '@/lib/auth/guard';
 import { countByStatus, estimatedCostGbp, getJob, getJobRows } from '@/lib/bulk/jobs';
+import { kickWorker } from '@/lib/bulk/kick';
 
 export const runtime = 'nodejs';
 
 /** Job state + rows, polled by the progress view. */
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ jobId: string }> },
 ) {
   const guard = await requireAdminApi();
@@ -19,6 +20,24 @@ export async function GET(
 
     const rows = await getJobRows(jobId);
     const counts = countByStatus(rows);
+
+    // ── Resume on view ──────────────────────────────────────────
+    // The progress page polls this every 5s. If the job is running, has work
+    // left, and nothing is currently in flight, the chain has been dropped —
+    // restart it. On Vercel Hobby the cron backstop is only DAILY, so without
+    // this a broken chain would stall the batch until tomorrow.
+    //
+    // Costs nothing when healthy (a row in flight means no kick) and is safe to
+    // over-fire: claiming is atomic, so a redundant worker simply finds nothing.
+    const stalled =
+      job.status === 'running'
+      && counts.pending > 0
+      && counts.claimed === 0
+      && counts.running === 0;
+    if (stalled) {
+      console.log(`[bulk] job ${jobId} looks stalled (${counts.pending} pending, none in flight) — restarting the chain`);
+      kickWorker(request);
+    }
 
     return Response.json({
       job,

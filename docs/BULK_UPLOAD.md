@@ -177,41 +177,46 @@ Reconcile after each: succeeded row count vs `analyser_reports` where
    `INTERNAL_API_SECRET`. Without the first two, the whole admin area 404s.
 3. Deploy. `vercel.json` registers the worker cron (production only).
 
-### Vercel plan — read this before the first real batch
+### Running on Vercel Hobby
 
-The shipped configuration is deliberately valid on **Hobby**, but Hobby imposes
-two limits that matter:
+Hobby imposes two limits: cron can only run **daily**, and functions are cut off
+at **60 seconds**. The build is designed around both, so no upgrade is required.
 
-| | Hobby | Pro |
-|---|---|---|
-| Cron frequency | **daily only** | any, incl. every minute |
-| Function `maxDuration` | **60s** | 300s |
+**Why 60s was a problem, and why it isn't now.** A single row is typically
+20–30s. What pushed an invocation past 60s was running three rows concurrently
+inside one function — they contend for CPU, especially the PDF render. A row
+killed at the ceiling has *already paid* for its Airbtics report, so the retry
+used to buy a second one: ~£1 for a row that might still fail.
 
-**The 60s ceiling is the significant one.** A worst-case row takes ~70s —
-Airbtics alone polls for up to 25s, plus the PDF render and two Monday calls.
-That is longer than the entire function limit, so a slow property is killed
-*after* its Airbtics report has been paid for. The claim later goes stale, the
-row is retried, and it may be killed again until `max_attempts` is exhausted —
-costing roughly £1 and still failing.
+Four things address it:
 
-No amount of tuning fixes that: one unit of work can exceed the whole budget.
-Most rows (30–45s) are fine; slow ones are not.
+1. **One row per invocation.** `BULK_ROW_CONCURRENCY` defaults to `1`, which
+   keeps every invocation well inside the ceiling.
+2. **Chain-ahead.** The worker kicks its successor *immediately after claiming*,
+   before doing the work — so an invocation killed mid-row cannot take the chain
+   down with it. Overlap is safe: claiming is atomic and the inflight cap holds.
+3. **Resume on view.** The progress page polls every 5s; if a job is running with
+   work left and nothing in flight, the chain has dropped and is restarted.
+4. **Durable Airbtics report cache.** Report ids now persist in Postgres rather
+   than in a Map that dies with the invocation. A retried row re-reads the report
+   it already paid for and finishes in seconds.
 
-On Hobby the job is driven by the worker **self-chaining** after each
-invocation, with the daily cron as a safety net. That works, but a dropped
-chain link stalls the job until the next daily sweep rather than the next
-minute.
+Together, the worst case stops being "£1 spent, row failed" and becomes "row
+took two attempts, cost 50p, succeeded". The daily cron remains the final
+backstop.
 
-**On Pro**, make these two changes to get the design as intended:
+The report cache is worth having on any plan — repeated postcode + bedroom
+combinations stop re-buying reports, which is real money on a large backlog.
+
+**If you later move to Pro**, two changes get the higher-throughput shape:
 
 - `vercel.json` → `"schedule": "* * * * *"`
 - `src/app/api/admin/bulk/worker/route.ts` → `export const maxDuration = 300`,
-  and set `BULK_WORKER_BUDGET_MS=280000`
+  then set `BULK_WORKER_BUDGET_MS=280000` and `BULK_ROW_CONCURRENCY=3`
 
-An alternative to upgrading: point an external scheduler (n8n, for instance) at
-`GET /api/admin/bulk/worker` with the `x-internal-secret` header every minute
-while a job is running. That restores the heartbeat without Pro — but it does
-not fix the 60s ceiling, only the drive frequency.
+You can also point an external scheduler (n8n, say) at
+`GET /api/admin/bulk/worker` with the `x-internal-secret` header for a
+minute-by-minute heartbeat without upgrading.
 
 ---
 

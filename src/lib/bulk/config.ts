@@ -9,10 +9,21 @@ export function maxRows(): number {
   return Number.isFinite(n) && n > 0 ? n : 100;
 }
 
-/** Rows processed simultaneously inside one worker invocation. */
+/**
+ * Rows processed simultaneously inside one worker invocation.
+ *
+ * Defaults to 1, which is the right choice on Vercel Hobby: the function
+ * ceiling there is 60s, and while a single row is typically 20-30s, three
+ * sharing one invocation contend for CPU — the PDF render especially — which
+ * is what pushes an invocation past the limit and gets a row killed AFTER its
+ * Airbtics report has been paid for.
+ *
+ * One row per invocation, with the worker chaining into the next, keeps every
+ * invocation comfortably inside the ceiling. On Pro (300s) raise this to 3.
+ */
 export function rowConcurrency(): number {
   const n = Number(process.env.BULK_ROW_CONCURRENCY);
-  return Number.isFinite(n) && n > 0 ? n : 3;
+  return Number.isFinite(n) && n > 0 ? n : 1;
 }
 
 /**
