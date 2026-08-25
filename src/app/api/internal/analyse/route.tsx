@@ -53,10 +53,19 @@ import { buildAnalyseResponse } from '@/lib/internal/analyseResponse';
 
 export const runtime = 'nodejs';
 
+// ⚠️ 60, because this Vercel account is on HOBBY, whose function ceiling is 60
+// seconds. The bulk worker beside this one carries the same number for the same
+// reason, and BULK_ROW_CONCURRENCY defaults to 1 because of it.
+//
 // A row is 20–30s typically and ~70s at worst (Airbtics polls for up to 25s),
-// plus the PDF render. Static literal — route segment config is read at build
-// time and cannot be computed.
-export const maxDuration = 300;
+// plus the PDF render — so a worst-case property WILL be killed here. That is
+// survivable rather than ignored: the caller treats a timeout as retryable
+// rather than as a failure, and the durable Airbtics report cache means the
+// retry re-reads the report we already paid for instead of buying a second one.
+//
+// Static literal — route segment config is read at build time and cannot be
+// computed. On Pro this becomes 300 and the worst case stops being a retry.
+export const maxDuration = 60;
 
 /**
  * Advisory concurrency cap.
