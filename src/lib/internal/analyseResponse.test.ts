@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import { buildAnalyseResponse, toOccupancyPercent } from './analyseResponse.ts';
 import { fakeAnalysis } from '../bulk/fake.ts';
+import { deriveReportData } from '../pdf/derive.ts';
 import { normaliseAnalysisInput, defaultGuests } from '../pipeline/input.ts';
 import type { AnalysisResult } from '../types.ts';
 
@@ -159,4 +160,69 @@ test('a failed PDF render does not cost the figures', () => {
   assert.equal(res.pdf, null);
   assert.equal(res.pdf_error, 'boom');
   assert.ok(res.figures.gross_annual_income > 0);
+});
+
+// ── The market block ──────────────────────────────────────────────
+//
+// Added so the lead database can show what the analysis says about the market
+// and not only about the money. These are read straight off deriveReportData,
+// the same derivation the PDF renders from, so a mismatch between this JSON and
+// the document in the same response is the thing these tests exist to catch.
+
+test('the market block is carried, in the units the receiving columns expect', () => {
+  const result = fixture();
+  const res = buildAnalyseResponse(result, {
+    requestId: null, reportId: null, durationMs: 1, pdf: null,
+  });
+  const f = res.figures;
+
+  // Occupancy is a whole percent here and a fraction upstream, exactly as the
+  // property's own occupancy is.
+  if (f.market_occupancy_rate !== null) {
+    assert.ok(Number.isInteger(f.market_occupancy_rate));
+    assert.ok(f.market_occupancy_rate >= 0 && f.market_occupancy_rate <= 100);
+  }
+  if (f.comp_avg_rating !== null) {
+    assert.ok(f.comp_avg_rating > 0 && f.comp_avg_rating <= 5, `rating ${f.comp_avg_rating}`);
+  }
+  if (f.risk_score !== null) {
+    assert.ok(f.risk_score >= 0 && f.risk_score <= 100);
+    assert.equal(typeof f.risk_label, 'string');
+    assert.ok((f.risk_label ?? '').length > 0, 'a score with no wording is unreadable');
+  }
+  if (f.direct_booking_score !== null) {
+    assert.ok(f.direct_booking_score >= 0 && f.direct_booking_score <= 100);
+  }
+});
+
+test('the comparable set is sent as a pair or not at all', () => {
+  const res = buildAnalyseResponse(fixture(), {
+    requestId: null, reportId: null, durationMs: 1, pdf: null,
+  });
+  const { comp_set_size, comp_set_radius_km } = res.figures;
+  assert.equal(
+    comp_set_size === null,
+    comp_set_radius_km === null,
+    'a count without its radius does not say how hard we looked for it',
+  );
+});
+
+test('the JSON states what the PDF would print', () => {
+  // The whole reason this module derives rather than recomputes: one response
+  // must not carry two different answers.
+  const result = fixture();
+  const report = deriveReportData(result);
+  const res = buildAnalyseResponse(result, {
+    requestId: null, reportId: null, durationMs: 1, pdf: null,
+  });
+  if (res.figures.risk_score !== null) {
+    assert.equal(res.figures.risk_score, Math.round(report.risk.overall));
+    assert.equal(res.figures.risk_label, report.risk.label);
+  }
+  if (res.figures.comp_set_size !== null) {
+    assert.equal(res.figures.comp_set_size, report.compsBenchmark.count);
+  }
+  if (res.figures.direct_booking_score !== null) {
+    assert.equal(res.figures.direct_booking_score, Math.round(report.directBookingScore));
+  }
 });
