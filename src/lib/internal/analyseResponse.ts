@@ -62,6 +62,39 @@ export interface AnalyseFigures {
    * `cardinality(...) = 12` CHECK that would abort the whole write.
    */
   monthly_revenue_profile: number[] | null;
+
+  // ── The market block ────────────────────────────────────────────
+  //
+  // What the analysis says about the market around the property, rather than
+  // about its money. The lead database puts these on a slide of their own so an
+  // operator can answer "is anyone actually booking round here?" from the
+  // analysis instead of from memory.
+  //
+  // Every one is nullable and INDEPENDENT: the receiving app renders per field,
+  // so a run that produced a risk score and no comparables is a shorter slide
+  // rather than a broken one. All of them come from `deriveReportData`, which
+  // is what the PDF renders from, so the JSON and the document in the same
+  // response cannot state different numbers.
+
+  /** The comparable set's mean occupancy as a WHOLE PERCENT, same unit as above. */
+  market_occupancy_rate: number | null;
+  /** How many comparable listings, and how far out they were found (KILOMETRES). */
+  comp_set_size: number | null;
+  comp_set_radius_km: number | null;
+  /** Mean guest rating (0-5) and mean review count across that set. */
+  comp_avg_rating: number | null;
+  comp_avg_review_count: number | null;
+  /**
+   * ⚠️ THE TWO SCORES RUN IN OPPOSITE DIRECTIONS. `risk_score` is 0 for LOW
+   * risk; `direct_booking_score` is 100 for the best. Both are sent exactly as
+   * the report prints them, and the receiving app words each accordingly.
+   * Normalising one to match the other would invert a number an operator reads
+   * aloud to a landlord.
+   */
+  risk_score: number | null;
+  /** The wording the PDF prints beside it — "Low-Medium Risk". */
+  risk_label: string | null;
+  direct_booking_score: number | null;
 }
 
 export interface AnalyseSuccessResponse {
@@ -105,6 +138,23 @@ export function toOccupancyPercent(fraction: number | null | undefined): number 
   return pct > 0 ? pct : null;
 }
 
+/** A figure the receiving CHECK will take, or null. 0 reads as absent here. */
+function positiveOrNull(value: number | null | undefined): number | null {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : null;
+}
+
+/** A 0-100 score, kept only when it is one. */
+function scoreOrNull(value: number | null | undefined): number | null {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 100
+    ? Math.round(value)
+    : null;
+}
+
+/** The radius as the report prints it, to two decimals. */
+function round2(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
 /** Twelve elements or null — a partial forecast is not a curve. */
 function toMonthlyProfile(monthly: ReadonlyArray<{ net: number }>): number[] | null {
   if (monthly.length !== 12) return null;
@@ -142,6 +192,20 @@ export function buildAnalyseResponse(
 
   const longLet = report.longLetAnnual.gross;
 
+  // Both or neither, twice: a comparable count says nothing without the radius
+  // it was found in, and a risk score with no wording beside it is a number a
+  // landlord cannot read.
+  const comps = report.compsBenchmark;
+  const compSetOk =
+    Number.isFinite(comps.count) && comps.count > 0 &&
+    Number.isFinite(comps.radiusKm) && comps.radiusKm > 0;
+  const riskOk =
+    Number.isFinite(report.risk.overall) &&
+    report.risk.overall >= 0 &&
+    report.risk.overall <= 100 &&
+    typeof report.risk.label === 'string' &&
+    report.risk.label.trim().length > 0;
+
   return {
     ok: true,
     request_id: opts.requestId,
@@ -158,6 +222,20 @@ export function buildAnalyseResponse(
       cleaning_fee_pct: Math.round(STR_COST_RATES.cleaning * 100),
       management_fee_annual: Math.round(report.shortLetAnnual.managementFee),
       monthly_revenue_profile: toMonthlyProfile(report.monthly),
+
+      // The comps benchmark drops a rating or review count of 0 rather than
+      // sending it: `avgRating` is the mean of comps that HAVE a rating, so 0
+      // means none of them did, which is an absence rather than a market of
+      // zero-star listings. Occupancy is the exception and 0 is kept — it means
+      // no comparable listings nearby, which is worth an operator knowing.
+      market_occupancy_rate: toOccupancyPercent(comps.avgOccupancy),
+      comp_set_size: compSetOk ? comps.count : null,
+      comp_set_radius_km: compSetOk ? round2(comps.radiusKm) : null,
+      comp_avg_rating: positiveOrNull(comps.avgRating),
+      comp_avg_review_count: positiveOrNull(comps.avgReviews),
+      risk_score: riskOk ? Math.round(report.risk.overall) : null,
+      risk_label: riskOk ? report.risk.label : null,
+      direct_booking_score: scoreOrNull(report.directBookingScore),
     },
     pdf: opts.pdf
       ? {
