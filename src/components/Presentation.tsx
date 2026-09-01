@@ -678,13 +678,16 @@ export default function Presentation({ data, onClose }: PresentationProps) {
             <div className="mb-8 inline-flex items-center rounded-full px-6 py-2" style={{ backgroundColor: CARD_BG }}>
               <span className="text-base font-bold" style={{ color: GREEN }}>Potential: {gbp(stlNetAnnual)}/year</span>
             </div>
-            <button
-              onClick={() => window.open("https://calendly.com/zac-stayful/call", "_blank")}
-              className="mb-4 rounded-xl px-8 py-4 text-lg font-bold text-white shadow-lg transition-transform hover:scale-105"
-              style={{ backgroundColor: GREEN }}
-            >
-              Get Your Free Consultation
-            </button>
+            {/* Only offer a call when short-let is still on the table. */}
+            {data.recommendation?.recommendation !== "LONG_LET" && (
+              <button
+                onClick={() => window.open("https://calendly.com/zac-stayful/call", "_blank")}
+                className="mb-4 rounded-xl px-8 py-4 text-lg font-bold text-white shadow-lg transition-transform hover:scale-105"
+                style={{ backgroundColor: GREEN }}
+              >
+                Get Your Free Consultation
+              </button>
+            )}
             <button
               onClick={() => window.open("tel:01134790251")}
               className="mb-8 flex items-center gap-2 rounded-xl border-2 px-6 py-3 text-base font-semibold transition-colors hover:bg-gray-50"

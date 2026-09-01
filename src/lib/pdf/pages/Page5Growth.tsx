@@ -197,7 +197,9 @@ export function Page5Growth({ data }: { data: PdfReportData }) {
           earn more without the effort.
         </Text>
         <Text style={s.ctaContact}>
-          07471 321 997   ·   stayful.co.uk   ·   Book via the link in your email
+          {data.recommendation === "LONG_LET"
+            ? "07471 321 997   ·   stayful.co.uk"
+            : "07471 321 997   ·   stayful.co.uk   ·   Book via the link in your email"}
         </Text>
       </View>
     </Page>

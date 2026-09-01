@@ -103,6 +103,10 @@ import {
 
 // ─── Helpers ──────────────────────────────────────────────────────
 
+// Where every "book a call" prompt points. One constant so the six call sites
+// in this file cannot drift apart again.
+const BOOKING_URL = "https://calendly.com/zac-stayful/call";
+
 const MONTHS = [
   "Jan",
   "Feb",
@@ -1010,7 +1014,7 @@ export default function HomePage() {
                     className="w-full sm:w-auto"
                     onClick={() => {
                       trackCtaClick("book_call");
-                      window.open("https://calendly.com/zac-stayful/call", "_blank");
+                      window.open(BOOKING_URL, "_blank");
                     }}
                   >
                     <Calendar className="mr-2 h-4 w-4" />
@@ -1044,6 +1048,10 @@ export default function HomePage() {
     const f = r.financials;
     const v = r.verdict;
     const risk = r.risk;
+
+    // Only offer a call when short-let is still on the table. A missing
+    // recommendation (no long-let figure, demo mode) counts as eligible.
+    const showBooking = r.recommendation?.recommendation !== "LONG_LET";
 
     // Monthly chart data
     const chartData = MONTHS.map((month, i) => ({
@@ -1454,12 +1462,12 @@ export default function HomePage() {
             })}
           </nav>
 
-          {/* Calendly CTA */}
-          {!sidebarCollapsed && (
+          {/* Calendly CTA — short-let leads only */}
+          {showBooking && !sidebarCollapsed && (
             <div className="px-4 pb-2.5">
               <button
                 type="button"
-                onClick={() => { trackCtaClick("sidebar_book_call"); window.open("https://calendly.com/zac-stayful/call", "_blank"); }}
+                onClick={() => { trackCtaClick("sidebar_book_call"); window.open(BOOKING_URL, "_blank"); }}
                 style={{ background: "var(--primary)", color: "var(--primary-foreground)", fontSize: 12, fontWeight: 600, width: "100%", padding: "10px 0", borderRadius: 8, marginBottom: 10, border: "none", cursor: "pointer" }}
               >
                 Book your action plan
@@ -1899,7 +1907,11 @@ export default function HomePage() {
               ) : (
                 <div className="text-center">
                   <p className="text-sm text-primary-foreground/80">Limited market data available</p>
-                  <p className="text-xs text-primary-foreground/60 mt-1">Book a call with Stayful for a personalised estimate</p>
+                  <p className="text-xs text-primary-foreground/60 mt-1">
+                    {showBooking
+                      ? "Book a call with Stayful for a personalised estimate"
+                      : "Figures for this area are based on a limited sample"}
+                  </p>
                 </div>
               )}
             </div>
@@ -1918,7 +1930,8 @@ export default function HomePage() {
               <AccuracyPanel />
             </div>
 
-            {/* Calendly CTA banner */}
+            {/* Calendly CTA banner — short-let leads only */}
+            {showBooking && (
             <div className="mt-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-5 rounded-xl bg-primary p-6 sm:p-7">
               <div>
                 <p className="text-base font-semibold text-primary-foreground" style={{ marginBottom: 6 }}>
@@ -1930,13 +1943,14 @@ export default function HomePage() {
               </div>
               <button
                 type="button"
-                onClick={() => { trackCtaClick("overview_book_call"); window.open("https://calendly.com/zac-stayful/call", "_blank"); }}
+                onClick={() => { trackCtaClick("overview_book_call"); window.open(BOOKING_URL, "_blank"); }}
                 className="shrink-0 whitespace-nowrap rounded-lg px-5 py-3 text-[13px] font-bold text-primary"
                 style={{ background: "#B9D5C6", border: "none", cursor: "pointer" }}
               >
                 Book your plan →
               </button>
             </div>
+            )}
           </section>
 
           {/* ══════════════════════════════════════════════════════════
@@ -1959,8 +1973,8 @@ export default function HomePage() {
                   {r.dataQuality.level === "low" ? "Limited Data Available" : "Data Note"}
                 </p>
                 <p className="text-xs">{r.dataQuality.disclaimer}</p>
-                {r.dataQuality.level === "low" && (
-                  <a href="https://calendly.com/zac-stayful/call" target="_blank" rel="noopener noreferrer"
+                {showBooking && r.dataQuality.level === "low" && (
+                  <a href={BOOKING_URL} target="_blank" rel="noopener noreferrer"
                     className="mt-2 inline-block text-xs font-medium text-primary underline"
                     onClick={() => trackCtaClick("book_call")}>
                     Book your profitability action plan
@@ -2345,17 +2359,19 @@ export default function HomePage() {
                       <p className="mt-3 text-xs text-muted-foreground leading-relaxed">
                         For individual comparable listings with direct Airbnb links, contact Stayful for a comprehensive property assessment.
                       </p>
-                      <a
-                        href="https://calendly.com/stayful"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="mt-3 inline-flex items-center gap-1.5 text-xs font-semibold text-primary hover:underline"
-                        onClick={() => trackCtaClick("book_call")}
-                      >
-                        <Phone className="h-3 w-3" />
-                        Book your profitability action plan
-                        <ExternalLink className="h-3 w-3" />
-                      </a>
+                      {showBooking && (
+                        <a
+                          href={BOOKING_URL}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="mt-3 inline-flex items-center gap-1.5 text-xs font-semibold text-primary hover:underline"
+                          onClick={() => trackCtaClick("book_call")}
+                        >
+                          <Phone className="h-3 w-3" />
+                          Book your profitability action plan
+                          <ExternalLink className="h-3 w-3" />
+                        </a>
+                      )}
                     </div>
                   </div>
                 </CardContent>
@@ -3471,7 +3487,7 @@ export default function HomePage() {
 
             {/* CTA Card — only offer a call when short-let is the recommendation.
                 When long-let is recommended, no dead end and no pressure. */}
-            {r.recommendation?.recommendation === "LONG_LET" ? (
+            {!showBooking ? (
               <Card className="bg-muted/40">
                 <CardContent className="flex flex-col items-center gap-3 py-10 text-center">
                   <Home className="h-6 w-6 text-muted-foreground" />
@@ -3500,10 +3516,7 @@ export default function HomePage() {
                       size="lg"
                       onClick={() => {
                         trackCtaClick("book_call");
-                        window.open(
-                          "https://calendly.com/zac-stayful/call",
-                          "_blank"
-                        );
+                        window.open(BOOKING_URL, "_blank");
                       }}
                     >
                       <Calendar className="mr-2 h-4 w-4" />

@@ -1,5 +1,6 @@
 import type {
   AnalysisResult,
+  RecommendationDecision,
   RiskLevel,
   ShortLetComparable,
 } from "@/lib/types";
@@ -132,6 +133,8 @@ export interface PdfReportData {
     extraMonthlyProfitYr3: number;
   };
   setup?: PdfSetupSnapshot;
+  /** Short-let vs long-let verdict. Undefined when it could not be computed. */
+  recommendation?: RecommendationDecision;
 }
 
 /**
@@ -437,6 +440,7 @@ export function deriveReportData(result: AnalysisResult): PdfReportData {
     },
     amenities,
     growth,
+    recommendation: result.recommendation?.recommendation,
   };
 }
 
