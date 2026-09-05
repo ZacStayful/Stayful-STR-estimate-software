@@ -16,7 +16,8 @@
 -- Units:
 --   comp_avg_occupancy   PERCENT 0–100 (comparables carry a 0–1 fraction; ×100)
 --   comp_avg_listing_age years
---   listing_density      listings per km² = active_listings / (π · search_radius_km²)
+--   comp_radius_km       km — the radius the comparable search ended on
+--   listing_density      listings per km² = active_listings / (π · comp_radius_km²)
 --
 -- Why listing_density rather than active_listings: active_listings is the
 -- Airbtics match count at whatever radius the comparable search ended on
@@ -25,14 +26,31 @@
 -- not comparable across reports; density at the recorded radius is. A count of
 -- ≤ 12 is treated as unknown for that reason.
 --
--- Idempotent: safe to re-run.
+-- Demand-driver counts are NULL (unknown) when every driver list is empty:
+-- runAnalysis substitutes an all-empty block when Google Places fails, and a
+-- genuine "nothing within range at all" is far rarer than an outage. Events
+-- are likewise unknown in that case (Ticketmaster fails the same way).
+--
+-- Every cast goes through safe_numeric() so one malformed row can't roll the
+-- whole migration back. Idempotent: safe to re-run.
+
+create or replace function public.safe_numeric(t text)
+returns numeric
+language plpgsql
+immutable
+as $$
+begin
+  return t::numeric;
+exception when others then
+  return null;
+end;
+$$;
 
 alter table analyser_reports
   add column if not exists comp_avg_rating        numeric,
   add column if not exists comp_avg_review_count  numeric,
   add column if not exists comp_avg_listing_age   numeric,
   add column if not exists active_listings        int,
-  add column if not exists search_radius_km       numeric,
   add column if not exists listing_density        numeric,
   add column if not exists demand_hospitals       int,
   add column if not exists demand_universities    int,
@@ -49,15 +67,15 @@ create index if not exists idx_analyser_reports_area_created
 with comp as (
   select
     r.id,
-    count(*)                                                   as comp_count,
-    avg((c->>'averageDailyRate')::numeric)                     as comp_avg_adr,
-    avg((c->>'occupancyRate')::numeric) * 100                  as comp_avg_occupancy,
-    avg((c->>'annualRevenue')::numeric)                        as comp_avg_annual_revenue,
+    count(*)                                                        as comp_count,
+    avg(safe_numeric(c->>'averageDailyRate'))                       as comp_avg_adr,
+    avg(safe_numeric(c->>'occupancyRate')) * 100                    as comp_avg_occupancy,
+    avg(safe_numeric(c->>'annualRevenue'))                          as comp_avg_annual_revenue,
     -- rating is 0 for unreviewed listings: average only over reviewed ones
-    avg(nullif((c->>'rating')::numeric, 0))
-      filter (where coalesce((c->>'reviewCount')::numeric, 0) > 0) as comp_avg_rating,
-    avg((c->>'reviewCount')::numeric)                          as comp_avg_review_count,
-    avg((c->>'listingAge')::numeric)                           as comp_avg_listing_age
+    avg(nullif(safe_numeric(c->>'rating'), 0))
+      filter (where coalesce(safe_numeric(c->>'reviewCount'), 0) > 0) as comp_avg_rating,
+    avg(safe_numeric(c->>'reviewCount'))                            as comp_avg_review_count,
+    avg(safe_numeric(c->>'listingAge'))                             as comp_avg_listing_age
   from analyser_reports r
   cross join lateral jsonb_array_elements(
     case when jsonb_typeof(r.raw_response->'shortLet'->'comparables') = 'array'
@@ -79,30 +97,56 @@ from comp
 where comp.id = r.id;
 
 -- ── Backfill 2/2: listings, demand drivers, coordinates; stamp the version ──
+with sig as (
+  select
+    r.id,
+    nullif(round(safe_numeric(r.raw_response->'shortLet'->>'activeListings'))::int, 0) as active_listings,
+    safe_numeric(r.raw_response->'dataQuality'->>'searchRadiusKm')                   as radius_km,
+    jsonb_array_length(case when jsonb_typeof(r.raw_response->'demandDrivers'->'hospitals') = 'array'
+                            then r.raw_response->'demandDrivers'->'hospitals' else '[]'::jsonb end)      as hospitals,
+    jsonb_array_length(case when jsonb_typeof(r.raw_response->'demandDrivers'->'universities') = 'array'
+                            then r.raw_response->'demandDrivers'->'universities' else '[]'::jsonb end)   as universities,
+    jsonb_array_length(case when jsonb_typeof(r.raw_response->'demandDrivers'->'airports') = 'array'
+                            then r.raw_response->'demandDrivers'->'airports' else '[]'::jsonb end)       as airports,
+    jsonb_array_length(case when jsonb_typeof(r.raw_response->'demandDrivers'->'trainStations') = 'array'
+                            then r.raw_response->'demandDrivers'->'trainStations' else '[]'::jsonb end)  as trains,
+    jsonb_array_length(case when jsonb_typeof(r.raw_response->'demandDrivers'->'busStations') = 'array'
+                            then r.raw_response->'demandDrivers'->'busStations' else '[]'::jsonb end)    as buses,
+    jsonb_array_length(case when jsonb_typeof(r.raw_response->'demandDrivers'->'subwayStations') = 'array'
+                            then r.raw_response->'demandDrivers'->'subwayStations' else '[]'::jsonb end) as subways,
+    round(safe_numeric(r.raw_response->'nearbyEvents'->>'totalEvents'))::int                             as events,
+    safe_numeric(r.raw_response->'coordinates'->>'lat')                                                  as lat,
+    safe_numeric(r.raw_response->'coordinates'->>'lng')                                                  as lng
+  from analyser_reports r
+  where r.raw_response is not null
+    and r.market_signals_version is null
+),
+sig2 as (
+  select *,
+    (hospitals + universities + airports + trains + buses + subways) = 0 as drivers_unknown
+  from sig
+)
 update analyser_reports r
-set active_listings     = nullif((r.raw_response->'shortLet'->>'activeListings')::int, 0),
-    search_radius_km    = (r.raw_response->'dataQuality'->>'searchRadiusKm')::numeric,
-    comp_radius_km      = coalesce(r.comp_radius_km, (r.raw_response->'dataQuality'->>'searchRadiusKm')::numeric),
-    demand_hospitals    = jsonb_array_length(coalesce(r.raw_response->'demandDrivers'->'hospitals',     '[]'::jsonb)),
-    demand_universities = jsonb_array_length(coalesce(r.raw_response->'demandDrivers'->'universities',  '[]'::jsonb)),
-    demand_transport    = jsonb_array_length(coalesce(r.raw_response->'demandDrivers'->'trainStations', '[]'::jsonb))
-                        + jsonb_array_length(coalesce(r.raw_response->'demandDrivers'->'busStations',   '[]'::jsonb))
-                        + jsonb_array_length(coalesce(r.raw_response->'demandDrivers'->'subwayStations','[]'::jsonb)),
-    demand_events       = (r.raw_response->'nearbyEvents'->>'totalEvents')::int,
-    lat                 = (r.raw_response->'coordinates'->>'lat')::numeric,
-    lng                 = (r.raw_response->'coordinates'->>'lng')::numeric,
+set active_listings     = sig2.active_listings,
+    comp_radius_km      = coalesce(r.comp_radius_km, sig2.radius_km),
+    demand_hospitals    = case when sig2.drivers_unknown then null else sig2.hospitals end,
+    demand_universities = case when sig2.drivers_unknown then null else sig2.universities end,
+    demand_transport    = case when sig2.drivers_unknown then null else sig2.trains + sig2.buses + sig2.subways end,
+    demand_events       = case when sig2.drivers_unknown and coalesce(sig2.events, 0) = 0 then null else sig2.events end,
+    lat                 = sig2.lat,
+    lng                 = sig2.lng,
     market_signals_version = 1
-where r.raw_response is not null
-  and r.market_signals_version is null;
+from sig2
+where sig2.id = r.id;
 
 -- Density from the two columns just set (kept as a separate statement so the
 -- rule lives in one place and matches marketSignals.ts).
 update analyser_reports
-set listing_density = round(active_listings / (pi() * search_radius_km * search_radius_km), 3)
+set listing_density = round((active_listings / (pi() * comp_radius_km * comp_radius_km))::numeric, 3)
 where market_signals_version = 1
   and listing_density is null
   and active_listings > 12
-  and search_radius_km > 0;
+  and comp_radius_km > 0;
 
 -- ── Contractor-demand signal: large planning applications per area ──────
 -- Filled monthly by /api/internal/refresh-planning from the public PlanIt

@@ -20,11 +20,12 @@ export interface MarketSignals {
   comp_avg_review_count: number | null;
   comp_avg_listing_age: number | null; // years
   active_listings: number | null;
-  search_radius_km: number | null;
-  listing_density: number | null; // listings per km²
-  demand_hospitals: number;
-  demand_universities: number;
-  demand_transport: number;
+  listing_density: number | null; // listings per km² at comp_radius_km
+  // null = unknown (the analyser substitutes an all-empty driver block when
+  // Google Places fails, so "every list empty" is read as unknown, not zero)
+  demand_hospitals: number | null;
+  demand_universities: number | null;
+  demand_transport: number | null;
   demand_events: number | null;
   lat: number | null;
   lng: number | null;
@@ -72,6 +73,11 @@ export function marketSignals(result: AnalysisResult): MarketSignals {
 
   const d = result.demandDrivers;
   const len = (a: unknown[] | undefined) => (Array.isArray(a) ? a.length : 0);
+  const hospitals = len(d?.hospitals);
+  const universities = len(d?.universities);
+  const transport = len(d?.trainStations) + len(d?.busStations) + len(d?.subwayStations);
+  const driversUnknown = hospitals + universities + transport + len(d?.airports) === 0;
+  const events = finite(result.nearbyEvents?.totalEvents);
 
   return {
     comp_count: comps.length > 0 ? comps.length : null,
@@ -89,12 +95,13 @@ export function marketSignals(result: AnalysisResult): MarketSignals {
     comp_avg_review_count: round(mean(comps.map((c) => finite(c.reviewCount)).filter((v): v is number => v !== null)), 2),
     comp_avg_listing_age: round(mean(comps.map((c) => finite(c.listingAge)).filter((v): v is number => v !== null)), 2),
     active_listings: activeListings,
-    search_radius_km: radius,
     listing_density: listingDensity(activeListings, radius),
-    demand_hospitals: len(d?.hospitals),
-    demand_universities: len(d?.universities),
-    demand_transport: len(d?.trainStations) + len(d?.busStations) + len(d?.subwayStations),
-    demand_events: finite(result.nearbyEvents?.totalEvents),
+    demand_hospitals: driversUnknown ? null : hospitals,
+    demand_universities: driversUnknown ? null : universities,
+    demand_transport: driversUnknown ? null : transport,
+    // Ticketmaster fails the same way (0); when the drivers are unknown too,
+    // treat a 0 as unknown rather than "no events".
+    demand_events: driversUnknown && (events ?? 0) === 0 ? null : events,
     lat: finite(result.coordinates?.lat),
     lng: finite(result.coordinates?.lng),
     market_signals_version: 1,

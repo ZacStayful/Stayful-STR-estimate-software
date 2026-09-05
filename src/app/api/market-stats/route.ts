@@ -81,29 +81,31 @@ export async function GET(request: Request) {
     minSamples = parsed;
   }
 
-  let query = supabase
-    .from('analyser_reports')
-    .select(SELECT_COLUMNS)
-    .not('postcode_area', 'is', null)
-    .not('bedrooms', 'is', null)
-    .or('extraction_status.is.null,extraction_status.eq.ok')
-    .range(0, 49999);
+  // PostgREST caps a single response at max_rows (1,000 by default), so page
+  // through explicitly — a bare .range(0, 49999) would silently truncate.
+  const PAGE = 1000;
+  const rows: ReportRow[] = [];
+  for (let from = 0; ; from += PAGE) {
+    let query = supabase
+      .from('analyser_reports')
+      .select(SELECT_COLUMNS)
+      .not('postcode_area', 'is', null)
+      .not('bedrooms', 'is', null)
+      .or('extraction_status.is.null,extraction_status.eq.ok')
+      .order('id')
+      .range(from, from + PAGE - 1);
+    if (area) query = query.eq('postcode_area', area);
+    if (bedrooms !== null) query = query.eq('bedrooms', bedrooms);
 
-  if (area) {
-    query = query.eq('postcode_area', area);
+    const { data, error } = await query;
+    if (error) {
+      console.error('[market-stats] query failed:', error);
+      return Response.json({ error: 'Query failed' }, { status: 500 });
+    }
+    const page = (data ?? []) as unknown as ReportRow[];
+    rows.push(...page);
+    if (page.length < PAGE) break;
   }
-  if (bedrooms !== null) {
-    query = query.eq('bedrooms', bedrooms);
-  }
-
-  const { data, error } = await query;
-
-  if (error) {
-    console.error('[market-stats] query failed:', error);
-    return Response.json({ error: 'Query failed' }, { status: 500 });
-  }
-
-  const rows = (data ?? []) as unknown as ReportRow[];
 
   // Contractor-demand proxy (large planning applications), refreshed monthly
   // by /api/internal/refresh-planning. Missing table or rows → simply absent.

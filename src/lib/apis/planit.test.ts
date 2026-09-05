@@ -42,9 +42,13 @@ test('non-OK or malformed responses give null, never a fake zero', async () => {
   assert.equal(await countLargeApplications(win, failing), null);
 });
 
-test('429 throws PlanItRateLimited with Retry-After', async () => {
+test('429 throws PlanItRateLimited with Retry-After (null when absent)', async () => {
   await assert.rejects(
     countLargeApplications(win, fakeFetch(429, {}, { 'retry-after': '30' })),
     (err: unknown) => err instanceof PlanItRateLimited && err.retryAfterSeconds === 30,
+  );
+  await assert.rejects(
+    countLargeApplications(win, fakeFetch(429, {})),
+    (err: unknown) => err instanceof PlanItRateLimited && err.retryAfterSeconds === null,
   );
 });

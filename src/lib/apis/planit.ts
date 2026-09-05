@@ -66,7 +66,9 @@ type Fetch = typeof fetch;
  * usable answer (blocked, malformed, network). Throws PlanItRateLimited on
  * 429 so a batch caller can stop for this run rather than hammer the API.
  */
-export async function countLargeApplications(w: PlanItWindow, fetchImpl: Fetch = fetch, timeoutMs = 15_000): Promise<number | null> {
+export const PLANIT_TIMEOUT_MS = 10_000;
+
+export async function countLargeApplications(w: PlanItWindow, fetchImpl: Fetch = fetch, timeoutMs = PLANIT_TIMEOUT_MS): Promise<number | null> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -75,7 +77,9 @@ export async function countLargeApplications(w: PlanItWindow, fetchImpl: Fetch =
       signal: controller.signal,
     });
     if (res.status === 429) {
-      const ra = Number(res.headers.get('retry-after'));
+      // Retry-After may be absent, seconds, or an HTTP-date; only seconds are useful here.
+      const raw = res.headers.get('retry-after');
+      const ra = raw === null ? NaN : Number(raw);
       throw new PlanItRateLimited(Number.isFinite(ra) ? ra : null);
     }
     if (!res.ok) {

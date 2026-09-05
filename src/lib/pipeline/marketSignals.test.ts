@@ -69,8 +69,15 @@ test('density and radius flow from the analysis', () => {
   r.dataQuality.searchRadiusKm = 1.6;
   const s = marketSignals(r);
   assert.equal(s.active_listings, 80);
-  assert.equal(s.search_radius_km, 1.6);
+  assert.equal(s.comp_radius_km, 1.6);
   assert.equal(s.listing_density, listingDensity(80, 1.6));
+});
+
+test('an all-empty demand block (the API-failure fallback) is unknown, not zero', () => {
+  const s = marketSignals(fixture()); // fake fixture has every driver list empty
+  assert.equal(s.demand_hospitals, null);
+  assert.equal(s.demand_universities, null);
+  assert.equal(s.demand_transport, null);
 });
 
 test('activeListings of 0 is unknown, not zero density', () => {
@@ -95,6 +102,9 @@ test('demand driver counts, events and coordinates are extracted', () => {
   assert.equal(s.demand_universities, 1);
   assert.equal(s.demand_transport, 3);
   assert.equal(s.demand_events, 57);
+  // known drivers with genuinely zero events stays 0
+  r.nearbyEvents = { events: [], totalEvents: 0 };
+  assert.equal(marketSignals(r).demand_events, 0);
   assert.equal(s.lat, 51.45);
   assert.equal(s.lng, -2.58);
 });
