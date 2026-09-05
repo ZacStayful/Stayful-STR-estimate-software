@@ -13,6 +13,7 @@ import type { AnalysisResult } from '../types.ts';
 import { getSupabase } from '../supabase.ts';
 import { extractPostcodeArea } from '../utils/postcode.ts';
 import { isUnlimited } from '../usage.ts';
+import { marketSignals } from './marketSignals.ts';
 
 /**
  * A veto on the CRM write, evaluated after the analysis but before anything is
@@ -108,6 +109,9 @@ export async function persistAndSync(
           filename: null,
           extraction_status: 'ok',
           extraction_error: null,
+          // Market Explorer signals (competition, demand drivers, coords) —
+          // the same fields the migration backfills from raw_response.
+          ...marketSignals(result),
           raw_response: result,
         })
         .select('id')
