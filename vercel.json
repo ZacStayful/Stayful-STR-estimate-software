@@ -4,6 +4,10 @@
     {
       "path": "/api/admin/bulk/worker",
       "schedule": "0 3 * * *"
+    },
+    {
+      "path": "/api/internal/refresh-planning",
+      "schedule": "30 4 1 * *"
     }
   ]
 }
