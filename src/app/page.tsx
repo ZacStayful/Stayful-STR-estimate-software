@@ -103,9 +103,28 @@ import {
 
 // ─── Helpers ──────────────────────────────────────────────────────
 
-// Where every "book a call" prompt points. One constant so the six call sites
-// in this file cannot drift apart again.
+// Where every "book a call" prompt points. One constant so the call sites in
+// this file cannot drift apart again — and they all go through bookingUrlFor()
+// and trackBooking() below rather than using it directly.
 const BOOKING_URL = "https://calendly.com/zac-stayful/call";
+
+// Height of the sticky report header, used to offset in-page scrolling so a
+// section heading never lands underneath it. Kept next to BOOKING_URL because
+// the header only exists when a booking CTA does.
+const STICKY_HEADER_H = 60;
+
+// Every booking CTA goes through this: session tracker + Meta Pixel in one
+// place. "Schedule" is Meta's standard event for booking intent — keeping it
+// standard means it can be used directly as a campaign optimisation goal.
+// Without it the pixel only ever sees "ran an analysis", not "booked a call".
+type WithFbq = { fbq?: (...args: unknown[]) => void };
+
+function trackBooking(ctaId: string) {
+  trackCtaClick(ctaId);
+  if (typeof window !== "undefined") {
+    (window as unknown as WithFbq).fbq?.("track", "Schedule");
+  }
+}
 
 const MONTHS = [
   "Jan",
@@ -484,6 +503,8 @@ export default function HomePage() {
   // Tab / scroll tracking state
   const [activeTab, setActiveTab] = useState("overview");
   const sectionRefs = useRef<Record<string, HTMLElement | null>>({});
+  // The report's top bar. Measured so in-page scrolling clears it at any width.
+  const reportHeaderRef = useRef<HTMLDivElement | null>(null);
 
   // Sidebar state
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -590,13 +611,41 @@ export default function HomePage() {
     }
   }, [result]);
 
+  // Long-let leads get a plain top bar; everyone else gets a sticky one, so the
+  // scroll offset has to clear the header that is actually rendered. Measure it
+  // rather than assume: the bar wraps to two lines on narrow screens.
+  const hasStickyHeader = result?.recommendation?.recommendation !== "LONG_LET";
+
   const scrollToSection = (id: string) => {
     const el = sectionRefs.current[id];
     if (el) {
-      const yOffset = -20;
+      const headerH = reportHeaderRef.current?.offsetHeight || STICKY_HEADER_H;
+      const yOffset = hasStickyHeader ? -headerH : -20;
       const y = el.getBoundingClientRect().top + window.scrollY + yOffset;
       window.scrollTo({ top: y, behavior: "smooth" });
     }
+  };
+
+  // Calendly prefill. The lead already gave us their email and we already know
+  // the property, so neither should have to be retyped — and answer 1 ("what
+  // have we been discussing") puts the figures in front of us before the call.
+  // a2/a3 are the guaranteed-rent and 6-month qualifiers: deliberately left
+  // blank, since pre-answering those on the lead's behalf defeats asking.
+  const bookingUrlFor = (r: AnalysisResult | null) => {
+    const params = new URLSearchParams();
+    if (email) params.set("email", email);
+    if (r) {
+      const rec = r.recommendation;
+      const where = `${r.property.address}, ${r.property.postcode}`;
+      params.set(
+        "a1",
+        rec
+          ? `${where} — short-let nets ~${gbp(Math.round(rec.trueSTRNet))}/yr vs ~${gbp(Math.round(rec.trueLLNet))}/yr on a managed long-let (+${Math.round(rec.upliftPct * 100)}%).`
+          : where,
+      );
+    }
+    const qs = params.toString();
+    return qs ? `${BOOKING_URL}?${qs}` : BOOKING_URL;
   };
 
   const ANALYSIS_STAGES = [
@@ -879,10 +928,14 @@ export default function HomePage() {
   }
 
   // ─── Decision Screen ────────────────────────────────────────────
-  // Shown first, before any detailed numbers. Presents the binary short-let
-  // vs long-let recommendation. Only offers "Book a call" when short-let wins.
+  // Short-let leads only. They are the ones worth a conversation, so they get
+  // the verdict and an unmissable booking CTA before any detail.
+  //
+  // Long-let leads (and a missing recommendation, e.g. demo mode) skip this
+  // entirely and fall through to the report below — an interstitial telling
+  // them "no" before they can see a single number is a dead end.
 
-  if (result && result.recommendation && !showBreakdown) {
+  if (result && result.recommendation?.recommendation === "SHORT_LET" && !showBreakdown) {
     const rec = result.recommendation;
     const isShortLet = rec.recommendation === "SHORT_LET";
     const upliftWhole = Math.round(rec.upliftPct * 100);
@@ -969,8 +1022,8 @@ export default function HomePage() {
                 <p className="text-sm font-semibold text-foreground">How we decide</p>
                 <p className="mt-1.5 text-sm text-muted-foreground">
                   Short-letting takes more work, cost and risk than a long-let, so we
-                  only recommend it when it leaves you at least <span className="font-semibold text-foreground">{thresholdWhole}% more</span> after
-                  all running costs (platform &amp; management fees, cleaning,
+                  only recommend it when it leaves you at least <span className="font-semibold text-foreground">{thresholdWhole}% more</span>{" "}
+                  after all running costs (platform &amp; management fees, cleaning,
                   maintenance, bills and software).
                 </p>
                 <p className="mt-2 text-sm text-muted-foreground">
@@ -997,30 +1050,29 @@ export default function HomePage() {
                 </p>
               )}
 
-              <div className="flex w-full flex-col items-center gap-3 sm:flex-row sm:justify-center">
+              {/* Booking is the primary action here, not a co-equal second
+                  option — this screen only renders when short-let wins. */}
+              <div className="flex w-full flex-col items-center gap-2">
                 <Button
-                  variant={isShortLet ? "secondary" : "default"}
                   size="lg"
-                  className="w-full sm:w-auto"
+                  className="w-full"
+                  onClick={() => {
+                    trackBooking("book_call");
+                    window.open(bookingUrlFor(result), "_blank");
+                  }}
+                >
+                  <Calendar className="mr-2 h-4 w-4" />
+                  Book a call
+                </Button>
+
+                <Button
+                  variant="ghost"
+                  className="w-full"
                   onClick={() => setShowBreakdown(true)}
                 >
                   <BarChart3 className="mr-2 h-4 w-4" />
                   See the full breakdown
                 </Button>
-
-                {isShortLet && (
-                  <Button
-                    size="lg"
-                    className="w-full sm:w-auto"
-                    onClick={() => {
-                      trackCtaClick("book_call");
-                      window.open(BOOKING_URL, "_blank");
-                    }}
-                  >
-                    <Calendar className="mr-2 h-4 w-4" />
-                    Book a call
-                  </Button>
-                )}
               </div>
 
               {isEstimatedLongLet && (
@@ -1467,7 +1519,7 @@ export default function HomePage() {
             <div className="px-4 pb-2.5">
               <button
                 type="button"
-                onClick={() => { trackCtaClick("sidebar_book_call"); window.open(BOOKING_URL, "_blank"); }}
+                onClick={() => { trackBooking("sidebar_book_call"); window.open(bookingUrlFor(r), "_blank"); }}
                 style={{ background: "var(--primary)", color: "var(--primary-foreground)", fontSize: 12, fontWeight: 600, width: "100%", padding: "10px 0", borderRadius: 8, marginBottom: 10, border: "none", cursor: "pointer" }}
               >
                 Book your action plan
@@ -1501,18 +1553,44 @@ export default function HomePage() {
           className="transition-all duration-300"
           style={{ marginLeft: sidebarWidth }}
         >
-          {/* Top header with action buttons */}
-          <div className="flex items-center justify-end gap-2 px-6 py-3 border-b border-border bg-card/50">
-            {r.recommendation && (
-              <Button variant="ghost" size="sm" onClick={() => setShowBreakdown(false)}>
-                <ArrowLeft className="mr-1.5 h-3.5 w-3.5" />
-                Back to recommendation
+          {/* Top header with action buttons. Sticky, with a booking CTA, only
+              for leads short-let is recommended for — the sidebar CTA vanishes
+              when the sidebar is collapsed, leaving them nothing to click on a
+              long scroll. Long-let leads keep the plain, non-sticky bar.
+              z-30 sits under the z-40 sidebar so it stays on top. */}
+          <div
+            ref={reportHeaderRef}
+            className={`flex flex-wrap items-center gap-2 px-4 py-3 border-b border-border sm:px-6 ${
+              showBooking
+                ? "sticky top-0 z-30 bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/80"
+                : "bg-card/50"
+            }`}
+          >
+            {showBooking && (
+              <Button
+                size="sm"
+                onClick={() => {
+                  trackBooking("sticky_header_book_call");
+                  window.open(bookingUrlFor(r), "_blank");
+                }}
+              >
+                <Calendar className="mr-2 h-4 w-4" />
+                Book a call
               </Button>
             )}
-            <Button variant="secondary" size="sm" onClick={handleReset}>
-              <ArrowLeft className="mr-1.5 h-3.5 w-3.5" />
-              New Analysis
-            </Button>
+            <div className="ml-auto flex items-center gap-2">
+              {/* Only short-let leads have a recommendation screen to go back to. */}
+              {r.recommendation?.recommendation === "SHORT_LET" && (
+                <Button variant="ghost" size="sm" onClick={() => setShowBreakdown(false)}>
+                  <ArrowLeft className="mr-1.5 h-3.5 w-3.5" />
+                  Back to recommendation
+                </Button>
+              )}
+              <Button variant="secondary" size="sm" onClick={handleReset}>
+                <ArrowLeft className="mr-1.5 h-3.5 w-3.5" />
+                New Analysis
+              </Button>
+            </div>
           </div>
 
           <div className="px-6 py-8 pb-28 max-w-5xl mx-auto">
@@ -1943,7 +2021,7 @@ export default function HomePage() {
               </div>
               <button
                 type="button"
-                onClick={() => { trackCtaClick("overview_book_call"); window.open(BOOKING_URL, "_blank"); }}
+                onClick={() => { trackBooking("overview_book_call"); window.open(bookingUrlFor(r), "_blank"); }}
                 className="shrink-0 whitespace-nowrap rounded-lg px-5 py-3 text-[13px] font-bold text-primary"
                 style={{ background: "#B9D5C6", border: "none", cursor: "pointer" }}
               >
@@ -1974,9 +2052,9 @@ export default function HomePage() {
                 </p>
                 <p className="text-xs">{r.dataQuality.disclaimer}</p>
                 {showBooking && r.dataQuality.level === "low" && (
-                  <a href={BOOKING_URL} target="_blank" rel="noopener noreferrer"
+                  <a href={bookingUrlFor(r)} target="_blank" rel="noopener noreferrer"
                     className="mt-2 inline-block text-xs font-medium text-primary underline"
-                    onClick={() => trackCtaClick("book_call")}>
+                    onClick={() => trackBooking("book_call")}>
                     Book your profitability action plan
                   </a>
                 )}
@@ -2361,11 +2439,11 @@ export default function HomePage() {
                       </p>
                       {showBooking && (
                         <a
-                          href={BOOKING_URL}
+                          href={bookingUrlFor(r)}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="mt-3 inline-flex items-center gap-1.5 text-xs font-semibold text-primary hover:underline"
-                          onClick={() => trackCtaClick("book_call")}
+                          onClick={() => trackBooking("book_call")}
                         >
                           <Phone className="h-3 w-3" />
                           Book your profitability action plan
@@ -3486,19 +3564,9 @@ export default function HomePage() {
             </div>
 
             {/* CTA Card — only offer a call when short-let is the recommendation.
-                When long-let is recommended, no dead end and no pressure. */}
-            {!showBooking ? (
-              <Card className="bg-muted/40">
-                <CardContent className="flex flex-col items-center gap-3 py-10 text-center">
-                  <Home className="h-6 w-6 text-muted-foreground" />
-                  <h2 className="text-xl font-bold text-foreground">Long-let looks like the better fit right now</h2>
-                  <p className="max-w-lg text-sm text-muted-foreground">
-                    Based on your numbers, short-let isn&apos;t the right fit right now —
-                    but circumstances change. We&apos;ll keep your report on file.
-                  </p>
-                </CardContent>
-              </Card>
-            ) : (
+                Long-let leads get the figures and nothing else: no booking
+                prompt, and no verdict message either. */}
+            {showBooking && (
               <Card className="bg-primary text-primary-foreground">
                 <CardContent className="flex flex-col items-center gap-4 py-10 text-center">
                   <h2 className="text-2xl font-bold">Ready to maximise your rental income?</h2>
@@ -3515,8 +3583,8 @@ export default function HomePage() {
                       variant="secondary"
                       size="lg"
                       onClick={() => {
-                        trackCtaClick("book_call");
-                        window.open(BOOKING_URL, "_blank");
+                        trackBooking("book_call");
+                        window.open(bookingUrlFor(r), "_blank");
                       }}
                     >
                       <Calendar className="mr-2 h-4 w-4" />
