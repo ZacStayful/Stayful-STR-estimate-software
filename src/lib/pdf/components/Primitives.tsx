@@ -1,181 +1,416 @@
 import React from "react";
-import { View, Text, StyleSheet } from "@react-pdf/renderer";
-import { PDF_COLORS } from "../theme";
+import { Page, View, Text, Svg, Path, StyleSheet } from "@react-pdf/renderer";
+import {
+  PDF_COLORS as C,
+  PDF_LAYOUT as L,
+  PDF_TYPE as T,
+  PDF_RAMP,
+  fontFamily,
+} from "../theme";
+import { CornerMarks, CoverHeader, RunningHeader, FooterBar } from "./Chrome";
+import type { PdfMeta } from "../derive";
 
-const C = PDF_COLORS;
+const mono = fontFamily("MONO");
+const sans = fontFamily("SANS");
 
-const primStyles = StyleSheet.create({
-  // Centred section headings — the brief mandates TA_CENTER for all H1/H2/H3
-  h1: {
-    fontSize: 20,
-    fontFamily: "Helvetica-Bold",
-    color: C.DARK_GREEN,
-    textAlign: "center",
-    marginBottom: 4,
+const s = StyleSheet.create({
+  page: {
+    backgroundColor: C.PAPER,
+    paddingTop: L.marginTop + L.headerHeight,
+    paddingBottom: L.marginBottom + L.footerHeight,
+    paddingHorizontal: L.marginX,
+    fontFamily: sans,
+    fontSize: T.body,
+    color: C.INK,
   },
-  h2: {
-    fontSize: 13,
-    fontFamily: "Helvetica-Bold",
-    color: C.DARK_GREEN,
-    textAlign: "center",
-    marginTop: 10,
+  pageFirst: { paddingTop: L.marginTop + L.headerHeightFirst },
+
+  eyebrow: {
+    fontFamily: mono,
+    fontSize: T.label,
+    letterSpacing: T.trackWide,
+    color: C.MUTED,
     marginBottom: 8,
   },
-  h3: {
-    fontSize: 10,
-    fontFamily: "Helvetica-Bold",
-    color: C.DARK_GREEN,
-    textAlign: "center",
+  heading: {
+    fontFamily: sans,
+    fontWeight: 700,
+    fontSize: T.h2,
+    letterSpacing: T.trackTight,
+    color: C.INK,
     marginBottom: 4,
   },
-  subtitle: {
-    fontSize: 9,
-    color: C.DARK_GREY,
-    textAlign: "center",
-    marginBottom: 8,
+  lede: { fontSize: T.lede, color: C.MUTED, marginBottom: 14, lineHeight: 1.35 },
+
+  hairline: { height: L.hairline, backgroundColor: C.RULE },
+  rowGap: { flexDirection: "row", gap: L.gutter },
+
+  // ── Chips ──
+  chip: {
+    fontFamily: mono,
+    fontSize: T.label,
+    letterSpacing: T.trackWide,
+    paddingHorizontal: 7,
+    paddingVertical: 4,
+    borderRadius: L.radius,
   },
-  sectionLabel: {
-    fontSize: 8,
-    fontFamily: "Helvetica-Bold",
-    color: C.DARK_GREY,
-    letterSpacing: 1,
-    textAlign: "center",
-    marginTop: 4,
+  chipOutline: {
+    color: C.INK,
+    borderWidth: L.hairline,
+    borderColor: C.RULE,
+    backgroundColor: C.SURFACE,
+  },
+  chipSolid: { color: C.ON_DARK, backgroundColor: C.INK },
+
+  // ── Badges ──
+  badge: {
+    fontFamily: mono,
+    fontSize: 6.5,
+    letterSpacing: 0.8,
+    paddingHorizontal: 4,
+    paddingVertical: 2,
+    borderRadius: 2,
+    color: C.ON_DARK,
+    backgroundColor: C.INK,
+  },
+
+  // ── Cards / panels ──
+  card: {
+    flex: 1,
+    backgroundColor: C.SURFACE,
+    borderWidth: L.hairline,
+    borderColor: C.RULE,
+    borderRadius: L.radius,
+    paddingHorizontal: 10,
+    paddingTop: 11,
+    paddingBottom: 13,
+  },
+  cardLabel: {
+    fontFamily: mono,
+    fontSize: T.label,
+    letterSpacing: T.trackWide,
+    color: C.MUTED,
     marginBottom: 6,
   },
-  divider: {
-    height: 1,
-    backgroundColor: C.CREAM,
-    marginVertical: 8,
+  cardValue: {
+    fontFamily: sans,
+    fontWeight: 700,
+    fontSize: T.cardValue,
+    letterSpacing: T.trackTight,
+    color: C.INK,
   },
-  // Metric card: DARK_GREEN accent bar on top, CREAM border, rounded corners
-  metricCardWrap: {
-    flex: 1,
-    backgroundColor: C.WHITE,
-    borderColor: C.CREAM,
-    borderWidth: 1,
-    borderRadius: 6,
-    overflow: "hidden",
+  cardSub: { fontSize: T.micro, color: C.MUTED, marginTop: 5, lineHeight: 1.3 },
+
+  panel: { backgroundColor: C.INK, borderRadius: L.radius, padding: 14 },
+  panelLabel: {
+    fontFamily: mono,
+    fontSize: T.label,
+    letterSpacing: T.trackWide,
+    color: C.ON_DARK_MUTED,
   },
-  metricAccent: {
-    height: 3,
-    backgroundColor: C.DARK_GREEN,
+  panelFigure: {
+    fontFamily: sans,
+    fontWeight: 700,
+    fontSize: T.panelFigure,
+    letterSpacing: T.trackTight,
+    color: C.ON_DARK,
   },
-  metricBody: {
-    paddingHorizontal: 10,
-    paddingTop: 8,
-    paddingBottom: 10,
+
+  // ── Meters ──
+  dot: { width: 5, height: 5, borderRadius: 1, marginRight: 2 },
+  track: { height: 4, backgroundColor: C.RULE, borderRadius: 2, overflow: "hidden" },
+  trackFill: { height: 4, backgroundColor: C.GREEN, borderRadius: 2 },
+
+  factorRow: { marginBottom: 9 },
+  factorHead: { flexDirection: "row", justifyContent: "space-between", marginBottom: 4 },
+  factorName: { fontSize: T.body, color: C.INK },
+  factorValue: { fontFamily: mono, fontSize: T.micro, color: C.MUTED },
+
+  // ── Section nav (page 01) ──
+  navRow: { flexDirection: "row", gap: L.gutter },
+  navItem: { flex: 1 },
+  navRule: { height: 1.2, backgroundColor: C.INK, marginBottom: 6 },
+  navNum: {
+    fontFamily: mono,
+    fontSize: T.micro,
+    letterSpacing: 0.8,
+    color: C.MUTED,
+    marginBottom: 3,
   },
-  metricLabel: {
-    fontSize: 7,
-    fontFamily: "Helvetica-Bold",
-    color: C.LIGHT_GREY,
-    letterSpacing: 1,
-    marginBottom: 4,
-  },
-  metricValue: {
-    fontSize: 16,
-    fontFamily: "Helvetica-Bold",
-    color: C.DARK_GREEN,
+  navName: { fontFamily: mono, fontSize: T.label, letterSpacing: 0.8, color: C.INK },
+
+  // ── Tables ──
+  thRow: {
+    flexDirection: "row",
+    borderBottomWidth: L.hairline,
+    borderBottomColor: C.RULE,
+    paddingBottom: 5,
     marginBottom: 2,
   },
-  metricSub: {
-    fontSize: 8,
-    color: C.DARK_GREY,
+  th: {
+    fontFamily: mono,
+    fontSize: T.micro,
+    letterSpacing: 0.8,
+    color: C.MUTED,
   },
-  // Pill (e.g. risk label, HIGH impact tag)
-  pillBase: {
-    paddingHorizontal: 6,
-    paddingVertical: 1,
-    borderRadius: 10,
-    fontSize: 7,
-    fontFamily: "Helvetica-Bold",
-    letterSpacing: 1,
+  tdRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderBottomWidth: L.hairline,
+    borderBottomColor: C.RULE,
+    paddingVertical: 5,
   },
+  td: { fontSize: T.body, color: C.INK },
+  tdNum: { fontFamily: mono, fontSize: T.body, color: C.INK, textAlign: "right" },
 });
 
-export function H1({ children }: { children: React.ReactNode }) {
-  return <Text style={primStyles.h1}>{children}</Text>;
+export const pdfStyles = s;
+
+/** Every page: sage background, corner marks, fixed header and footer. */
+export function ReportPage({
+  meta,
+  page,
+  children,
+}: {
+  meta: PdfMeta;
+  page: number;
+  children: React.ReactNode;
+}) {
+  const first = page === 1;
+  return (
+    <Page size="A4" style={[s.page, ...(first ? [s.pageFirst] : [])]}>
+      <CornerMarks />
+      {first ? <CoverHeader meta={meta} /> : <RunningHeader meta={meta} page={page} />}
+      {children}
+      <FooterBar meta={meta} />
+    </Page>
+  );
 }
 
-export function H2({ children }: { children: React.ReactNode }) {
-  return <Text style={primStyles.h2}>{children}</Text>;
+export function Eyebrow({ children }: { children: React.ReactNode }) {
+  return <Text style={s.eyebrow}>{children}</Text>;
 }
 
-export function H3({ children }: { children: React.ReactNode }) {
-  return <Text style={primStyles.h3}>{children}</Text>;
+export function Heading({ children, size }: { children: React.ReactNode; size?: number }) {
+  return <Text style={[s.heading, ...(size ? [{ fontSize: size }] : [])]}>{children}</Text>;
 }
 
-export function Subtitle({ children }: { children: React.ReactNode }) {
-  return <Text style={primStyles.subtitle}>{children}</Text>;
+export function Lede({ children }: { children: React.ReactNode }) {
+  return <Text style={s.lede}>{children}</Text>;
 }
 
-export function SectionLabel({ children }: { children: React.ReactNode }) {
-  return <Text style={primStyles.sectionLabel}>{children}</Text>;
+export function Hairline({ spacing = 0 }: { spacing?: number }) {
+  return <View style={[s.hairline, { marginVertical: spacing }]} />;
 }
 
-export function Divider() {
-  return <View style={primStyles.divider} />;
+export function Chip({ children, solid }: { children: React.ReactNode; solid?: boolean }) {
+  return <Text style={[s.chip, solid ? s.chipSolid : s.chipOutline]}>{children}</Text>;
 }
 
-export function MetricCard({
+export function Badge({
+  children,
+  tone = "dark",
+}: {
+  children: React.ReactNode;
+  tone?: "dark" | "muted";
+}) {
+  const toneStyle =
+    tone === "muted" ? { backgroundColor: C.RULE, color: C.INK } : undefined;
+  return <Text style={[s.badge, ...(toneStyle ? [toneStyle] : [])]}>{children}</Text>;
+}
+
+/** A small filled square used to tie a table row or legend item to a bar segment. */
+export function Swatch({ color, size = 5 }: { color: string; size?: number }) {
+  return (
+    <View
+      style={{
+        width: size,
+        height: size,
+        borderRadius: 1,
+        backgroundColor: color,
+        marginRight: 5,
+      }}
+    />
+  );
+}
+
+/**
+ * A tick. Neither report font carries U+2713, so it's drawn rather than typed.
+ */
+export function Check({ size = 7, color = C.GREEN }: { size?: number; color?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 12 12" style={{ marginRight: 5 }}>
+      <Path
+        d="M2 6.4 L4.7 9 L10 3.2"
+        stroke={color}
+        strokeWidth={1.6}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        fill="none"
+      />
+    </Svg>
+  );
+}
+
+export function StatCard({
   label,
   value,
   sub,
+  children,
 }: {
   label: string;
   value: string;
   sub?: string;
+  children?: React.ReactNode;
 }) {
   return (
-    <View style={primStyles.metricCardWrap}>
-      <View style={primStyles.metricAccent} />
-      <View style={primStyles.metricBody}>
-        <Text style={primStyles.metricLabel}>{label.toUpperCase()}</Text>
-        <Text style={primStyles.metricValue}>{value}</Text>
-        {sub ? <Text style={primStyles.metricSub}>{sub}</Text> : null}
+    <View style={s.card}>
+      <Text style={s.cardLabel}>{label.toUpperCase()}</Text>
+      <Text style={s.cardValue}>{value}</Text>
+      {children}
+      {sub ? <Text style={s.cardSub}>{sub}</Text> : null}
+    </View>
+  );
+}
+
+/** 0–5 importance, as filled and empty dots. */
+export function DotMeter({ score, max = 5 }: { score: number; max?: number }) {
+  return (
+    <View style={{ flexDirection: "row", alignItems: "center" }}>
+      {Array.from({ length: max }, (_, i) => (
+        <View
+          key={i}
+          style={[s.dot, { backgroundColor: i < score ? C.GREEN : C.RULE }]}
+        />
+      ))}
+    </View>
+  );
+}
+
+/** A labelled 0–100 bar, used for the risk factors. */
+export function FactorBar({
+  name,
+  score,
+  outOf = 100,
+}: {
+  name: string;
+  score: number;
+  outOf?: number;
+}) {
+  const pct = Math.max(0, Math.min(100, (score / outOf) * 100));
+  return (
+    <View style={s.factorRow}>
+      <View style={s.factorHead}>
+        <Text style={s.factorName}>{name}</Text>
+        <Text style={s.factorValue}>
+          {Math.round(score)}/{outOf}
+        </Text>
+      </View>
+      <View style={s.track}>
+        <View style={[s.trackFill, { width: `${pct}%` }]} />
       </View>
     </View>
   );
 }
 
-export function Pill({
-  children,
-  background,
-  color,
-}: {
-  children: React.ReactNode;
-  background: string;
-  color: string;
-}) {
+/** A plain progress track, e.g. occupancy against the market average. */
+export function MiniTrack({ pct, marker }: { pct: number; marker?: number }) {
+  const clampPct = Math.max(0, Math.min(100, pct));
   return (
-    <Text style={[primStyles.pillBase, { backgroundColor: background, color }]}>
-      {children}
-    </Text>
+    <View style={[s.track, { marginTop: 7, position: "relative" }]}>
+      <View style={[s.trackFill, { width: `${clampPct}%` }]} />
+      {marker !== undefined ? (
+        <View
+          style={{
+            position: "absolute",
+            left: `${Math.max(0, Math.min(100, marker))}%`,
+            top: -2,
+            width: 0.8,
+            height: 8,
+            backgroundColor: C.INK,
+          }}
+        />
+      ) : null}
+    </View>
   );
 }
 
+export interface BarSegment {
+  /** Value in the same unit as every other segment on the shared scale. */
+  value: number;
+  color: string;
+}
+
 /**
- * Base `styles` object re-exported for per-page style composition.
- * Pages can extend these via StyleSheet.create at their own scope.
+ * A segmented bar drawn against a shared maximum, so two bars on the same page
+ * are directly comparable — the whole point of the page-02 comparison.
  */
-export const BASE_PAGE_STYLES = StyleSheet.create({
-  page: {
-    backgroundColor: C.OFF_WHITE,
-    paddingTop: 52,
-    paddingBottom: 40,
-    paddingHorizontal: 40,
-    fontFamily: "Helvetica",
-    fontSize: 9,
-    color: C.DARK_GREY,
-  },
-  row: {
-    flexDirection: "row",
-  },
-  gap8: {
-    gap: 8,
-  },
-  gap6: {
-    gap: 6,
-  },
-});
+export function SharedScaleBar({
+  segments,
+  scaleMax,
+  height = 22,
+}: {
+  segments: BarSegment[];
+  scaleMax: number;
+  height?: number;
+}) {
+  const max = scaleMax > 0 ? scaleMax : 1;
+  return (
+    <View style={{ flexDirection: "row", height, borderRadius: 2, overflow: "hidden" }}>
+      {segments.map((seg, i) => {
+        const pct = Math.max(0, (seg.value / max) * 100);
+        if (pct <= 0) return null;
+        return <View key={i} style={{ width: `${pct}%`, backgroundColor: seg.color }} />;
+      })}
+      {/* Remainder of the scale stays empty so the gap between bars is literal. */}
+      <View style={{ flex: 1 }} />
+    </View>
+  );
+}
+
+/** A full-width stacked bar that always fills its track (page-05 categories). */
+export function StackedBar({
+  values,
+  height = 16,
+}: {
+  values: number[];
+  height?: number;
+}) {
+  const total = values.reduce((a, b) => a + b, 0);
+  if (total <= 0) return null;
+  return (
+    <View style={{ flexDirection: "row", height, borderRadius: 2, overflow: "hidden" }}>
+      {values.map((v, i) => (
+        <View
+          key={i}
+          style={{
+            width: `${(v / total) * 100}%`,
+            backgroundColor: PDF_RAMP[i % PDF_RAMP.length],
+          }}
+        />
+      ))}
+    </View>
+  );
+}
+
+/** The page-01 strip pointing at the rest of the report. */
+export function SectionNav({ from = 2 }: { from?: number }) {
+  const items = [
+    { n: "02", name: "THE NUMBERS" },
+    { n: "03", name: "THE MARKET" },
+    { n: "04", name: "LOCATION & RISK" },
+    { n: "05", name: "SETUP COSTS" },
+    { n: "06", name: "THE PLAN" },
+  ].filter((it) => Number(it.n) >= from);
+  return (
+    <View style={s.navRow}>
+      {items.map((it) => (
+        <View key={it.n} style={s.navItem}>
+          <View style={s.navRule} />
+          <Text style={s.navNum}>{it.n}</Text>
+          <Text style={s.navName}>{it.name}</Text>
+        </View>
+      ))}
+    </View>
+  );
+}

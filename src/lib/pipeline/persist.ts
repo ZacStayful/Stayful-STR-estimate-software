@@ -65,8 +65,13 @@ export async function persistAndSync(
   // Derive the report figures once, up front: the storage insert below
   // and the PDF generation in the Monday block (further down) both need
   // them, so we compute here and reuse rather than calling twice.
-  const { deriveReportData } = await import('../pdf/derive');
-  const reportData = deriveReportData(result);
+  const { deriveReportData, attachSetupCosts } = await import('../pdf/derive');
+  // The setup calculator only exists in the browser, so this copy always falls
+  // back to typical figures for the property size — page 05 says as much. That
+  // keeps the Monday-uploaded PDF the same six pages as the lead's download.
+  const reportData = attachSetupCosts(
+    deriveReportData(result, opts.email ?? undefined),
+  );
 
   // ── Persist the completed report (fire-and-forget) ──────────
   // Pure side-effect: the lead's estimate has ALREADY been flushed to
@@ -188,14 +193,10 @@ export async function persistAndSync(
         : Promise.resolve(false),
       itemId
         ? (async () => {
-            const React = await import('react');
-            const { renderToBuffer } = await import('@react-pdf/renderer');
+            const { renderReportBuffer } = await import('../pdf/render');
             const { sanitiseAddressForFilename } = await import('../pdf/derive');
-            const { StayfulReport } = await import('../pdf/StayfulReport');
             // Reuse the reportData derived above — don't re-derive.
-            const element = React.createElement(StayfulReport, { data: reportData });
-            const render = () =>
-              (renderToBuffer as (e: unknown) => Promise<Buffer>)(element);
+            const render = () => renderReportBuffer(reportData);
             // Concurrent 6-page renders are memory-hungry; bulk passes a lock.
             const buffer = opts.renderLock ? await opts.renderLock(render) : await render();
             const filename = `Stayful_Property_Analysis_${sanitiseAddressForFilename(result.property.address)}.pdf`;

@@ -44,11 +44,9 @@
 // to charge somebody for these figures.
 
 import React from 'react';
-import { renderToBuffer } from '@react-pdf/renderer';
 import { normaliseAnalysisInput, defaultGuests } from '@/lib/pipeline/input';
 import { runAnalysis } from '@/lib/pipeline/runAnalysis';
-import { deriveReportData, sanitiseAddressForFilename } from '@/lib/pdf/derive';
-import { StayfulReport } from '@/lib/pdf/StayfulReport';
+import { renderReportFromResult } from '@/lib/pdf/render';
 import { buildAnalyseResponse } from '@/lib/internal/analyseResponse';
 
 export const runtime = 'nodejs';
@@ -180,19 +178,15 @@ export async function POST(request: Request) {
     let pdfError: string | undefined;
     if (body.include_pdf !== false) {
       try {
-        const reportData = deriveReportData(outcome.result);
-        const buffer = await renderToBuffer(<StayfulReport data={reportData} />);
+        // No lead is attached on this path, so page 01 omits "PREPARED FOR";
+        // setup costs fall back to typical figures for the property size.
+        const { buffer, filename } = await renderReportFromResult(outcome.result);
         const bytes = new Uint8Array(buffer);
         // A zero-length render is never a legitimate state, and the receiving
         // app refuses to store one. Fail it loudly here instead of shipping an
         // empty file that looks like a stored report.
         if (bytes.byteLength === 0) throw new Error('renderer produced an empty document');
-        pdf = {
-          buffer: bytes,
-          filename: `Stayful_Property_Analysis_${sanitiseAddressForFilename(
-            outcome.result.property.address,
-          )}.pdf`,
-        };
+        pdf = { buffer: bytes, filename };
       } catch (err) {
         pdfError = err instanceof Error ? err.message : 'PDF render failed';
         console.error('[internal/analyse] PDF render failed:', err);

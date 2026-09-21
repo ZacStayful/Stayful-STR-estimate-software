@@ -41,3 +41,6 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 scripts/calibration-results.json
+
+# Local output from scripts/render-pdf-sample.mts
+.pdf-preview/

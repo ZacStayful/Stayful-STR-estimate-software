@@ -1,194 +1,236 @@
 import React from "react";
-import { Page, View, Text, StyleSheet } from "@react-pdf/renderer";
-import { PDF_COLORS } from "../theme";
-import { HeaderBar, FooterBar, formatGbp, formatPercent, formatRating } from "../components/Chrome";
-import { H2, Subtitle, BASE_PAGE_STYLES } from "../components/Primitives";
+import { View, Text, StyleSheet } from "@react-pdf/renderer";
+import { PDF_COLORS as C, PDF_LAYOUT as L, PDF_TYPE as T, fontFamily } from "../theme";
+import { ReportPage, Eyebrow, Heading, Lede, Badge } from "../components/Primitives";
+import { CompsScatter } from "../components/charts/CompsScatter";
+import {
+  formatGbp,
+  formatPercent,
+  formatRating,
+  clamp,
+} from "../components/format";
+import { MAX_COMPARABLE_ROWS } from "../derive";
 import type { PdfReportData } from "../derive";
 
-const C = PDF_COLORS;
+const mono = fontFamily("MONO");
+const sans = fontFamily("SANS");
 
 const s = StyleSheet.create({
-  benchmarkBar: {
+  strip: {
     flexDirection: "row",
-    backgroundColor: C.MINT_GREEN + "55",
-    borderRadius: 6,
-    padding: 10,
-    marginBottom: 10,
-    gap: 6,
+    borderWidth: L.hairline,
+    borderColor: C.RULE,
+    borderRadius: L.radius,
+    backgroundColor: C.SURFACE,
+    marginBottom: 14,
   },
-  benchmarkCell: {
+  stripCell: {
     flex: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+    borderRightWidth: L.hairline,
+    borderRightColor: C.RULE,
+  },
+  stripCellLast: { borderRightWidth: 0 },
+  stripLabel: {
+    fontFamily: mono,
+    fontSize: T.micro,
+    letterSpacing: 0.8,
+    color: C.MUTED,
+    marginBottom: 4,
+  },
+  stripValue: {
+    fontFamily: sans,
+    fontWeight: 700,
+    fontSize: T.figureSm,
+    letterSpacing: T.trackTight,
+    color: C.INK,
+  },
+
+  tableHead: {
+    flexDirection: "row",
+    borderBottomWidth: L.hairline,
+    borderBottomColor: C.RULE,
+    paddingBottom: 5,
+    marginTop: 12,
+  },
+  th: { fontFamily: mono, fontSize: T.micro, letterSpacing: 0.8, color: C.MUTED },
+  row: {
+    flexDirection: "row",
     alignItems: "center",
+    borderBottomWidth: L.hairline,
+    borderBottomColor: C.RULE,
+    paddingVertical: 3.2,
   },
-  benchmarkLabel: {
-    fontSize: 7,
-    color: C.DARK_GREY,
-    marginBottom: 2,
+  cName: { flex: 1, paddingRight: 6 },
+  cDist: { width: 44, textAlign: "right" },
+  cNight: { width: 38, textAlign: "right" },
+  cOcc: { width: 32, textAlign: "right" },
+  cAnnual: { width: 50, textAlign: "right" },
+  cRtg: { width: 28, textAlign: "right" },
+  cTier: { width: 28, alignItems: "flex-end" },
+  name: { fontSize: T.body, color: C.INK },
+  num: { fontFamily: mono, fontSize: T.body, color: C.INK },
+  dash: { fontFamily: mono, fontSize: T.body, color: C.RULE, textAlign: "right" },
+
+  truncNote: { fontFamily: mono, fontSize: T.micro, color: C.MUTED, marginTop: 6 },
+  emptyNote: {
+    fontSize: T.body,
+    color: C.MUTED,
+    paddingVertical: 14,
+    textAlign: "center",
   },
-  benchmarkValue: {
-    fontSize: 11,
-    fontFamily: "Helvetica-Bold",
-    color: C.DARK_GREEN,
-  },
-  thRow: {
-    flexDirection: "row",
-    backgroundColor: C.DARK_GREEN,
-    paddingVertical: 3,
-    paddingHorizontal: 6,
-    borderTopLeftRadius: 4,
-    borderTopRightRadius: 4,
-  },
-  thCell: { fontSize: 7, fontFamily: "Helvetica-Bold", color: C.WHITE },
-  tdRow: {
-    flexDirection: "row",
-    paddingVertical: 2.5,
-    paddingHorizontal: 6,
-    borderBottomWidth: 0.5,
-    borderBottomColor: C.CREAM,
-  },
-  tdRowStripe: { backgroundColor: C.ROW_STRIPE },
-  tdCell: { fontSize: 7.5, color: C.DARK_GREY },
-  tdCellBold: { fontSize: 7.5, fontFamily: "Helvetica-Bold", color: C.DARK_GREEN },
-  tdCellMuted: { fontSize: 7.5, color: C.LIGHT_GREY },
-  cName: { flex: 3 },
-  cDist: { flex: 1.2, textAlign: "right" },
-  cNightly: { flex: 1.2, textAlign: "right" },
-  cOcc: { flex: 1, textAlign: "right" },
-  cAnnual: { flex: 1.5, textAlign: "right" },
-  cRating: { flex: 0.8, textAlign: "right" },
-  cTier: { flex: 0.8, textAlign: "center" },
-  matchBeatRow: {
-    flexDirection: "row",
-    gap: 10,
-    marginTop: 10,
-  },
-  matchBox: {
+
+  panels: { flexDirection: "row", gap: L.gutter, marginTop: "auto", paddingTop: 14 },
+  panel: {
     flex: 1,
-    backgroundColor: C.MINT_GREEN + "55",
-    borderRadius: 8,
-    padding: 12,
+    borderRadius: L.radius,
+    paddingHorizontal: 12,
+    paddingVertical: 11,
   },
-  beatBox: {
-    flex: 1,
-    backgroundColor: C.DARK_GREEN,
-    borderRadius: 8,
-    padding: 12,
+  panelLight: {
+    backgroundColor: C.SURFACE,
+    borderWidth: L.hairline,
+    borderColor: C.RULE,
   },
-  mbLabel: {
-    fontSize: 7,
-    fontFamily: "Helvetica-Bold",
-    letterSpacing: 1,
-    marginBottom: 6,
+  panelDark: { backgroundColor: C.INK },
+  panelLabel: {
+    fontFamily: mono,
+    fontSize: T.label,
+    letterSpacing: T.trackWide,
+    marginBottom: 8,
   },
-  mbRow: {
+  pRow: {
     flexDirection: "row",
     justifyContent: "space-between",
-    marginBottom: 3,
+    alignItems: "center",
+    paddingVertical: 4,
+    borderTopWidth: L.hairline,
   },
-  mbKey: { fontSize: 8 },
-  mbVal: { fontSize: 8, fontFamily: "Helvetica-Bold" },
+  pName: { fontSize: T.body },
+  pValue: { fontFamily: sans, fontWeight: 700, fontSize: T.body },
 });
 
+/**
+ * Page 03 — the local market.
+ *
+ * Benchmarks first, then the scatter so the reader can place themselves, then
+ * the listings the numbers came from, then what "matching" and "beating" the
+ * market would actually take.
+ */
 export function Page3Comparables({ data }: { data: PdfReportData }) {
-  const b = data.compsBenchmark;
-  const mt = data.marketTargets;
+  const { comparables, comparablesTotal, compsBenchmark: b, marketTargets: m, overview } = data;
+
+  const truncated = comparablesTotal > comparables.length;
+  const dash = "—";
+
+  const strip = [
+    { label: "NIGHTLY", value: b.count > 0 ? formatGbp(b.avgNightly) : dash },
+    { label: "OCCUPANCY", value: b.count > 0 ? formatPercent(b.avgOccupancy) : dash },
+    { label: "ANNUAL", value: b.count > 0 ? formatGbp(b.avgAnnual) : dash },
+    { label: "RATING", value: b.avgRating > 0 ? formatRating(b.avgRating) : dash },
+    { label: "REVIEWS", value: b.avgReviews > 0 ? String(b.avgReviews) : dash },
+  ];
 
   return (
-    <Page size="A4" style={BASE_PAGE_STYLES.page}>
-      <HeaderBar />
-      <FooterBar />
+    <ReportPage meta={data.meta} page={3}>
+      <Eyebrow>03 — THE MARKET</Eyebrow>
+      <Heading>How it stacks up against the neighbours</Heading>
+      <Lede>
+        {comparablesTotal > 0
+          ? `${comparablesTotal} active Airbnb ${comparablesTotal === 1 ? "listing" : "listings"} within ${b.radiusKm.toFixed(2)} km · mean-aggregated · data from Airbnb via Airbtics`
+          : "No active Airbnb listings were found close enough to benchmark against."}
+      </Lede>
 
-      <H2>Comparable Properties</H2>
-      <Subtitle>
-        {b.count} active Airbnb listings within {b.radiusKm.toFixed(2)} km ·
-        Median-aggregated · Data sourced from Airbnb via Airbtics
-      </Subtitle>
-
-      {/* Benchmark summary bar */}
-      <View style={s.benchmarkBar}>
-        <View style={s.benchmarkCell}>
-          <Text style={s.benchmarkLabel}>Avg Nightly Rate</Text>
-          <Text style={s.benchmarkValue}>{formatGbp(b.avgNightly)}</Text>
-        </View>
-        <View style={s.benchmarkCell}>
-          <Text style={s.benchmarkLabel}>Avg Occupancy</Text>
-          <Text style={s.benchmarkValue}>{formatPercent(b.avgOccupancy)}</Text>
-        </View>
-        <View style={s.benchmarkCell}>
-          <Text style={s.benchmarkLabel}>Avg Annual Revenue</Text>
-          <Text style={s.benchmarkValue}>{formatGbp(b.avgAnnual)}</Text>
-        </View>
-        <View style={s.benchmarkCell}>
-          <Text style={s.benchmarkLabel}>Avg Rating</Text>
-          <Text style={s.benchmarkValue}>{formatRating(b.avgRating)}</Text>
-        </View>
-        <View style={s.benchmarkCell}>
-          <Text style={s.benchmarkLabel}>Avg Reviews</Text>
-          <Text style={s.benchmarkValue}>{b.avgReviews}</Text>
-        </View>
+      <View style={s.strip}>
+        {strip.map((cell, i) => (
+          <View
+            key={cell.label}
+            style={[s.stripCell, ...(i === strip.length - 1 ? [s.stripCellLast] : [])]}
+          >
+            <Text style={s.stripLabel}>{cell.label}</Text>
+            <Text style={s.stripValue}>{cell.value}</Text>
+          </View>
+        ))}
       </View>
 
-      {/* Comparables table */}
-      <View style={s.thRow}>
-        <Text style={[s.thCell, s.cName]}>Property</Text>
-        <Text style={[s.thCell, s.cDist]}>Distance</Text>
-        <Text style={[s.thCell, s.cNightly]}>Nightly</Text>
-        <Text style={[s.thCell, s.cOcc]}>Occ</Text>
-        <Text style={[s.thCell, s.cAnnual]}>Annual</Text>
-        <Text style={[s.thCell, s.cRating]}>Rating</Text>
-        <Text style={[s.thCell, s.cTier]}>Tier</Text>
-      </View>
-      {data.comparables.map((c, i) => (
-        <View key={c.name} style={i % 2 === 1 ? [s.tdRow, s.tdRowStripe] : s.tdRow}>
-          <Text style={[s.tdCell, s.cName]}>{c.name}</Text>
-          <Text style={[s.tdCell, s.cDist]}>{c.distance}</Text>
-          <Text style={[s.tdCell, s.cNightly]}>{formatGbp(c.nightly)}</Text>
-          <Text style={[s.tdCell, s.cOcc]}>{formatPercent(c.occupancy)}</Text>
-          <Text style={[s.tdCell, s.cAnnual]}>{formatGbp(c.annual)}</Text>
-          <Text style={[s.tdCell, s.cRating]}>{formatRating(c.rating)}</Text>
-          <Text style={c.top ? [s.tdCellBold, s.cTier] : [s.tdCellMuted, s.cTier]}>
-            {c.top ? "Top" : "—"}
-          </Text>
-        </View>
-      ))}
+      <CompsScatter
+        comparables={comparables}
+        yourNightly={overview.adr}
+        yourOccupancy={overview.occupancy}
+      />
 
-      {/* Match vs Beat the Market */}
-      <View style={s.matchBeatRow}>
-        <View style={s.matchBox}>
-          <Text style={[s.mbLabel, { color: C.DARK_GREEN }]}>TO MATCH THE MARKET</Text>
-          <View style={s.mbRow}>
-            <Text style={[s.mbKey, { color: C.DARK_GREY }]}>Rate</Text>
-            <Text style={[s.mbVal, { color: C.DARK_GREEN }]}>{formatGbp(mt.matchNightly)}</Text>
+      {comparables.length > 0 ? (
+        <>
+          <View style={s.tableHead}>
+            <Text style={[s.th, s.cName]}>LISTING</Text>
+            <Text style={[s.th, s.cDist]}>DIST</Text>
+            <Text style={[s.th, s.cNight]}>NIGHT</Text>
+            <Text style={[s.th, s.cOcc]}>OCC</Text>
+            <Text style={[s.th, s.cAnnual]}>ANNUAL</Text>
+            <Text style={[s.th, s.cRtg]}>RTG</Text>
+            <Text style={[s.th, s.cTier, { textAlign: "right" }]}>TIER</Text>
           </View>
-          <View style={s.mbRow}>
-            <Text style={[s.mbKey, { color: C.DARK_GREY }]}>Occupancy</Text>
-            <Text style={[s.mbVal, { color: C.DARK_GREEN }]}>{formatPercent(mt.matchOccupancy)}</Text>
-          </View>
-          <View style={s.mbRow}>
-            <Text style={[s.mbKey, { color: C.DARK_GREY }]}>Rating</Text>
-            <Text style={[s.mbVal, { color: C.DARK_GREEN }]}>{formatRating(b.avgRating)}</Text>
-          </View>
-          <View style={s.mbRow}>
-            <Text style={[s.mbKey, { color: C.DARK_GREY }]}>Revenue</Text>
-            <Text style={[s.mbVal, { color: C.DARK_GREEN }]}>{formatGbp(mt.matchRevenue)}</Text>
-          </View>
+          {comparables.map((c, i) => (
+            <View key={`${c.name}-${i}`} style={s.row}>
+              <Text style={[s.name, s.cName]}>{clamp(c.name, 42)}</Text>
+              <Text style={[s.num, s.cDist]}>{c.distance}</Text>
+              <Text style={[s.num, s.cNight]}>{formatGbp(c.nightly)}</Text>
+              <Text style={[s.num, s.cOcc]}>{formatPercent(c.occupancy)}</Text>
+              <Text style={[s.num, s.cAnnual]}>{formatGbp(c.annual)}</Text>
+              <Text style={[s.num, s.cRtg]}>{formatRating(c.rating)}</Text>
+              <View style={s.cTier}>
+                {c.top ? <Badge>TOP</Badge> : <Text style={s.dash}>—</Text>}
+              </View>
+            </View>
+          ))}
+          {truncated ? (
+            <Text style={s.truncNote}>
+              Showing the {MAX_COMPARABLE_ROWS} nearest of {comparablesTotal} listings found.
+              Every figure above is aggregated across all {comparablesTotal}.
+            </Text>
+          ) : null}
+        </>
+      ) : (
+        <Text style={s.emptyNote}>
+          No comparable listings to show. The figures on this page fall back to
+          regional estimates.
+        </Text>
+      )}
+
+      <View style={s.panels}>
+        <View style={[s.panel, s.panelLight]}>
+          <Text style={[s.panelLabel, { color: C.MUTED }]}>TO MATCH THE MARKET</Text>
+          {[
+            { name: "Nightly rate", value: formatGbp(m.matchNightly) },
+            { name: "Occupancy", value: formatPercent(m.matchOccupancy) },
+            { name: "Guest rating", value: formatRating(b.avgRating) },
+            { name: "Annual revenue", value: formatGbp(m.matchRevenue) },
+          ].map((r) => (
+            <View key={r.name} style={[s.pRow, { borderTopColor: C.RULE }]}>
+              <Text style={[s.pName, { color: C.INK }]}>{r.name}</Text>
+              <Text style={[s.pValue, { color: C.INK }]}>{r.value}</Text>
+            </View>
+          ))}
         </View>
-        <View style={s.beatBox}>
-          <Text style={[s.mbLabel, { color: C.WHITE }]}>TO BEAT THE MARKET (Top 25%)</Text>
-          <View style={s.mbRow}>
-            <Text style={[s.mbKey, { color: C.WHITE }]}>Rate</Text>
-            <Text style={[s.mbVal, { color: C.WHITE }]}>{formatGbp(mt.beatNightly)}</Text>
-          </View>
-          <View style={s.mbRow}>
-            <Text style={[s.mbKey, { color: C.WHITE }]}>Occupancy</Text>
-            <Text style={[s.mbVal, { color: C.WHITE }]}>{formatPercent(mt.beatOccupancy)}</Text>
-          </View>
-          <View style={s.mbRow}>
-            <Text style={[s.mbKey, { color: C.WHITE }]}>Revenue</Text>
-            <Text style={[s.mbVal, { color: C.WHITE }]}>{formatGbp(mt.beatRevenue)}</Text>
-          </View>
+
+        <View style={[s.panel, s.panelDark]}>
+          <Text style={[s.panelLabel, { color: C.ON_DARK_MUTED }]}>TO BEAT IT · TOP 25%</Text>
+          {[
+            { name: "Nightly rate", value: formatGbp(m.beatNightly) },
+            { name: "Occupancy", value: formatPercent(m.beatOccupancy) },
+            { name: "Annual revenue", value: formatGbp(m.beatRevenue) },
+          ].map((r) => (
+            <View
+              key={r.name}
+              style={[s.pRow, { borderTopColor: C.ON_DARK_MUTED, opacity: 1 }]}
+            >
+              <Text style={[s.pName, { color: C.ON_DARK_MUTED }]}>{r.name}</Text>
+              <Text style={[s.pValue, { color: C.ON_DARK }]}>{r.value}</Text>
+            </View>
+          ))}
         </View>
       </View>
-    </Page>
+    </ReportPage>
   );
 }

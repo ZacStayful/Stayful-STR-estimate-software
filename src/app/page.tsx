@@ -1621,6 +1621,8 @@ export default function HomePage() {
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({
                           ...result,
+                          // Printed as "PREPARED FOR" on page 1 of the report.
+                          email,
                           setup: setupSnapshotRef.current
                             ? {
                                 furnishing: setupSnapshotRef.current.furnishing,

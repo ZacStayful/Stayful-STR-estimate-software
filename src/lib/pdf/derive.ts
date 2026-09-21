@@ -4,14 +4,32 @@ import type {
   RiskLevel,
   ShortLetComparable,
 } from "@/lib/types";
+import { PDF_COST_RATES } from "./theme";
+// Pure data + pricing logic (no JSX, no "use client") — safe on the server.
+import { buildDefaultLineItems } from "@/components/SetupCalculator/lineItemDefaults";
 
 const MONTH_NAMES = [
   "January", "February", "March", "April", "May", "June",
   "July", "August", "September", "October", "November", "December",
 ] as const;
 
+/** Axis labels for the page-02 forecast chart. */
+const MONTH_SHORT = [
+  "JAN", "FEB", "MAR", "APR", "MAY", "JUN",
+  "JUL", "AUG", "SEP", "OCT", "NOV", "DEC",
+] as const;
+
+/**
+ * The comparables table is designed to hold 12 rows on one page. The search in
+ * `airbtics.ts` targets 12 but can return more, so cap it and say so rather
+ * than silently spilling onto a seventh page.
+ */
+export const MAX_COMPARABLE_ROWS = 12;
+
 export interface PdfMonth {
   month: string;
+  /** Three-letter uppercase label for the chart axis. */
+  short: string;
   net: number;
   vsLtl: number;
   occupancy: number;
@@ -57,9 +75,34 @@ export interface PdfSetupSnapshot {
   itemCount: number;
   grandTotal: number;
   categories: PdfSetupCategory[];
+  /**
+   * True when the figures are Stayful's typical-property defaults because the
+   * lead never filled in the setup calculator. Drives the "indicative
+   * estimate" callout on page 05.
+   */
+  indicative: boolean;
+}
+
+/** An amenity and its 0–5 importance, rendered as a dot meter. */
+export interface PdfAmenity {
+  name: string;
+  score: number;
+}
+
+/** Report-level metadata for the page headers and footers. */
+export interface PdfMeta {
+  /** ISO date the analysis was produced. */
+  issuedAt: string;
+  /** Lead email, shown as "PREPARED FOR [...]". Absent on internal renders. */
+  preparedFor?: string;
+  /** Address without the town, e.g. "22 Princess Road West". */
+  street: string;
+  /** Town/city for the running header. Empty when it can't be determined. */
+  city: string;
 }
 
 export interface PdfReportData {
+  meta: PdfMeta;
   property: { address: string; bedrooms: number; sleeps: number };
   overview: {
     grossRevenue: number;
@@ -92,6 +135,8 @@ export interface PdfReportData {
   };
   monthly: PdfMonth[];
   comparables: PdfComparable[];
+  /** Total comps found, which may exceed the rows in `comparables`. */
+  comparablesTotal: number;
   compsBenchmark: {
     avgNightly: number;
     avgOccupancy: number;
@@ -122,8 +167,8 @@ export interface PdfReportData {
     };
   };
   amenities: {
-    essential: string[];
-    recommended: string[];
+    essential: PdfAmenity[];
+    competitiveEdge: PdfAmenity[];
     differentiators: string[];
   };
   growth: {
@@ -133,8 +178,66 @@ export interface PdfReportData {
     extraMonthlyProfitYr3: number;
   };
   setup?: PdfSetupSnapshot;
+  /**
+   * Whole months for the setup cost to pay for itself out of the extra income
+   * over a long-let. Null when the short-let isn't ahead, so the pages hide the
+   * payback line instead of printing Infinity.
+   */
+  setupPaybackMonths: number | null;
   /** Short-let vs long-let verdict. Undefined when it could not be computed. */
   recommendation?: RecommendationDecision;
+}
+
+/**
+ * Split a free-text address into street and town for the running header.
+ *
+ * Google-backed autocomplete gives "17 Park Crescent, York" (the postcode is
+ * stored separately), so the last comma segment is the town. Manual entry and
+ * bulk upload often give no town at all — fall back to the postcode's outward
+ * code, then to nothing. An empty city is a legitimate outcome; the header
+ * drops the separator rather than printing a dangling one.
+ */
+export function splitStreetAndCity(
+  address: string,
+  postcode?: string,
+): { street: string; city: string } {
+  const trimmed = (address ?? "").trim();
+  const parts = trimmed.split(",").map((p) => p.trim()).filter(Boolean);
+
+  if (parts.length >= 2) {
+    const city = parts[parts.length - 1];
+    // A trailing segment that is just a postcode isn't a town.
+    if (!/^[A-Z]{1,2}\d{1,2}[A-Z]?(\s*\d[A-Z]{2})?$/i.test(city)) {
+      return { street: parts.slice(0, -1).join(", "), city };
+    }
+    return { street: parts.slice(0, -1).join(", "), city: outwardCode(postcode) };
+  }
+
+  return { street: trimmed, city: outwardCode(postcode) };
+}
+
+/** "M4 7FE" -> "M4". Empty string when there's nothing usable. */
+function outwardCode(postcode?: string): string {
+  const m = (postcode ?? "").trim().match(/^([A-Z]{1,2}\d{1,2}[A-Z]?)/i);
+  return m ? m[1].toUpperCase() : "";
+}
+
+/**
+ * Whole months for the setup investment to be repaid out of the extra monthly
+ * income over a long-let. Null when the short-let isn't ahead (or there's no
+ * setup cost), which is the long-let-recommended case.
+ *
+ * Rounded to nearest, not up: the report presents this as "≈N months" against
+ * figures it already labels indicative, so £3,110 over £771 a month reads as
+ * 4 months rather than 5.
+ */
+export function computePaybackMonths(
+  setupTotal: number | undefined,
+  monthlyDiff: number,
+): number | null {
+  if (!setupTotal || setupTotal <= 0) return null;
+  if (!Number.isFinite(monthlyDiff) || monthlyDiff <= 0) return null;
+  return Math.max(1, Math.round(setupTotal / monthlyDiff));
 }
 
 /**
@@ -145,6 +248,7 @@ export interface PdfReportData {
 export function buildSetupSnapshot(raw: {
   furnishing: "fully" | "part" | "unfurnished";
   bedrooms: number;
+  indicative?: boolean;
   items: Array<{
     id: string;
     name: string;
@@ -177,11 +281,15 @@ export function buildSetupSnapshot(raw: {
     groups.set(it.category, arr);
   }
 
-  const categories: PdfSetupCategory[] = Array.from(groups.entries()).map(([category, items]) => ({
-    category,
-    items,
-    subtotal: items.reduce((s, i) => s + i.total, 0),
-  }));
+  // Biggest spend first, so the stacked bar reads left-to-right in descending
+  // order and the table follows the same order as its legend.
+  const categories: PdfSetupCategory[] = Array.from(groups.entries())
+    .map(([category, items]) => ({
+      category,
+      items,
+      subtotal: items.reduce((s, i) => s + i.total, 0),
+    }))
+    .sort((a, b) => b.subtotal - a.subtotal);
 
   const grandTotal = categories.reduce((s, c) => s + c.subtotal, 0);
   return {
@@ -190,7 +298,127 @@ export function buildSetupSnapshot(raw: {
     itemCount: active.length,
     grandTotal,
     categories,
+    indicative: raw.indicative ?? false,
   };
+}
+
+/** The raw setup-calculator snapshot the browser posts alongside an analysis. */
+export interface RawSetupInput {
+  furnishing: "fully" | "part" | "unfurnished";
+  bedrooms: number;
+  items: Array<{
+    id: string;
+    name: string;
+    category: string;
+    supplier: string;
+    qty: number;
+    unitCost: number;
+    active: boolean;
+  }>;
+}
+
+/**
+ * Setup costs for a typical property of this size, used when the lead never
+ * opened the setup calculator.
+ *
+ * The report always carries a setup-costs page, so the page count (and the
+ * "NN / 06" footers) stay the same whether the figures came from the lead or
+ * from these defaults. The page flags itself as indicative when they did.
+ */
+export function buildIndicativeSetupSnapshot(bedrooms: number): PdfSetupSnapshot | null {
+  const safeBedrooms = Math.max(1, Math.floor(bedrooms || 1));
+  return buildSetupSnapshot({
+    furnishing: "fully",
+    bedrooms: safeBedrooms,
+    indicative: true,
+    items: buildDefaultLineItems("fully", safeBedrooms),
+  });
+}
+
+/**
+ * Attach setup costs and the derived payback to a report, falling back to
+ * typical-property defaults when the lead gave us nothing.
+ *
+ * Every render path goes through this so the browser download, the
+ * Monday-uploaded copy and the internal API all produce the same document.
+ */
+export function attachSetupCosts(
+  data: PdfReportData,
+  raw?: RawSetupInput | null,
+): PdfReportData {
+  const fromLead = raw ? buildSetupSnapshot(raw) : null;
+  const setup = fromLead ?? buildIndicativeSetupSnapshot(data.property.bedrooms);
+  return {
+    ...data,
+    setup: setup ?? undefined,
+    setupPaybackMonths: computePaybackMonths(setup?.grandTotal, data.strVsLtl.monthlyDiff),
+  };
+}
+
+/**
+ * The page-05 table holds this many rows (item rows plus one heading row per
+ * category) before it would push onto a seventh page. A lead who picked
+ * "unfurnished", or added their own items, can easily exceed it.
+ */
+export const MAX_SETUP_ROWS = 16;
+
+/** One rendered line of the setup table. */
+export type SetupRow =
+  | { kind: "category"; category: string; subtotal: number }
+  | { kind: "item"; item: PdfSetupLineItem }
+  | { kind: "overflow"; count: number; total: number };
+
+/**
+ * Lay the setup table out within a fixed row budget.
+ *
+ * Categories are never split across a heading — if a category's items won't
+ * fit, its remaining items collapse into a single "+N more" line carrying
+ * their combined total, so the printed rows still add up to the grand total
+ * and the report stays exactly six pages.
+ */
+export function planSetupRows(
+  categories: PdfSetupCategory[],
+  maxRows: number = MAX_SETUP_ROWS,
+): SetupRow[] {
+  const rows: SetupRow[] = [];
+  let used = 0;
+  let hiddenCount = 0;
+  let hiddenTotal = 0;
+
+  for (const cat of categories) {
+    // A category needs its heading plus at least one item to be worth showing.
+    const remaining = maxRows - used;
+    if (remaining < 2) {
+      hiddenCount += cat.items.length;
+      hiddenTotal += cat.subtotal;
+      continue;
+    }
+
+    rows.push({ kind: "category", category: cat.category, subtotal: cat.subtotal });
+    used += 1;
+
+    // Keep one row spare for the overflow line if anything will be hidden.
+    const laterItems = categories
+      .slice(categories.indexOf(cat) + 1)
+      .reduce((n, c) => n + c.items.length + 1, 0);
+    const reserve = laterItems > 0 || hiddenCount > 0 ? 1 : 0;
+    const roomForItems = Math.max(0, maxRows - used - reserve);
+
+    const shown = cat.items.slice(0, roomForItems);
+    for (const item of shown) {
+      rows.push({ kind: "item", item });
+      used += 1;
+    }
+
+    const hidden = cat.items.slice(shown.length);
+    hiddenCount += hidden.length;
+    hiddenTotal += hidden.reduce((n, i) => n + i.total, 0);
+  }
+
+  if (hiddenCount > 0) {
+    rows.push({ kind: "overflow", count: hiddenCount, total: hiddenTotal });
+  }
+  return rows;
 }
 
 function riskLevelToScore(level: RiskLevel): number {
@@ -199,12 +427,20 @@ function riskLevelToScore(level: RiskLevel): number {
   return 75;
 }
 
+/** Thresholds are on a 0–100 scale — see `RISK_SCORE_SCALE`. */
 function overallRiskLabel(score: number): string {
-  if (score <= 25) return "Low Risk";
-  if (score <= 50) return "Low-Medium Risk";
-  if (score <= 75) return "Medium-High Risk";
-  return "High Risk";
+  if (score <= 25) return "Low risk";
+  if (score <= 50) return "Low-medium risk";
+  if (score <= 75) return "Medium-high risk";
+  return "High risk";
 }
+
+/**
+ * `assessRisk` in analysis.ts returns `overallScore` clamped to 1–10, but this
+ * report prints it out of 100 (and draws it on a 0–100 gauge). Without this
+ * factor every property scored <= 2.5 and read "Low Risk" regardless.
+ */
+export const RISK_SCORE_SCALE = 10;
 
 function mean(values: number[]): number {
   if (values.length === 0) return 0;
@@ -240,8 +476,12 @@ function directBookingScoreFromSignals(result: AnalysisResult): number {
   return Math.max(0, Math.min(100, Math.round(raw)));
 }
 
-export function deriveReportData(result: AnalysisResult): PdfReportData {
-  const { property, shortLet, longLet, financials, risk, demandDrivers, nearbyEvents, propertyValuation, dataQuality } = result;
+/**
+ * @param preparedFor Lead email for the page-01 "PREPARED FOR" line. Omitted
+ *   on internal renders, where no lead is attached.
+ */
+export function deriveReportData(result: AnalysisResult, preparedFor?: string): PdfReportData {
+  const { property, shortLet, financials, risk, demandDrivers, nearbyEvents, propertyValuation, dataQuality } = result;
 
   // ── Overview ──
   const grossAnnual = financials.shortLetGrossAnnual;
@@ -262,6 +502,7 @@ export function deriveReportData(result: AnalysisResult): PdfReportData {
     const occ = scenarioBase?.[i]?.occupancy ?? shortLet.occupancyRate;
     return {
       month: MONTH_NAMES[i],
+      short: MONTH_SHORT[i],
       net,
       vsLtl: Math.round(net - ltlNetMonthly),
       occupancy: Math.max(0, Math.min(1, occ)),
@@ -270,16 +511,21 @@ export function deriveReportData(result: AnalysisResult): PdfReportData {
   });
 
   // ── Comparables ──
+  // Thresholds and benchmarks are computed across every comp found; only the
+  // printed table is capped, nearest first, so the market figures stay honest.
   const topThreshold = topRevenueThreshold(shortLet.comparables);
-  const comparables: PdfComparable[] = shortLet.comparables.map((c) => ({
-    name: c.title,
-    distance: formatDistance(c.distance),
-    nightly: Math.round(c.averageDailyRate),
-    occupancy: c.occupancyRate,
-    annual: Math.round(c.annualRevenue),
-    rating: c.rating,
-    top: c.annualRevenue >= topThreshold,
-  }));
+  const comparables: PdfComparable[] = [...shortLet.comparables]
+    .sort((a, b) => (a.distance ?? Infinity) - (b.distance ?? Infinity))
+    .slice(0, MAX_COMPARABLE_ROWS)
+    .map((c) => ({
+      name: c.title,
+      distance: formatDistance(c.distance),
+      nightly: Math.round(c.averageDailyRate),
+      occupancy: c.occupancyRate,
+      annual: Math.round(c.annualRevenue),
+      rating: c.rating,
+      top: c.annualRevenue >= topThreshold,
+    }));
 
   // ── Benchmark (mean of comps) ──
   const nightlyValues = shortLet.comparables.map((c) => c.averageDailyRate);
@@ -308,52 +554,59 @@ export function deriveReportData(result: AnalysisResult): PdfReportData {
   const beatOccupancy = percentile(sortedOcc, 0.75) || compsBenchmark.avgOccupancy;
   const beatRevenue = Math.round(percentile(sortedAnnual, 0.75)) || compsBenchmark.avgAnnual;
 
-  // ── Demand drivers (map to 4-row table) ──
+  // ── Demand drivers ──
+  // Emitted in the order the design lays the four cards out, left to right:
+  // Transport, Events, Education, Healthcare. Cards flex, so a property with
+  // fewer signals simply shows fewer.
   const drivers: PdfDemandDriver[] = [];
-  if (demandDrivers.hospitals.length > 0) {
-    drivers.push({
-      type: "Healthcare Facilities",
-      nearest: demandDrivers.hospitals[0].name,
-      distance: formatDistance(demandDrivers.hospitals[0].distance),
-      count: String(demandDrivers.hospitals.length),
-      impact: "HIGH",
-    });
-  }
-  if (demandDrivers.universities.length > 0) {
-    drivers.push({
-      type: "Educational Institutions",
-      nearest: demandDrivers.universities[0].name,
-      distance: formatDistance(demandDrivers.universities[0].distance),
-      count: String(demandDrivers.universities.length),
-      impact: "HIGH",
-    });
-  }
   const transport = [...demandDrivers.trainStations, ...demandDrivers.subwayStations, ...demandDrivers.airports]
     .sort((a, b) => (a.distance ?? 999) - (b.distance ?? 999));
   if (transport.length > 0) {
     drivers.push({
-      type: "Transport Links",
+      type: "Transport",
       nearest: transport[0].name,
       distance: formatDistance(transport[0].distance),
-      count: String(transport.length),
+      count: `${transport.length} ${transport.length === 1 ? "link" : "links"}`,
       impact: "HIGH",
     });
   }
   if (nearbyEvents.totalEvents > 0) {
     const nearest = nearbyEvents.events[0];
     drivers.push({
-      type: "Events & Entertainment",
+      type: "Events",
       nearest: nearest?.venue ?? "Local venues",
       distance: nearest?.distance !== null && nearest?.distance !== undefined ? formatDistance(nearest.distance) : "—",
       count: `${nearbyEvents.totalEvents.toLocaleString()} events`,
       impact: nearbyEvents.totalEvents >= 100 ? "HIGH" : "MEDIUM",
     });
   }
+  if (demandDrivers.universities.length > 0) {
+    drivers.push({
+      type: "Education",
+      nearest: demandDrivers.universities[0].name,
+      distance: formatDistance(demandDrivers.universities[0].distance),
+      count: `${demandDrivers.universities.length} ${demandDrivers.universities.length === 1 ? "institution" : "institutions"}`,
+      impact: "HIGH",
+    });
+  }
+  if (demandDrivers.hospitals.length > 0) {
+    drivers.push({
+      type: "Healthcare",
+      nearest: demandDrivers.hospitals[0].name,
+      distance: formatDistance(demandDrivers.hospitals[0].distance),
+      count: `${demandDrivers.hospitals.length} ${demandDrivers.hospitals.length === 1 ? "facility" : "facilities"}`,
+      impact: "HIGH",
+    });
+  }
 
   // ── Direct booking score ──
   const directBookingScore = directBookingScoreFromSignals(result);
 
-  // ── Risk (map 8 levels → 4 numeric factors shown in PDF) ──
+  // ── Risk ──
+  // `overallScore` arrives on a 1–10 scale; the report prints it out of 100.
+  const riskOverall = Math.max(0, Math.min(100, Math.round(risk.overallScore * RISK_SCORE_SCALE)));
+
+  // Map 8 levels → the 4 numeric factors the report shows.
   const riskFactors = {
     revenueConsistency: riskLevelToScore(risk.incomeVolatility),
     longTermComparison: riskLevelToScore(risk.platformDependency),
@@ -362,13 +615,18 @@ export function deriveReportData(result: AnalysisResult): PdfReportData {
   };
 
   // ── Amenities (Stayful defaults; future: compute from comps) ──
+  // Scores are out of 5 and render as dot meters, so they stay numeric rather
+  // than being baked into the label.
   const amenities = {
-    essential: ["WiFi (5/5)", "Kitchen (5/5)"],
-    recommended: [
-      "Garden (3/5)",
-      "Workspace (2/5)",
-      "Free Parking (1/5)",
-      "Smart TV (1/5)",
+    essential: [
+      { name: "WiFi", score: 5 },
+      { name: "Kitchen", score: 5 },
+    ],
+    competitiveEdge: [
+      { name: "Garden", score: 3 },
+      { name: "Workspace", score: 2 },
+      { name: "Free parking", score: 1 },
+      { name: "Smart TV", score: 1 },
     ],
     differentiators: ["Hot Tub", "EV Charger", "Pet Friendly", "Smart Lock", "Pool"],
   };
@@ -385,7 +643,15 @@ export function deriveReportData(result: AnalysisResult): PdfReportData {
   const monthlyDiff = Math.round(annualDiff / 12);
   const percentUplift = ltlNet > 0 ? Math.round((annualDiff / ltlNet) * 100) : 0;
 
+  const { street, city } = splitStreetAndCity(property.address, property.postcode);
+
   return {
+    meta: {
+      issuedAt: result.createdAt || new Date().toISOString(),
+      preparedFor: preparedFor?.trim() || undefined,
+      street,
+      city,
+    },
     property: {
       address: property.address,
       bedrooms: property.bedrooms,
@@ -409,19 +675,20 @@ export function deriveReportData(result: AnalysisResult): PdfReportData {
     },
     shortLetAnnual: {
       gross: grossAnnual,
-      platformFee: Math.round(grossAnnual * 0.15),
-      managementFee: Math.round(grossAnnual * 0.15),
-      cleaning: Math.round(grossAnnual * 0.18),
-      totalCosts: Math.round(grossAnnual * 0.48),
+      platformFee: Math.round(grossAnnual * PDF_COST_RATES.PLATFORM),
+      managementFee: Math.round(grossAnnual * PDF_COST_RATES.MANAGEMENT),
+      cleaning: Math.round(grossAnnual * PDF_COST_RATES.CLEANING),
+      totalCosts: Math.round(grossAnnual * PDF_COST_RATES.TOTAL),
       net: netAnnual,
     },
     longLetAnnual: {
       gross: ltlGross,
-      agentFee: Math.round(ltlGross * 0.10),
+      agentFee: Math.round(ltlGross * PDF_COST_RATES.LTL_AGENT),
       net: ltlNet,
     },
     monthly,
     comparables,
+    comparablesTotal: shortLet.comparables.length,
     compsBenchmark,
     marketTargets: {
       matchNightly: compsBenchmark.avgNightly,
@@ -434,12 +701,14 @@ export function deriveReportData(result: AnalysisResult): PdfReportData {
     demandDrivers: drivers,
     directBookingScore,
     risk: {
-      overall: risk.overallScore,
-      label: overallRiskLabel(risk.overallScore),
+      overall: riskOverall,
+      label: overallRiskLabel(riskOverall),
       factors: riskFactors,
     },
     amenities,
     growth,
+    // Filled in by the caller once a setup snapshot is attached.
+    setupPaybackMonths: null,
     recommendation: result.recommendation?.recommendation,
   };
 }
