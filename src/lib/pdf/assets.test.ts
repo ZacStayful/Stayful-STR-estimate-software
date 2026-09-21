@@ -19,7 +19,7 @@ import { pdfFontPaths } from './theme.ts';
 
 test('every registered report font is on disk and is a real TTF', () => {
   const paths = pdfFontPaths();
-  assert.equal(paths.length, 5, 'expected 2 sans weights + 3 mono weights');
+  assert.equal(paths.length, 4, 'expected 2 sans weights + 2 mono weights');
 
   for (const p of paths) {
     assert.ok(fs.existsSync(p), `missing font file: ${p}`);

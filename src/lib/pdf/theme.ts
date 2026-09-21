@@ -126,9 +126,10 @@ const FONT_FILES = {
     { file: "SpaceGrotesk-Medium.ttf", fontWeight: 500 as const },
     { file: "SpaceGrotesk-Bold.ttf", fontWeight: 700 as const },
   ],
+  // Two mono weights: nothing in the report asks for mono at 500, and an
+  // unused face is dead weight in four function bundles.
   MONO: [
     { file: "JetBrainsMono-Regular.ttf", fontWeight: 400 as const },
-    { file: "JetBrainsMono-Medium.ttf", fontWeight: 500 as const },
     { file: "JetBrainsMono-Bold.ttf", fontWeight: 700 as const },
   ],
 } as const;
