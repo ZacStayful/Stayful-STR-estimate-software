@@ -1,180 +1,313 @@
 import React from "react";
-import { Page, View, Text, StyleSheet } from "@react-pdf/renderer";
-import { PDF_COLORS } from "../theme";
-import { HeaderBar, FooterBar, formatGbp, formatPercent } from "../components/Chrome";
+import { View, Text, StyleSheet, Svg, Line } from "@react-pdf/renderer";
 import {
-  H1,
-  Subtitle,
-  Divider,
-  SectionLabel,
-  MetricCard,
-  BASE_PAGE_STYLES,
+  PDF_COLORS as C,
+  PDF_LAYOUT as L,
+  PDF_TYPE as T,
+  pickH1Size,
+  fontFamily,
+} from "../theme";
+import {
+  ReportPage,
+  Eyebrow,
+  Chip,
+  StatCard,
+  MiniTrack,
+  SectionNav,
 } from "../components/Primitives";
+import {
+  formatGbp,
+  formatGbpSigned,
+  formatPercent,
+  formatPaybackMonths,
+} from "../components/format";
 import type { PdfReportData } from "../derive";
 
-const C = PDF_COLORS;
+const mono = fontFamily("MONO");
+const sans = fontFamily("SANS");
 
 const s = StyleSheet.create({
-  metricsRow: {
-    flexDirection: "row",
-    gap: 8,
+  h1: {
+    fontFamily: sans,
+    fontWeight: 700,
+    letterSpacing: T.trackTight,
+    color: C.INK,
+    lineHeight: 1.08,
     marginBottom: 10,
   },
-  valueRow: {
-    flexDirection: "row",
-    gap: 12,
+  chipRow: { flexDirection: "row", gap: 6, marginBottom: 16 },
+
+  hero: { backgroundColor: C.INK, borderRadius: L.radius, padding: 18, flexDirection: "row" },
+  heroLeft: { flex: 1.05, paddingRight: 16 },
+  heroDivider: { width: L.hairline, backgroundColor: C.ON_DARK_MUTED, opacity: 0.4 },
+  heroRight: { flex: 1, paddingLeft: 16 },
+
+  heroLabel: {
+    fontFamily: mono,
+    fontSize: T.label,
+    letterSpacing: T.trackWide,
+    color: C.ON_DARK_MUTED,
+    marginBottom: 8,
+  },
+  heroFigure: {
+    fontFamily: sans,
+    fontWeight: 700,
+    fontSize: T.heroFigure,
+    letterSpacing: T.trackTight,
+    color: C.ON_DARK,
+    marginBottom: 6,
+  },
+  heroPer: {
+    fontFamily: mono,
+    fontSize: T.label,
+    letterSpacing: T.trackWide,
+    color: C.ACCENT,
     marginBottom: 10,
   },
-  valueBox: {
-    flex: 1,
-    backgroundColor: C.WHITE,
-    borderColor: C.CREAM,
-    borderWidth: 1,
-    borderRadius: 6,
-    padding: 12,
+  heroBody: { fontSize: T.body, color: C.ON_DARK_MUTED, lineHeight: 1.4 },
+
+  cmpHead: { flexDirection: "row", justifyContent: "space-between", marginBottom: 5 },
+  cmpLabel: {
+    fontFamily: mono,
+    fontSize: T.label,
+    letterSpacing: T.trackWide,
+    color: C.ON_DARK,
   },
-  valueLabel: {
-    fontSize: 8,
-    fontFamily: "Helvetica-Bold",
-    color: C.LIGHT_GREY,
-    letterSpacing: 1,
-    marginBottom: 4,
+  cmpValue: { fontFamily: mono, fontSize: T.label, color: C.ON_DARK },
+  cmpLabelMuted: {
+    fontFamily: mono,
+    fontSize: T.label,
+    letterSpacing: T.trackWide,
+    color: C.ON_DARK_MUTED,
   },
-  valueAmount: {
-    fontSize: 16,
-    fontFamily: "Helvetica-Bold",
-    color: C.DARK_GREEN,
+  cmpTrack: { height: 9, borderRadius: 1.5, marginBottom: 14 },
+  cmpRule: {
+    height: L.hairline,
+    backgroundColor: C.ON_DARK_MUTED,
+    opacity: 0.4,
+    marginBottom: 12,
   },
-  valueSource: {
-    fontSize: 7,
-    color: C.LIGHT_GREY,
-    marginTop: 4,
+  upliftRow: { flexDirection: "row", alignItems: "flex-end", marginBottom: 4 },
+  uplift: {
+    fontFamily: sans,
+    fontWeight: 700,
+    fontSize: 26,
+    letterSpacing: T.trackTight,
+    color: C.ACCENT,
   },
-  banner: {
-    flexDirection: "row",
-    backgroundColor: C.MINT_GREEN,
-    borderRadius: 8,
-    padding: 14,
-    alignItems: "center",
-    marginTop: 4,
+  upliftUnit: { fontSize: T.body, color: C.ON_DARK, marginLeft: 4, marginBottom: 3 },
+  upliftSub: {
+    fontFamily: mono,
+    fontSize: T.micro,
+    letterSpacing: 0.8,
+    color: C.ON_DARK_MUTED,
+    lineHeight: 1.4,
   },
-  bannerLeft: {
-    flex: 1,
-    paddingRight: 8,
+
+  cardRow: { flexDirection: "row", gap: L.gutter, marginTop: 16 },
+
+  valueStrip: {
+    backgroundColor: C.SURFACE,
+    borderWidth: L.hairline,
+    borderColor: C.RULE,
+    borderRadius: L.radius,
+    paddingHorizontal: 14,
+    paddingVertical: 15,
+    marginTop: 16,
   },
-  bannerLabel: {
-    fontSize: 7,
-    fontFamily: "Helvetica-Bold",
-    color: C.DARK_GREY,
-    letterSpacing: 1,
-    marginBottom: 2,
+  stripHead: { flexDirection: "row", justifyContent: "space-between", marginBottom: 8 },
+  stripLabel: {
+    fontFamily: mono,
+    fontSize: T.label,
+    letterSpacing: T.trackWide,
+    color: C.MUTED,
   },
-  bannerCenter: {
-    flex: 1,
-    alignItems: "center",
-    borderLeftWidth: 1,
-    borderRightWidth: 1,
-    borderColor: C.DARK_GREEN + "33",
-    paddingHorizontal: 10,
+  stripSource: { fontSize: T.micro, color: C.MUTED },
+  stripBody: { flexDirection: "row", alignItems: "center" },
+  stripFigure: {
+    fontFamily: sans,
+    fontWeight: 700,
+    fontSize: 17,
+    letterSpacing: T.trackTight,
+    color: C.INK,
   },
-  bannerBigNum: {
-    fontSize: 18,
-    fontFamily: "Helvetica-Bold",
-    color: C.DARK_GREEN,
+  stripAxis: { flex: 1, alignItems: "center", paddingHorizontal: 12 },
+  stripFootRow: { flexDirection: "row", justifyContent: "space-between", marginTop: 6 },
+  stripFoot: {
+    fontFamily: mono,
+    fontSize: T.micro,
+    letterSpacing: 0.8,
+    color: C.MUTED,
   },
-  bannerRight: {
-    flex: 1,
-    alignItems: "flex-end",
-    paddingLeft: 8,
-  },
-  bannerDetail: {
-    fontSize: 8,
-    color: C.DARK_GREY,
-    textAlign: "right",
-  },
+
+  navWrap: { marginTop: "auto", paddingTop: 14 },
 });
 
+const AXIS_W = 300;
+const AXIS_H = 10;
+const AXIS_TICKS = 30;
+
+/**
+ * The ruled span between the conservative and upper valuations: a capped line
+ * with evenly spaced ticks, so the range reads as a measured interval rather
+ * than two loose numbers.
+ */
+function ValueAxis() {
+  const mid = AXIS_H / 2;
+  return (
+    <Svg width={AXIS_W} height={AXIS_H}>
+      <Line x1={0} y1={mid} x2={AXIS_W} y2={mid} stroke={C.RULE} strokeWidth={0.5} />
+      {Array.from({ length: AXIS_TICKS + 1 }, (_, i) => {
+        const x = (i / AXIS_TICKS) * (AXIS_W - 1) + 0.5;
+        const end = i === 0 || i === AXIS_TICKS;
+        return (
+          <Line
+            key={i}
+            x1={x}
+            y1={end ? 0 : mid - 2.5}
+            x2={x}
+            y2={end ? AXIS_H : mid + 2.5}
+            stroke={end ? C.INK : C.RULE}
+            strokeWidth={end ? 0.8 : 0.5}
+          />
+        );
+      })}
+    </Svg>
+  );
+}
+
+/**
+ * Page 01 — the verdict.
+ *
+ * Leads with the one number that matters (net income), sets it against a
+ * long-let on a shared scale, then the four supporting figures.
+ */
 export function Page1Overview({ data }: { data: PdfReportData }) {
-  const d = data.overview;
-  const vs = data.strVsLtl;
+  const { overview, strVsLtl, shortLetAnnual, longLetAnnual, property, setup } = data;
+
+  // Both bars are drawn against the larger gross, so the gap is to scale.
+  const scaleMax = Math.max(shortLetAnnual.gross, longLetAnnual.gross, 1);
+  const strPct = (shortLetAnnual.net / scaleMax) * 100;
+  const ltlPct = (longLetAnnual.net / scaleMax) * 100;
+
+  const isLongLet = data.recommendation === "LONG_LET";
+  const verdictChip = isLongLet ? "LONG-TERM LET ANALYSIS" : "SHORT-TERM LET ANALYSIS";
+
+  const hasValuation =
+    overview.valueConservative !== null && overview.valueUpper !== null;
+
+  const payback =
+    data.setupPaybackMonths !== null
+      ? `Indicative · recovered in ${formatPaybackMonths(data.setupPaybackMonths)} of extra income vs long-term let`
+      : "Indicative estimate for a property of this size";
 
   return (
-    <Page size="A4" style={BASE_PAGE_STYLES.page}>
-      <HeaderBar />
-      <FooterBar />
+    <ReportPage meta={data.meta} page={1}>
+      <Eyebrow>01 — THE VERDICT</Eyebrow>
+      <Text style={[s.h1, { fontSize: pickH1Size(property.address) }]}>
+        {property.address}
+      </Text>
 
-      <H1>{data.property.address}</H1>
-      <Subtitle>
-        {data.property.bedrooms} Bedrooms · Sleeps {data.property.sleeps} ·
-        Short-Term Rental Analysis
-      </Subtitle>
-      <Divider />
-
-      <SectionLabel>TOP MARKET POTENTIAL</SectionLabel>
-
-      {/* 4 metric cards */}
-      <View style={s.metricsRow}>
-        <MetricCard
-          label="Gross Revenue"
-          value={formatGbp(d.grossRevenue)}
-          sub={`${formatGbp(d.grossMonthly)} per month`}
-        />
-        <MetricCard
-          label="Net Revenue"
-          value={formatGbp(d.netRevenue)}
-          sub={`${formatGbp(d.netMonthly)} per month (after all fees)`}
-        />
-        <MetricCard
-          label="Avg Nightly Rate"
-          value={formatGbp(d.adr)}
-          sub="ADR across comp set"
-        />
-        <MetricCard
-          label="Occupancy Rate"
-          value={formatPercent(d.occupancy)}
-          sub={`Market average ${formatPercent(d.marketOccupancy)}`}
-        />
+      <View style={s.chipRow}>
+        <Chip>
+          {property.bedrooms} {property.bedrooms === 1 ? "BEDROOM" : "BEDROOMS"}
+        </Chip>
+        {property.sleeps > 0 ? <Chip>SLEEPS {property.sleeps}</Chip> : null}
+        <Chip solid>{verdictChip}</Chip>
       </View>
 
-      {/* Estimated Property Value Range */}
-      {d.valueConservative !== null && d.valueUpper !== null && (
-        <>
-          <SectionLabel>ESTIMATED PROPERTY VALUE RANGE</SectionLabel>
-          <View style={s.valueRow}>
-            <View style={s.valueBox}>
-              <Text style={s.valueLabel}>CONSERVATIVE</Text>
-              <Text style={s.valueAmount}>
-                {formatGbp(d.valueConservative)}
-              </Text>
-            </View>
-            <View style={s.valueBox}>
-              <Text style={s.valueLabel}>UPPER ESTIMATE</Text>
-              <Text style={s.valueAmount}>{formatGbp(d.valueUpper)}</Text>
-            </View>
+      <View style={s.hero}>
+        <View style={s.heroLeft}>
+          <Text style={s.heroLabel}>ESTIMATED NET INCOME · SHORT-TERM LET</Text>
+          <Text style={s.heroFigure}>{formatGbp(overview.netRevenue)}</Text>
+          <Text style={s.heroPer}>
+            PER YEAR · {formatGbp(overview.netMonthly)} / MONTH
+          </Text>
+          <Text style={s.heroBody}>
+            What you keep after platform, management, cleaning and laundry costs.
+          </Text>
+        </View>
+
+        <View style={s.heroDivider} />
+
+        <View style={s.heroRight}>
+          <View style={s.cmpHead}>
+            <Text style={s.cmpLabel}>SHORT-TERM LET</Text>
+            <Text style={s.cmpValue}>{formatGbp(shortLetAnnual.net)}</Text>
           </View>
-          <Text style={s.valueSource}>Source: PropertyData</Text>
-        </>
-      )}
+          <View style={[s.cmpTrack, { width: `${strPct}%`, backgroundColor: C.ACCENT }]} />
 
-      {/* STR vs LTL banner */}
-      <View style={s.banner}>
-        <View style={s.bannerLeft}>
-          <Text style={s.bannerLabel}>SHORT-TERM vs LONG-TERM LET</Text>
-        </View>
-        <View style={s.bannerCenter}>
-          <Text style={s.bannerBigNum}>
-            +{formatGbp(vs.annualDiff)} / year
-          </Text>
-        </View>
-        <View style={s.bannerRight}>
-          <Text style={s.bannerDetail}>
-            +{vs.percentUplift}% vs long-term let
-          </Text>
-          <Text style={s.bannerDetail}>
-            +{formatGbp(vs.monthlyDiff)} / month
+          <View style={s.cmpHead}>
+            <Text style={s.cmpLabelMuted}>LONG-TERM LET</Text>
+            <Text style={s.cmpValue}>{formatGbp(longLetAnnual.net)}</Text>
+          </View>
+          <View style={[s.cmpTrack, { width: `${ltlPct}%`, backgroundColor: C.MUTED }]} />
+
+          <View style={s.cmpRule} />
+
+          <View style={s.upliftRow}>
+            <Text style={s.uplift}>{formatGbpSigned(strVsLtl.annualDiff)}</Text>
+            <Text style={s.upliftUnit}>/ year</Text>
+          </View>
+          <Text style={s.upliftSub}>
+            {strVsLtl.percentUplift >= 0 ? "+" : ""}
+            {strVsLtl.percentUplift}% VS LONG-TERM LET ·{" "}
+            {formatGbpSigned(strVsLtl.monthlyDiff)} / MONTH
           </Text>
         </View>
       </View>
-    </Page>
+
+      <View style={s.cardRow}>
+        <StatCard
+          label="Gross revenue"
+          value={formatGbp(overview.grossRevenue)}
+          sub={`${formatGbp(overview.grossMonthly)} a month before costs`}
+        />
+        <StatCard
+          label="Nightly rate"
+          value={formatGbp(overview.adr)}
+          sub="Average across the comp set"
+        />
+        <StatCard
+          label="Occupancy"
+          value={formatPercent(overview.occupancy)}
+          sub={`Market average ${formatPercent(overview.marketOccupancy)}`}
+        >
+          <MiniTrack
+            pct={overview.occupancy * 100}
+            marker={overview.marketOccupancy * 100}
+          />
+        </StatCard>
+        <StatCard
+          label="Setup cost"
+          value={setup ? formatGbp(setup.grandTotal) : "—"}
+          sub={setup ? payback : "Not provided"}
+        />
+      </View>
+
+      {hasValuation ? (
+        <View style={s.valueStrip}>
+          <View style={s.stripHead}>
+            <Text style={s.stripLabel}>ESTIMATED PROPERTY VALUE</Text>
+            <Text style={s.stripSource}>Source: PropertyData</Text>
+          </View>
+          <View style={s.stripBody}>
+            <Text style={s.stripFigure}>{formatGbp(overview.valueConservative!)}</Text>
+            <View style={s.stripAxis}>
+              <ValueAxis />
+            </View>
+            <Text style={s.stripFigure}>{formatGbp(overview.valueUpper!)}</Text>
+          </View>
+          <View style={s.stripFootRow}>
+            <Text style={s.stripFoot}>CONSERVATIVE</Text>
+            <Text style={s.stripFoot}>UPPER ESTIMATE</Text>
+          </View>
+        </View>
+      ) : null}
+
+      <View style={s.navWrap}>
+        <SectionNav />
+      </View>
+    </ReportPage>
   );
 }
