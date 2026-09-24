@@ -69,7 +69,8 @@ test('a fake batch exercises more than one qualification band', () => {
   for (const pc of POSTCODES) {
     for (const beds of [1, 2, 3, 4]) {
       const r = fakeAnalysis(input(pc, beds));
-      bands.add(getLeadQualification(r.recommendation!.upliftPct));
+      const rec = r.recommendation!;
+      bands.add(getLeadQualification(rec.upliftPct, rec.trueSTRNet - rec.trueLLNet));
     }
   }
   assert.ok(bands.size > 1, `only saw bands: ${[...bands].join(', ')}`);
