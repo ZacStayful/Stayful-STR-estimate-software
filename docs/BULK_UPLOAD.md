@@ -73,7 +73,7 @@ Exactly what a live single-property run writes:
 | Long term let | Long-let annual (from the PropertyData estimate) |
 | STR Profit | True uplift |
 | Recommendation | Short-Let / Long-Let |
-| Qualified | Qualification band |
+| Qualified | Qualification band: Qualified at ≥40% uplift **or** a ≥£20k/yr profit gap, Medium at ≥30% uplift, otherwise Unqualified |
 | Status | Set to **Abandoned** when the lead is unqualified |
 
 Two things worth being deliberate about:

@@ -102,21 +102,36 @@ const TRUE_NET_PCT =
 const FIXED_COSTS_ANNUAL = (FIXED_BILLS_MONTHLY + FIXED_SOFTWARE_MONTHLY) * 12; // 5904
 
 export const LL_AGENT_FEE = 0.10;   // standard long-let management-company fee
-// Uplift required to recommend short-let. Exported so the decision screen can
-// explain the criteria in plain money terms (single source of truth).
-export const MARGIN_THRESHOLD = 0.50;
-// Lower band: at/above this (but below MARGIN_THRESHOLD) a lead is "Medium".
+// Short-let is recommended when EITHER criterion is met. Both are exported so
+// the decision screen can explain the criteria in plain money terms (single
+// source of truth):
+//   • uplift ≥ MARGIN_THRESHOLD           (true STR net is 40%+ above LL net), or
+//   • profit gap ≥ PROFIT_THRESHOLD_ANNUAL (true STR net − LL net is £20k+/yr)
+export const MARGIN_THRESHOLD = 0.40;
+export const PROFIT_THRESHOLD_ANNUAL = 20000;
+// Lower band: at/above this (but not meeting the short-let criteria) a lead is "Medium".
 export const MEDIUM_THRESHOLD = 0.30;
+
+/**
+ * The one place the short-let bar is defined, shared by getRecommendation and
+ * getLeadQualification so the recommendation and the CRM band never disagree.
+ * The profit gap is compared on rounded pounds so the decision always matches
+ * the figure shown to the landlord (a gap displaying as £20,000 must not lose
+ * on £19,999.60).
+ */
+export function meetsShortLetCriteria(upliftPct: number, profitDiffAnnual: number): boolean {
+  return upliftPct >= MARGIN_THRESHOLD || Math.round(profitDiffAnnual) >= PROFIT_THRESHOLD_ANNUAL;
+}
 
 // Lead qualification band, used to drive the Monday "Qualified" status column
 // during the early test phase:
-//   uplift ≥ 50%  → qualified
-//   uplift 30–50% → medium
-//   uplift < 30%  → unqualified  (lead is also auto-set to Abandoned)
+//   uplift ≥ 40% OR gap ≥ £20k/yr → qualified
+//   uplift 30–40%                → medium
+//   uplift < 30%                 → unqualified  (lead is also auto-set to Abandoned)
 export type LeadQualification = 'qualified' | 'medium' | 'unqualified';
 
-export function getLeadQualification(upliftPct: number): LeadQualification {
-  if (upliftPct >= MARGIN_THRESHOLD) return 'qualified';
+export function getLeadQualification(upliftPct: number, profitDiffAnnual: number): LeadQualification {
+  if (meetsShortLetCriteria(upliftPct, profitDiffAnnual)) return 'qualified';
   if (upliftPct >= MEDIUM_THRESHOLD) return 'medium';
   return 'unqualified';
 }
@@ -141,7 +156,8 @@ export function getCostBreakdown(grossSTRAnnual: number) {
 /**
  * Core decision formula. Compares the true net short-let income against the
  * true net long-let income and recommends short-let only when the uplift
- * clears MARGIN_THRESHOLD (the extra work has to be worth it).
+ * clears MARGIN_THRESHOLD or the annual profit gap clears
+ * PROFIT_THRESHOLD_ANNUAL (the extra work has to be worth it).
  */
 export function getRecommendation(
   grossSTRAnnual: number,
@@ -149,9 +165,10 @@ export function getRecommendation(
 ): Pick<Recommendation, 'recommendation' | 'upliftPct' | 'trueSTRNet' | 'trueLLNet'> {
   const trueSTRNet = (grossSTRAnnual * TRUE_NET_PCT) - FIXED_COSTS_ANNUAL;
   const trueLLNet = (longLetMonthly * 12) * (1 - LL_AGENT_FEE);
-  const upliftPct = (trueSTRNet - trueLLNet) / trueLLNet;
+  const profitDiffAnnual = trueSTRNet - trueLLNet;
+  const upliftPct = profitDiffAnnual / trueLLNet;
   return {
-    recommendation: upliftPct >= MARGIN_THRESHOLD ? 'SHORT_LET' : 'LONG_LET',
+    recommendation: meetsShortLetCriteria(upliftPct, profitDiffAnnual) ? 'SHORT_LET' : 'LONG_LET',
     upliftPct,
     trueSTRNet,
     trueLLNet,

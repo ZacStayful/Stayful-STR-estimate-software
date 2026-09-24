@@ -83,7 +83,7 @@ import { AddressAutocomplete, splitAddressAndPostcode } from "@/components/Addre
 import { AccuracyPanel } from "@/components/AccuracyPanel";
 import { SetupCalculator } from "@/components/SetupCalculator";
 import type { AnalysisResult, RiskLevel, VerdictFit } from "@/lib/types";
-import { MARGIN_THRESHOLD, LL_AGENT_FEE, FIXED_BILLS_MONTHLY, FIXED_SOFTWARE_MONTHLY, getCostBreakdown } from "@/lib/analysis";
+import { MARGIN_THRESHOLD, PROFIT_THRESHOLD_ANNUAL, LL_AGENT_FEE, FIXED_BILLS_MONTHLY, FIXED_SOFTWARE_MONTHLY, getCostBreakdown } from "@/lib/analysis";
 import { DEMO_MAP } from "@/lib/demo-data";
 import { initTracker, endSession, trackCtaClick } from "@/lib/tracker";
 import {
@@ -945,10 +945,14 @@ export default function HomePage() {
     const strNet = Math.round(rec.trueSTRNet);
     const llNet = Math.round(rec.trueLLNet);
     const leftoverDiff = strNet - llNet;                 // extra in pocket with short-let
-    const thresholdWhole = Math.round(MARGIN_THRESHOLD * 100); // e.g. 50
+    const thresholdWhole = Math.round(MARGIN_THRESHOLD * 100); // e.g. 40
     const llFeeWhole = Math.round(LL_AGENT_FEE * 100);   // 10 (% management fee)
-    // What short-let must clear to be recommended: long-let net + the margin.
-    const requiredStrNet = Math.round(rec.trueLLNet * (1 + MARGIN_THRESHOLD));
+    // What short-let must clear to be recommended: long-let net + the margin,
+    // OR long-let net + the flat annual profit gap — whichever bar is lower.
+    const requiredStrNet = Math.round(Math.min(
+      rec.trueLLNet * (1 + MARGIN_THRESHOLD),
+      rec.trueLLNet + PROFIT_THRESHOLD_ANNUAL,
+    ));
     const shortfall = requiredStrNet - strNet;           // how far short (when long-let wins)
     // Monthly equivalents (every figure is shown both annually and monthly).
     const mo = (annual: number) => gbp(Math.round(annual / 12));
@@ -1022,7 +1026,8 @@ export default function HomePage() {
                 <p className="text-sm font-semibold text-foreground">How we decide</p>
                 <p className="mt-1.5 text-sm text-muted-foreground">
                   Short-letting takes more work, cost and risk than a long-let, so we
-                  only recommend it when it leaves you at least <span className="font-semibold text-foreground">{thresholdWhole}% more</span>{" "}
+                  only recommend it when it leaves you at least <span className="font-semibold text-foreground">{thresholdWhole}% more</span>,
+                  or at least <span className="font-semibold text-foreground">{gbp(PROFIT_THRESHOLD_ANNUAL)}/yr more</span>,{" "}
                   after all running costs (platform &amp; management fees, cleaning,
                   maintenance, bills and software).
                 </p>

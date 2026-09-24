@@ -153,7 +153,9 @@ async function processRow(row: BulkJobRow, claimToken: string, renderLock: Retur
 
   const { result } = outcome;
   const gated = Boolean(outcome.sideEffectsSkippedReason);
-  const uplift = result.recommendation?.upliftPct ?? null;
+  const rec = result.recommendation;
+  const uplift = rec?.upliftPct ?? null;
+  const qualification = rec ? getLeadQualification(rec.upliftPct, rec.trueSTRNet - rec.trueLLNet) : null;
 
   await updateClaimedRow(row.id, claimToken, {
     status: gated ? 'failed' : 'succeeded',
@@ -164,7 +166,7 @@ async function processRow(row: BulkJobRow, claimToken: string, renderLock: Retur
     net_revenue: result.financials.shortLetNetAnnual,
     long_let_monthly: result.recommendation?.longLetMonthly ?? result.longLet.monthlyRent,
     recommendation: result.recommendation?.recommendation ?? null,
-    qualification: uplift === null ? null : getLeadQualification(uplift),
+    qualification,
     uplift_pct: uplift,
     data_quality_level: result.dataQuality.level,
     comparables_found: result.dataQuality.comparablesFound,

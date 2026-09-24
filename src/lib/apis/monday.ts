@@ -59,7 +59,7 @@ const RECOMMENDATION_INDEX: Record<string, number> = {
 
 const QUALIFIED_INDEX: Record<LeadQualification, number> = {
   medium: 0,      // color_mm4t61wc id 0 = "Medium (30%)"
-  qualified: 1,   // id 1 = "Qualified (50%)"
+  qualified: 1,   // id 1 = "Qualified (50%)" — board label predates the 40% / £20k rule
   unqualified: 2, // id 2 = "unqualified (-30%)"
 };
 
@@ -504,9 +504,13 @@ export async function syncAnalysisToMonday(
       columnValues[cfg.recommendationColumnId] = { index: recIndex };
     }
 
-    // Lead qualification band (test phase): ≥50% qualified, 30–50% medium,
-    // <30% unqualified. Unqualified leads are also moved to status5 = Abandoned.
-    const band: LeadQualification = getLeadQualification(recommendation.upliftPct);
+    // Lead qualification band (test phase): ≥40% uplift OR ≥£20k/yr gap →
+    // qualified, 30–40% medium, <30% unqualified. Unqualified leads are also
+    // moved to status5 = Abandoned.
+    const band: LeadQualification = getLeadQualification(
+      recommendation.upliftPct,
+      recommendation.trueSTRNet - recommendation.trueLLNet,
+    );
     columnValues[cfg.qualifiedColumnId] = { index: QUALIFIED_INDEX[band] };
     if (band === "unqualified") {
       columnValues[cfg.statusColumnId] = { index: ABANDONED_STATUS_INDEX };
