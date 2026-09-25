@@ -11,9 +11,8 @@
 
 import type { AnalysisResult } from '../types.ts';
 import { getSupabase } from '../supabase.ts';
-import { extractPostcodeArea } from '../utils/postcode.ts';
 import { isUnlimited } from '../usage.ts';
-import { marketSignals } from './marketSignals.ts';
+import { buildReportRow, saveReportRow } from './reportRow.ts';
 
 /**
  * A veto on the CRM write, evaluated after the analysis but before anything is
@@ -38,6 +37,8 @@ export interface PersistOptions {
   source: string;
   incrementUsage: boolean;
   mondayItemId?: string | null;
+  /** The caller's id for this run, so a retry reuses its row. See ./reportRow. */
+  requestId?: string | null;
   gate?: SideEffectGate;
   renderLock?: <T>(fn: () => Promise<T>) => Promise<T>;
 }
@@ -79,55 +80,22 @@ export async function persistAndSync(
   // or alter what they receive. A failed write is swallowed and logged —
   // it must never break a live estimate. This data later feeds the
   // Market Explorer aggregation in Stayful Intelligence.
+  //
+  // The row itself is built by ./reportRow, which is where the lead-database
+  // redaction and the retry key live.
   try {
     const supabase = getSupabase();
     if (!supabase) {
       console.warn('[storage] Supabase not configured (SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY unset) — skipping report save');
     } else {
-      const postcodeArea =
-        extractPostcodeArea(result.property.postcode) ??
-        extractPostcodeArea(result.property.address);
-
-      const { data, error } = await supabase
-        .from('analyser_reports')
-        .insert({
-          address: result.property.address,
-          postcode: result.property.postcode,
-          postcode_area: postcodeArea,
-          bedrooms: result.property.bedrooms,
-          adr: result.shortLet.averageDailyRate,
-          occupancy: result.shortLet.occupancyRate,
-          // Headline figures, taken from the same derived report the PDF
-          // renders from, so stored numbers match what the lead is shown.
-          gross_revenue: reportData.overview.grossRevenue,
-          net_revenue: reportData.overview.netRevenue,
-          property_value_low: reportData.overview.valueConservative,
-          property_value_high: reportData.overview.valueUpper,
-          // PropertyData sale valuation — null when the call failed or
-          // the key is missing.
-          purchase_price: result.propertyValuation?.estimatedValue ?? null,
-          lead_email: opts.email,
+      outcome.reportId = await saveReportRow(
+        supabase,
+        buildReportRow(result, reportData, {
+          email: opts.email,
           source: opts.source,
-          // Live analyser writes are complete, not PDF-extracted — the
-          // extraction_* / filename columns exist for the Monday backfill
-          // pipeline, so mark this row as a clean, non-extracted save.
-          filename: null,
-          extraction_status: 'ok',
-          extraction_error: null,
-          // Market Explorer signals (competition, demand drivers, coords) —
-          // the same fields the migration backfills from raw_response.
-          ...marketSignals(result),
-          raw_response: result,
-        })
-        .select('id')
-        .single();
-
-      if (error) {
-        console.error('[storage] failed to save report:', error);
-      } else {
-        console.log('[storage] report saved:', data.id);
-        outcome.reportId = data.id;
-      }
+          requestId: opts.requestId,
+        }),
+      );
     }
   } catch (err) {
     console.error('[storage] failed to save report:', err);

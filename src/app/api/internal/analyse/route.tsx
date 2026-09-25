@@ -33,7 +33,9 @@
 // phone never leave the lead database. Only the property does.
 //
 // The analyser_reports insert happens BEFORE that early return, so the run is
-// still persisted and attributable (source: 'lead_db').
+// still persisted and attributable (source: 'lead_db'). It is persisted WITHOUT
+// the street address — only the postcode, bedrooms and figures — because it
+// feeds STR-Website-2's Market Explorer; see src/lib/pipeline/reportRow.ts.
 //
 // ── Why no sideEffectGate ───────────────────────────────────────────
 //
@@ -152,6 +154,10 @@ export async function POST(request: Request) {
       incrementUsage: false,
       // The other half of the no-Monday guarantee (see the header).
       mondayItemId: null,
+      // The lead database retries a row it gave up on at 45s while this run may
+      // still finish and be stored; the id lets that retry reuse the stored row
+      // rather than add a second one for the same property (./reportRow).
+      requestId,
     });
 
     if (!outcome.ok) {

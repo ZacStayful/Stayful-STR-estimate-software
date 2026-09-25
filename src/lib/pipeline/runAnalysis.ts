@@ -49,6 +49,12 @@ export interface RunAnalysisOptions {
   incrementUsage?: boolean;
   /** Pre-resolved Monday item; skips re-matching at write time. */
   mondayItemId?: string | null;
+  /**
+   * The caller's own id for this run, stored on the analyser_reports row so a
+   * retry of the same run reuses it instead of adding a duplicate. Only
+   * /api/internal/analyse passes one. See ./reportRow.
+   */
+  requestId?: string | null;
   /** Vetoes the CRM write when the data isn't trustworthy. See ./persist. */
   sideEffectGate?: SideEffectGate;
   /** Serialises the PDF render so concurrent rows can't OOM the function. */
@@ -105,6 +111,7 @@ export async function runAnalysis(
         source: options.reportSource ?? 'analyser',
         incrementUsage: options.incrementUsage !== false,
         mondayItemId: options.mondayItemId ?? null,
+        requestId: options.requestId ?? null,
         gate: options.sideEffectGate,
         renderLock: options.renderLock,
       });
@@ -392,6 +399,7 @@ export async function runAnalysis(
       source: options.reportSource ?? 'analyser',
       incrementUsage: options.incrementUsage !== false,
       mondayItemId: options.mondayItemId ?? null,
+      requestId: options.requestId ?? null,
       gate: options.sideEffectGate,
       renderLock: options.renderLock,
     });
