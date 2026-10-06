@@ -5,7 +5,7 @@
 // leads, manual entries), and attaches the PDF + figures to THAT item —
 // exactly as a bulk row does.
 //
-//   curl -X POST -H "x-internal-secret: <INTERNAL_API_SECRET>" \
+//   curl -X POST -H "x-internal-secret: <ANALYSE_LEAD_SECRET or INTERNAL_API_SECRET>" \
 //        -H "content-type: application/json" \
 //        -d '{"monday_item_id":"123","address":"42 Foo Road, CV2 3BP",
 //             "postcode":"CV2 3BP","bedrooms":3,"email":"a@b.com",
@@ -48,9 +48,15 @@ let inFlight = 0;
 const MAX_INFLIGHT = Number(process.env.INTERNAL_ANALYSE_MAX_INFLIGHT ?? 4);
 
 export async function POST(request: Request) {
-  const expected = process.env.INTERNAL_API_SECRET;
-  if (!expected) return Response.json({ error: 'Not found' }, { status: 404 });
-  if (request.headers.get('x-internal-secret') !== expected) {
+  // Accepts either the shared INTERNAL_API_SECRET or ANALYSE_LEAD_SECRET, a secret
+  // only this route (and its n8n workflow) uses — so n8n never needs the shared one,
+  // which is stored as a Vercel "Sensitive" variable and cannot be read back.
+  const accepted = [process.env.INTERNAL_API_SECRET, process.env.ANALYSE_LEAD_SECRET]
+    .map((s) => (s ?? '').trim())
+    .filter((s) => s.length > 0);
+  if (accepted.length === 0) return Response.json({ error: 'Not found' }, { status: 404 });
+  const presented = (request.headers.get('x-internal-secret') ?? '').trim();
+  if (!presented || !accepted.includes(presented)) {
     return Response.json({ error: 'Unauthorized', error_code: 'unauthorized' }, { status: 401 });
   }
 
