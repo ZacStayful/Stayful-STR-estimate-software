@@ -24,7 +24,8 @@
 //     lead we know nothing about never gets a parking uplift.
 //   • Email: the lead's own email. Usage is NOT incremented, so this never
 //     spends the lead's free calculator analyses.
-//   • Property type: resolved by resolvePropertyType() (lib/pipeline/propertyType); the source used
+//   • Property type: address wording → EPC register → caller's guess → Flat
+//     (lib/pipeline/propertyType, lib/apis/epc); the source used
 //     is returned so the caller can note it on the Monday item.
 //
 // ── Safety ──────────────────────────────────────────────────────────
@@ -36,7 +37,8 @@
 import { normaliseAnalysisInput, defaultGuests } from '@/lib/pipeline/input';
 import { runAnalysis } from '@/lib/pipeline/runAnalysis';
 import { bulkSideEffectGate } from '@/lib/bulk/gate';
-import { resolvePropertyType } from '@/lib/pipeline/propertyType';
+import { resolvePropertyType, addressSaysFlat } from '@/lib/pipeline/propertyType';
+import { lookupEpcPropertyType } from '@/lib/apis/epc';
 
 export const runtime = 'nodejs';
 // Hobby ceiling — see /api/internal/analyse for why a worst case is a retry.
@@ -68,7 +70,10 @@ export async function POST(request: Request) {
   }
 
   const address = typeof body.address === 'string' ? body.address.trim() : '';
-  const propertyType = resolvePropertyType(address, body.property_type);
+  const postcode = typeof body.postcode === 'string' ? body.postcode.trim() : '';
+  // EPC register first (skipped when the address already says it is a flat). Never throws.
+  const epc = addressSaysFlat(address) ? null : await lookupEpcPropertyType(address, postcode);
+  const propertyType = resolvePropertyType(address, body.property_type, epc?.type ?? null);
   const bedrooms = Number(body.bedrooms);
 
   const normalised = normaliseAnalysisInput({
@@ -121,6 +126,9 @@ export async function POST(request: Request) {
       monday_item_id: mondayItemId,
       property_type: propertyType.type,
       property_type_source: propertyType.source,
+      epc: epc
+        ? { certificate_number: epc.certificateNumber, matched_address: epc.matchedAddress, property_type: epc.rawPropertyType, built_form: epc.rawBuiltForm }
+        : null,
       parking: 'on_street',
       pdf_uploaded: outcome.pdfUploaded === true,
       monday_synced: outcome.mondaySynced === true,

@@ -17,6 +17,11 @@ test('unknown or missing guess falls back to Flat', () => {
   assert.deepEqual(resolvePropertyType('RM12 4XF', undefined), { type: 'Flat', source: 'default' });
 });
 
+test('EPC register beats the caller guess, but not a flat named in the address', () => {
+  assert.deepEqual(resolvePropertyType('42 Glenegals Road', 'Terraced', 'Semi-detached'), { type: 'Semi-detached', source: 'epc' });
+  assert.deepEqual(resolvePropertyType('Flat 4, 4 Pritchard Street', 'Terraced', 'Detached'), { type: 'Flat', source: 'address' });
+});
+
 test('a street name containing a flat word as part of another word is not a flat', () => {
   assert.equal(resolvePropertyType('3 Unity Close', 'Terraced').type, 'Terraced');
 });
