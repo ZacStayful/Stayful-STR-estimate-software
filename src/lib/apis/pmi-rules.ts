@@ -130,6 +130,62 @@ export const RURAL_LEISURE_OCCUPANCY_BY_BEDS: Record<number, number> = {
   5: 0.54,
 };
 
+// ─── Full-time comp pool (income-accuracy fix) ─────────────────────
+// The subject is always let 365 days, but a comp's Airbnb occupancy only
+// covers the nights it was open. A listing open 100 peak nights at 73% looks
+// like a 73%-occupancy property and, spread over 365 days, inflates the
+// estimate (26 Kings Road HP11: £92k projected vs £34k–£55k like-for-like).
+// So occupancy and RevPAR come from comps that trade all year, where we can
+// identify enough of them. See src/lib/apis/income-model.ts.
+
+// A comp is full-time on revenue if it took money in at least this many of
+// the last FULLTIME_LOOKBACK_MONTHS months of revenue_ltm_monthly. Deliberately
+// NOT based on active_days_count_ltm or Airbnb-available nights: multi-channel
+// operators block Airbnb dates for other platforms and would look part-time.
+export const FULLTIME_LOOKBACK_MONTHS = 12;
+export const FULLTIME_MIN_REVENUE_MONTHS = 10;
+
+// A comp is also full-time if it looks like a professional operator: any of
+// these whole words in host_name or the listing name (case-insensitive)…
+export const OPERATOR_NAME_TERMS = [
+  'ltd', 'limited', 'lettings', 'stays', 'serviced', 'apartments',
+  'property', 'properties', 'management', 'homes', 'group',
+];
+// …or a pipe-separated operator-style listing name with at least this many
+// segments, e.g. "Contractor Base | 4BR | WiFi | Parking" (4 segments).
+export const OPERATOR_PIPE_MIN_SEGMENTS = 3;
+
+// Minimum full-time comps (after the existing filters) before occupancy and
+// RevPAR are taken from them. Below this the pre-existing method is used
+// unchanged.
+export const MIN_FULLTIME_COMPS = 5;
+
+// Which comps the full-time test looks at:
+//   'shown' — the (up to) 12 comps selected for the report;
+//   'wide'  — the whole guest-matched list, keeping the first 12 full-time
+//             comps in the same review-tier → distance order.
+// The displayed comparables are the same 12 either way. Chosen by backtest
+// (npm run backtest; 365 cached reports, 5,335 leave-one-out subjects):
+// 'shown' 44.9% within ±25% / 28.4% median abs error vs 'wide' 44.5% / 28.6%.
+export const FULLTIME_POOL_SCOPE: 'shown' | 'wide' = 'shown';
+
+// Downward mirror of BED_GAP_BOOST_PER_BED: when the subject has fewer
+// bedrooms than the full-time pool's median, RevPAR × (1 − 0.12 × gap),
+// never below the floor. A 4-bed + sofa bed sleeping 10 should not be priced
+// as a 5–6 bed house sleeping 10.
+export const BED_GAP_SHRINK_PER_BED = 0.12;
+export const BED_GAP_SHRINK_FLOOR = 0.70;
+
+// Standout properties are positioned at this percentile of the full-time
+// pool's RevPAR instead of the median.
+export const FEATURE_LIFT_PERCENTILE = 0.75;
+
+// specialFeatures values that count as standout for the feature lift.
+export const STANDOUT_SPECIAL_FEATURES = new Set<string>([
+  'hot_tub', 'pool', 'swimming_pool', 'sea_views', 'lake_views',
+  'unique', 'character_property',
+]);
+
 // ─── Helpers ───────────────────────────────────────────────────────
 
 /**

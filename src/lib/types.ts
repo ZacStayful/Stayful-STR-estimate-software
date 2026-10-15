@@ -64,6 +64,47 @@ export interface AnnualisationMeta {
   seasonalDataSource: string;
 }
 
+/**
+ * Audit trail of how the report/all headline was derived (income-accuracy
+ * fix). Present only on estimates built from Airbtics report/all comps by the
+ * full-time income model — see src/lib/apis/income-model.ts.
+ */
+export interface IncomeModelMeta {
+  model: 'legacy' | 'fulltime';
+  /** 'fulltime' = occupancy/RevPAR from full-time comps; 'fallback' = too few, pre-existing method. */
+  path: 'legacy' | 'fulltime' | 'fallback';
+  fullTimeScope: 'shown' | 'wide';
+  /** Comps the full-time test looked at. */
+  compsConsidered: number;
+  fullTimeComps: number;
+  fullTimeByRevenueMonths: number;
+  /** Full-time only because of the operator-name test. */
+  fullTimeByOperatorOnly: number;
+  /** Comps occupancy and RevPAR were taken from. */
+  compsInPool: number;
+  aggregationMethod: string;
+  targetRevPAR: number;
+  featureLift: { applied: boolean; fromRevPAR: number; toRevPAR: number };
+  subjectAdjustment: {
+    subjectBeds: number;
+    subjectGuests: number;
+    poolMedianBeds: number;
+    poolMedianGuests: number;
+    factor: number;
+    reason: string;
+  };
+  adjustedRevPAR: number;
+  occupancySource: string;
+  baseOccupancy: number;
+  ceiling: {
+    value: number | null;
+    source: 'fulltime' | 'all_comps' | null;
+    applied: boolean;
+    preCeilingRevenue: number;
+  };
+  annualRevenue: number;
+}
+
 export interface ShortLetData {
   annualRevenue: number;
   monthlyRevenue: [number, number, number, number, number, number, number, number, number, number, number, number];
@@ -76,6 +117,7 @@ export interface ShortLetData {
   locationClass?: LocationClass;
   adrMultipliers?: AdrMultipliers;
   annualisationMeta?: AnnualisationMeta;
+  incomeModel?: IncomeModelMeta;
 }
 
 // ─── Long-Term Let Data ──────────────────────────────────────────

@@ -25,6 +25,7 @@ import type {
   LocationClass,
   AdrMultipliers,
   AnnualisationMeta,
+  IncomeModelMeta,
 } from '../types';
 import { getCachedReportId, setCachedReportId, forgetCachedReportId } from './report-cache.ts';
 import {
@@ -37,10 +38,21 @@ import {
   OUTLIER_DISTANCE_MULTIPLIER,
   MIN_COMPS_FOR_AGGREGATION,
   TOP_N_FOR_COMPRESSED_PREMIUM,
+  MIN_FULLTIME_COMPS,
+  FULLTIME_POOL_SCOPE,
+  FEATURE_LIFT_PERCENTILE,
   isCompressedPremium,
   typicalOccupancyByBeds,
   clampBedsForTable,
 } from './pmi-rules';
+import {
+  classifyFullTime,
+  bedroomShrinkFactor,
+  hasStandoutFeatures,
+  percentile,
+  revenueCeiling,
+  trimMonthlyToCap,
+} from './income-model.ts';
 
 // ─── V2 Filters & Tiering ───────────────────────────────────────
 // Non-residential types: deprioritised but not excluded
@@ -270,6 +282,20 @@ async function enrichWithThumbnails(
   }
 }
 
+/**
+ * One audit line per estimate naming where the headline came from. The
+ * report/all path's detail (full-time vs fallback, ceiling…) is in the
+ * [INCOME] line buildDataFromReportComps logs and in data.incomeModel; the
+ * markets and generic paths are not touched by the full-time income model.
+ */
+function logIncomeSource(
+  source: 'report_all' | 'markets_tier_b' | 'generic_estimate',
+  data?: ShortLetData,
+): void {
+  const m = data?.incomeModel;
+  console.log(`[INCOME] source=${source}${m ? ` path=${m.path} fullTimeComps=${m.fullTimeComps} ceilingApplied=${m.ceiling.applied} annualRevenue=${m.annualRevenue}` : ''}`);
+}
+
 export async function getShortLetData(
   postcode: string,
   bedrooms: number,
@@ -292,6 +318,7 @@ export async function getShortLetData(
 
   if (!apiKey) {
     console.log('AIRBTICS_API_KEY not set, using market estimates');
+    logIncomeSource('generic_estimate');
     return { data: generateMarketEstimate(bedrooms), quality: lowQuality };
   }
 
@@ -307,6 +334,7 @@ export async function getShortLetData(
       if (reportAllResult.quality.comparablesFound >= TARGET_COMPARABLES) {
         console.log(`[Airbtics] Using report/all result: ${reportAllResult.quality.comparablesFound} comps found`);
         await enrichWithThumbnails(reportAllResult.data.comparables, lat, lng, apiKey, reportAllResult.quality.searchRadiusKm);
+        logIncomeSource('report_all', reportAllResult.data);
         return reportAllResult;
       }
       console.log(`[Airbtics] report/all only found ${reportAllResult.quality.comparablesFound}/${TARGET_COMPARABLES} comps - trying bounds expansion`);
@@ -330,9 +358,11 @@ export async function getShortLetData(
     if (reportAllResult && reportAllResult.quality.comparablesFound > marketsResult.quality.comparablesFound) {
       console.log(`[Airbtics] Keeping report/all result (${reportAllResult.quality.comparablesFound} > ${marketsResult.quality.comparablesFound} comps)`);
       await enrichWithThumbnails(reportAllResult.data.comparables, lat, lng, apiKey, reportAllResult.quality.searchRadiusKm);
+      logIncomeSource('report_all', reportAllResult.data);
       return reportAllResult;
     }
     console.log(`[Airbtics] Using markets flow result: ${marketsResult.quality.comparablesFound} comps`);
+    logIncomeSource('markets_tier_b');
     return marketsResult;
   } catch (err) {
     console.log('[Airbtics] markets fallback failed:', err);
@@ -342,16 +372,20 @@ export async function getShortLetData(
   if (reportAllResult) {
     console.log('[Airbtics] Returning report/all result as last resort');
     await enrichWithThumbnails(reportAllResult.data.comparables, lat, lng, apiKey, reportAllResult.quality.searchRadiusKm);
+    logIncomeSource('report_all', reportAllResult.data);
     return reportAllResult;
   }
 
   // ── FINAL FALLBACK: generic estimate ──
   console.log('[Airbtics] All paths failed - using generic market estimate');
+  logIncomeSource('generic_estimate');
   return { data: generateMarketEstimate(bedrooms), quality: lowQuality };
 }
 
 // ─── report/all comp shape ─────────────────────────────────────
-interface ReportComp {
+// Exported so the comp-to-revenue logic can be exercised offline (unit tests,
+// scripts/backtest.mjs) from a stored comp list without calling Airbtics.
+export interface ReportComp {
   listingID: string;
   name: string;
   bedrooms: string | number; // API returns string
@@ -427,7 +461,7 @@ function wasADRTrimmed(comps: ReportComp[]): boolean {
   return adrs.length >= 6 && (adrs[adrs.length - 1] / adrs[0]) > ADR_OUTLIER_SPREAD_THRESHOLD;
 }
 
-interface ReportAllResult {
+export interface ReportAllResult {
   id: string;
   latitude: number;
   longitude: number;
@@ -618,7 +652,7 @@ const DAYS_IN_MONTH = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
 // ═══════════════════════════════════════════════════════════════════
 
 /** V3 — Classify location from UK postcode outward code. Defaults to 'suburban'. */
-function classifyLocation(postcode: string | undefined): LocationClass {
+export function classifyLocation(postcode: string | undefined): LocationClass {
   if (!postcode) return 'suburban';
   const upper = postcode.toUpperCase();
 
@@ -1040,7 +1074,21 @@ function getADRMultiplier(input: AdrMultInput, headlineMode = false): AdrMultOut
  *   9.  Scenarios: worst=quality-adj, base=worst+5% occ, best=quality-adj + 5% occ + 5% ADR
  *       (V3 fix: was returning worstForecast — copy-paste bug)
  */
-function buildDataFromReportComps(
+export interface CompRevenueRunOptions {
+  /**
+   * 'fulltime' (default, live): occupancy and RevPAR from comps that trade all
+   * year, bedroom shrink, feature lift and revenue ceiling — see
+   * ./income-model.ts. 'legacy': the pre-change method, kept so the backtest
+   * can compare against what production did before.
+   */
+  model?: 'legacy' | 'fulltime';
+  /** Which comps the full-time test looks at. Defaults to FULLTIME_POOL_SCOPE. */
+  ftScope?: 'shown' | 'wide';
+  /** Diagnostic sink for the step-by-step pipeline logs. Defaults to console. */
+  log?: (...args: unknown[]) => void;
+}
+
+export function buildDataFromReportComps(
   report: ReportAllResult,
   bedrooms: number,
   guests: number,
@@ -1049,11 +1097,14 @@ function buildDataFromReportComps(
   locationClass: LocationClass,
   postcode: string,
   options?: ShortLetOptions,
+  run: CompRevenueRunOptions = {},
 ): { data: ShortLetData; quality: DataQuality } {
+  const log = run.log ?? console.log;
+  const warn = run.log ?? console.warn;
   const hasParking = options?.hasParking;
   const finishQuality = options?.finishQuality;
   const allComps = report.comps || [];
-  console.log(`[V2] buildDataFromReportComps: ${allComps.length} raw comps`);
+  log(`[V2] buildDataFromReportComps: ${allComps.length} raw comps`);
 
   // V3 diagnostic — verify whether Airbtics report/all populates listing
   // date fields. If all three are undefined, annualisation silently degrades
@@ -1066,26 +1117,26 @@ function buildDataFromReportComps(
     listed_date: (c as unknown as { listed_date?: string }).listed_date,
     active_days_count_ltm: c.active_days_count_ltm,
   }));
-  console.log('[V3] Comp date field sample:', JSON.stringify(dateFieldSample, null, 2));
+  log('[V3] Comp date field sample:', JSON.stringify(dateFieldSample, null, 2));
 
   // ── Step 3a: Non-UK lat/lng filter ──
   const ukComps = allComps.filter(isUKListing);
   const nonUKRemoved = allComps.length - ukComps.length;
-  if (nonUKRemoved > 0) console.log(`[V2] 3a: Removed ${nonUKRemoved} non-UK listings`);
+  if (nonUKRemoved > 0) log(`[V2] 3a: Removed ${nonUKRemoved} non-UK listings`);
 
   // ── Step 3b: Revenue > 0 filter ──
   const withRevenue = ukComps.filter((c) => (c.annual_revenue_ltm ?? 0) > 0);
-  console.log(`[V2] 3b: ${withRevenue.length} comps with revenue`);
+  log(`[V2] 3b: ${withRevenue.length} comps with revenue`);
 
   // ── Step 3c: Tiered guest tolerance ──
   const guestFiltered = filterByGuestsTiered(withRevenue, guests);
-  console.log(`[V2] 3c: ${guestFiltered.length} comps after guest tiered filter (target: ${guests})`);
+  log(`[V2] 3c: ${guestFiltered.length} comps after guest tiered filter (target: ${guests})`);
 
   // ── Step 3d: Property type tiering (residential first) ──
   const residential = guestFiltered.filter(isResidential);
   const nonResidential = guestFiltered.filter((c) => !isResidential(c));
   const tieredByType = [...residential, ...nonResidential];
-  console.log(`[V2] 3d: ${residential.length} residential, ${nonResidential.length} non-residential`);
+  log(`[V2] 3d: ${residential.length} residential, ${nonResidential.length} non-residential`);
 
   // ── Step 3e: Parking preference (pre-existing behaviour, preserved) ──
   if (hasParking) {
@@ -1111,11 +1162,11 @@ function buildDataFromReportComps(
   });
 
   const top12 = sorted.slice(0, TARGET_COMPARABLES);
-  console.log(`[V3] Selected top ${top12.length} comps`);
+  log(`[V3] Selected top ${top12.length} comps`);
 
   // ── Handle no-comps edge case ──
   if (top12.length === 0) {
-    console.log(`[V2] No comps matched — falling back to generic estimate`);
+    log(`[V2] No comps matched — falling back to generic estimate`);
     const estimate = generateMarketEstimate(bedrooms);
     return {
       data: estimate,
@@ -1137,7 +1188,7 @@ function buildDataFromReportComps(
   const { index: seasonalIndex, source: seasonalSource } = buildSeasonalIndex(top12);
   const enrichment = annualiseComps(top12, seasonalIndex);
   const annualisedCount = Array.from(enrichment.values()).filter(e => e.annualised).length;
-  console.log(`[V3] Step 3f: seasonalSource=${seasonalSource}, comps_annualised=${annualisedCount}/${top12.length}`);
+  log(`[V3] Step 3f: seasonalSource=${seasonalSource}, comps_annualised=${annualisedCount}/${top12.length}`);
 
   // Swap annualised revenue onto the comps used for downstream weighting and comparables output.
   const enrichedComps: ReportComp[] = top12.map(c => {
@@ -1201,45 +1252,74 @@ function buildDataFromReportComps(
   void calculateWeightedOccupancy;
   void enrichment;
 
-  // 5a. Pool statistics for outlier filter.
-  const poolAdrs = enrichedComps
-    .map(c => c.avg_booked_daily_rate_ltm ?? 0)
-    .filter(v => v > 0);
-  const poolRevenues = enrichedComps
-    .map(c => c.annual_revenue_ltm ?? 0)
-    .filter(v => v > 0);
-  const poolDistances = enrichedComps.map(c => haversineKm(lat, lng, c.latitude, c.longitude));
-  const poolMedianADR = calculateMedian(poolAdrs);
-  const poolMedianRev = calculateMedian(poolRevenues);
-  const poolMedianDist = calculateMedian(poolDistances);
-
-  // 5b. Outlier filter — drop comps that are both high-ADR AND high-revenue
+  // 5a/5b. Outlier filter — drop comps that are both high-ADR AND high-revenue
   // outliers (catches lodge/luxury comps that dominate the pool but don't
   // reflect the subject property's realistic performance). Also drop comps
   // whose distance is pathologically above the pool median (non-UK geocode
-  // bug — Barrow LA14 saw comps in Connecticut and Pacific).
-  const filteredComps = enrichedComps.filter(c => {
-    const adr = c.avg_booked_daily_rate_ltm ?? 0;
-    const rev = c.annual_revenue_ltm ?? 0;
-    const dist = haversineKm(lat, lng, c.latitude, c.longitude);
-    const isAdrOutlier = poolMedianADR > 0 && adr > OUTLIER_ADR_MULTIPLIER * poolMedianADR
-      && poolMedianRev > 0 && rev > OUTLIER_REVENUE_MULTIPLIER * poolMedianRev;
-    const isDistOutlier = poolMedianDist > 0 && dist > OUTLIER_DISTANCE_MULTIPLIER * poolMedianDist;
-    return !isAdrOutlier && !isDistOutlier;
-  });
+  // bug — Barrow LA14 saw comps in Connecticut and Pacific). If filtering
+  // leaves too few comps, fall back to the unfiltered pool.
+  const filterOutliers = (pool: ReportComp[]) => {
+    const poolMedianADR = calculateMedian(pool.map(c => c.avg_booked_daily_rate_ltm ?? 0).filter(v => v > 0));
+    const poolMedianRev = calculateMedian(pool.map(c => c.annual_revenue_ltm ?? 0).filter(v => v > 0));
+    const poolMedianDist = calculateMedian(pool.map(c => haversineKm(lat, lng, c.latitude, c.longitude)));
+    const filtered = pool.filter(c => {
+      const adr = c.avg_booked_daily_rate_ltm ?? 0;
+      const rev = c.annual_revenue_ltm ?? 0;
+      const dist = haversineKm(lat, lng, c.latitude, c.longitude);
+      const isAdrOutlier = poolMedianADR > 0 && adr > OUTLIER_ADR_MULTIPLIER * poolMedianADR
+        && poolMedianRev > 0 && rev > OUTLIER_REVENUE_MULTIPLIER * poolMedianRev;
+      const isDistOutlier = poolMedianDist > 0 && dist > OUTLIER_DISTANCE_MULTIPLIER * poolMedianDist;
+      return !isAdrOutlier && !isDistOutlier;
+    });
+    return { filtered, effective: filtered.length >= MIN_COMPS_FOR_AGGREGATION ? filtered : pool };
+  };
+  const { filtered: filteredComps, effective: effectiveComps } = filterOutliers(enrichedComps);
   const droppedByFilter = enrichedComps.length - filteredComps.length;
-  console.log(`[V4] outlier filter: dropped ${droppedByFilter} of ${enrichedComps.length} comps`);
-
-  // If filtering left too few comps, fall back to the unfiltered pool.
-  const effectiveComps = filteredComps.length >= MIN_COMPS_FOR_AGGREGATION
-    ? filteredComps
-    : enrichedComps;
+  log(`[V4] outlier filter: dropped ${droppedByFilter} of ${enrichedComps.length} comps`);
   if (effectiveComps !== filteredComps) {
-    console.log(`[V4] filter fallback: using unfiltered pool (${enrichedComps.length} comps) — filtered only had ${filteredComps.length}`);
+    log(`[V4] filter fallback: using unfiltered pool (${enrichedComps.length} comps) — filtered only had ${filteredComps.length}`);
+  }
+
+  // 5b2. Full-time pool (income-accuracy fix). A comp's Airbnb occupancy only
+  // covers the nights it was open, so a peak-only listing (73% occupancy over
+  // ~100 nights) spread across our 365-day let inflates the estimate. Under
+  // the 'fulltime' model, occupancy and RevPAR come from comps that trade all
+  // year when there are at least MIN_FULLTIME_COMPS of them; otherwise the
+  // pre-existing method below runs unchanged.
+  const model = run.model ?? 'fulltime';
+  const ftScope = run.ftScope ?? FULLTIME_POOL_SCOPE;
+  const isNewModel = model === 'fulltime';
+  let ftComps: ReportComp[] = [];
+  let ftConsidered = 0;
+  if (isNewModel) {
+    if (ftScope === 'wide') {
+      // First 12 full-time comps from the whole guest-matched list, in the same
+      // review-tier → distance order, through the same annualisation and
+      // outlier filter. The displayed comparables are unaffected.
+      ftConsidered = sorted.length;
+      const wideFt = sorted.filter(c => classifyFullTime(c).fullTime).slice(0, TARGET_COMPARABLES);
+      const wideEnrichment = annualiseComps(wideFt, seasonalIndex);
+      for (const [id, e] of wideEnrichment) if (!enrichment.has(id)) enrichment.set(id, e);
+      const enrichedWide = wideFt.map(c => {
+        const e = wideEnrichment.get(c.listingID);
+        return e ? { ...c, annual_revenue_ltm: Math.round(e.annualisedRevenue) } : c;
+      });
+      ftComps = enrichedWide.length > 0 ? filterOutliers(enrichedWide).effective : [];
+    } else {
+      ftConsidered = effectiveComps.length;
+      ftComps = effectiveComps.filter(c => classifyFullTime(c).fullTime);
+    }
+  }
+  const ftClasses = ftComps.map(c => classifyFullTime(c));
+  const useFT = isNewModel && ftComps.length >= MIN_FULLTIME_COMPS;
+  const pool = useFT ? ftComps : effectiveComps;
+  const incomePath: IncomeModelMeta['path'] = !isNewModel ? 'legacy' : useFT ? 'fulltime' : 'fallback';
+  if (isNewModel) {
+    log(`[INCOME] full-time comps: ${ftComps.length} (scope=${ftScope}, of ${ftConsidered}) → path=${incomePath}`);
   }
 
   // 5c. Per-comp RevPAR = ADR × occupancy (i.e. average revenue per available day).
-  const effectiveRevPARs = effectiveComps
+  const effectiveRevPARs = pool
     .map(c => {
       const adr = c.avg_booked_daily_rate_ltm ?? 0;
       const occ = (c.avg_occupancy_rate_ltm ?? 0) / 100;
@@ -1270,7 +1350,22 @@ function buildDataFromReportComps(
     target_RevPAR = calculateMedian(effectiveRevPARs);
     aggregationMethod = 'median';
   }
-  console.log(`[V4] target_RevPAR=£${target_RevPAR.toFixed(2)} via ${aggregationMethod} over ${effectiveRevPARs.length} comps`);
+  log(`[V4] target_RevPAR=£${target_RevPAR.toFixed(2)} via ${aggregationMethod} over ${effectiveRevPARs.length} comps`);
+
+  // 5d2. Feature lift (full-time path only): standout properties (hot tub,
+  // pool, unique…) are positioned at the pool's 75th-percentile RevPAR instead
+  // of the median. Never lowers an aggregate that is already higher.
+  const preLiftRevPAR = target_RevPAR;
+  let featureLiftApplied = false;
+  if (useFT && hasStandoutFeatures(options?.specialFeatures)) {
+    const lifted = percentile(effectiveRevPARs, FEATURE_LIFT_PERCENTILE);
+    if (lifted > target_RevPAR) {
+      target_RevPAR = lifted;
+      featureLiftApplied = true;
+      aggregationMethod = `${aggregationMethod}+feature_lift_p${Math.round(FEATURE_LIFT_PERCENTILE * 100)}`;
+      log(`[INCOME] feature lift: £${preLiftRevPAR.toFixed(2)} → £${target_RevPAR.toFixed(2)}`);
+    }
+  }
 
   // 5e. Subject-vs-pool adjustments.
   //  - bed_gap_boost: if subject has more bedrooms than the pool (and guests
@@ -1278,10 +1373,13 @@ function buildDataFromReportComps(
   //    (Nottingham NG1 4ET/1GL both exhibit this.)
   //  - guest_gap_shrink: if subject guests is well below pool guests, shrink
   //    RevPAR proportionally. (Glasgow G12 — 3-bed rented for 3 guests.)
-  const poolBeds = effectiveComps
+  //  - bedroom shrink (full-time path only): subject has fewer bedrooms than
+  //    the pool → RevPAR × (1 − 0.12 × gap), floor 0.70. If the guest shrink
+  //    would also apply, the stronger of the two is used — never both.
+  const poolBeds = pool
     .map(c => typeof c.bedrooms === 'string' ? parseInt(c.bedrooms, 10) : (c.bedrooms ?? 0))
     .filter(v => v > 0);
-  const poolGuests = effectiveComps
+  const poolGuests = pool
     .map(c => c.accommodates ?? 0)
     .filter(v => v > 0);
   const medianPoolBeds = calculateMedian(poolBeds);
@@ -1294,6 +1392,18 @@ function buildDataFromReportComps(
   if (bedGap >= 1 && guestGap >= 0) {
     adjustmentFactor = 1 + BED_GAP_BOOST_PER_BED * bedGap;
     adjustmentReason = `bed_gap_boost(+${bedGap} beds, x${adjustmentFactor.toFixed(3)})`;
+  } else if (useFT && bedGap < 0) {
+    const bedFactor = bedroomShrinkFactor(bedrooms, medianPoolBeds);
+    const guestShrinkApplies = guestGap <= GUEST_GAP_SHRINK_THRESHOLD
+      && medianPoolGuests > 0
+      && !isCompressedPremium(postcode);
+    const guestFactor = guestShrinkApplies
+      ? 1 - GUEST_GAP_SHRINK_DAMP * (1 - guests / medianPoolGuests)
+      : 1;
+    adjustmentFactor = Math.min(bedFactor, guestFactor);
+    adjustmentReason = bedFactor <= guestFactor
+      ? `bed_gap_shrink(${bedGap} beds, x${bedFactor.toFixed(3)})`
+      : `guest_gap_shrink_damped(${guestGap} gap, x${guestFactor.toFixed(3)}; stronger than bed_gap_shrink x${bedFactor.toFixed(3)})`;
   } else if (
     guestGap <= GUEST_GAP_SHRINK_THRESHOLD
     && medianPoolGuests > 0
@@ -1311,7 +1421,7 @@ function buildDataFromReportComps(
     adjustmentReason = `guest_gap_skipped(compressed_premium)`;
   }
   const adjusted_RevPAR = target_RevPAR * adjustmentFactor;
-  console.log(`[V4] subject_vs_pool: subject=${bedrooms}b/${guests}g pool_median=${medianPoolBeds}b/${medianPoolGuests}g → ${adjustmentReason} → adjusted_RevPAR=£${adjusted_RevPAR.toFixed(2)}`);
+  log(`[V4] subject_vs_pool: subject=${bedrooms}b/${guests}g pool_median=${medianPoolBeds}b/${medianPoolGuests}g → ${adjustmentReason} → adjusted_RevPAR=£${adjusted_RevPAR.toFixed(2)}`);
 
   // 5f. Derive headline occupancy.
   //  - Coastal or rural_village/rural_isolated → use typical_occ lookup
@@ -1325,14 +1435,14 @@ function buildDataFromReportComps(
     base_occ = typicalTable[bedsKey] ?? 0.60;
     occSource = `typical_table:${locationClass}:${bedsKey}bed`;
   } else {
-    const poolOccs = effectiveComps
+    const poolOccs = pool
       .map(c => (c.avg_occupancy_rate_ltm ?? 0) / 100)
       .filter(v => v > 0);
     base_occ = calculateMedian(poolOccs);
     if (!(base_occ > 0)) base_occ = 0.60;
-    occSource = 'comp_median';
+    occSource = useFT ? 'fulltime_comp_median' : 'comp_median';
   }
-  console.log(`[V4] base_occ=${(base_occ * 100).toFixed(0)}% via ${occSource}`);
+  log(`[V4] base_occ=${(base_occ * 100).toFixed(0)}% via ${occSource}`);
 
   // 5g. Split target RevPAR into ADR and Occupancy.
   // If base_occ is 0 (defensive; shouldn't happen given the 0.60 fallback),
@@ -1340,17 +1450,17 @@ function buildDataFromReportComps(
   const base_ADR = base_occ > 0
     ? adjusted_RevPAR / base_occ
     : calculateWeightedADR(enrichedComps, enrichment, bedrooms, lat, lng);
-  console.log(`[V4] base_ADR=£${base_ADR.toFixed(0)} (= adjusted_RevPAR / base_occ)`);
+  log(`[V4] base_ADR=£${base_ADR.toFixed(0)} (= adjusted_RevPAR / base_occ)`);
 
   // Legacy diagnostics — keep for comparison with V3 path during rollout.
-  console.log(`[V4] airbtics_summary_stats (ignored): summaryADR=£${summaryADR}, summaryOcc=${summaryOcc}%`);
+  log(`[V4] airbtics_summary_stats (ignored): summaryADR=£${summaryADR}, summaryOcc=${summaryOcc}%`);
 
   const trimmed = wasADRTrimmed(enrichedComps);
-  console.log(`[V4] Step 5 complete: base_ADR=£${base_ADR.toFixed(0)}, base_occ=${(base_occ*100).toFixed(0)}%, target_RevPAR=£${adjusted_RevPAR.toFixed(0)}`);
+  log(`[V4] Step 5 complete: base_ADR=£${base_ADR.toFixed(0)}, base_occ=${(base_occ*100).toFixed(0)}%, target_RevPAR=£${adjusted_RevPAR.toFixed(0)}`);
 
   // ── Step 6: Quality multiplier (stored for scenarios, NOT applied to headline) ──
   const qualityMultiplier = FINISH_MULTIPLIERS[finishQuality || 'average'] ?? 1.0;
-  console.log(`[V3] Step 6: quality multiplier = ${qualityMultiplier} (${finishQuality || 'average'})`);
+  log(`[V3] Step 6: quality multiplier = ${qualityMultiplier} (${finishQuality || 'average'})`);
 
   // ── Step 7: Separate ADR + occupancy seasonal curves from comp monthly data ──
   const seasonalADRMultiplier = buildSeasonalMultipliers(enrichedComps, 'booked_daily_rate_ltm_monthly');
@@ -1370,8 +1480,8 @@ function buildDataFromReportComps(
     specialFeatures: options?.specialFeatures,
   };
   const { total: adrMultiplier, breakdown: multBreakdown } = getADRMultiplier(adrMultInput, true);
-  const adjusted_ADR = base_ADR * adrMultiplier;
-  console.log(`[V3] Step 8b (headline): adrMultiplier=${adrMultiplier.toFixed(3)} (loc=${multBreakdown.locMult} type=${multBreakdown.propTypeMult} out=${multBreakdown.outdoorMult} park=${multBreakdown.parkingMult} cond=${multBreakdown.conditionMult} special=${multBreakdown.specialBonus.toFixed(2)}) → adjusted_ADR=£${adjusted_ADR.toFixed(0)}`);
+  let adjusted_ADR = base_ADR * adrMultiplier;
+  log(`[V3] Step 8b (headline): adrMultiplier=${adrMultiplier.toFixed(3)} (loc=${multBreakdown.locMult} type=${multBreakdown.propTypeMult} out=${multBreakdown.outdoorMult} park=${multBreakdown.parkingMult} cond=${multBreakdown.conditionMult} special=${multBreakdown.specialBonus.toFixed(2)}) → adjusted_ADR=£${adjusted_ADR.toFixed(0)}`);
 
   // ── Step 8: Build 12-month forecast ──
   //    Formula: adjusted_ADR × seasonal_ADR × occ × seasonal_occ × days_in_month
@@ -1384,8 +1494,34 @@ function buildDataFromReportComps(
     });
   };
 
-  const headlineForecast = buildForecast(adjusted_ADR, base_occ);
-  const headlineAnnualRevenue = headlineForecast.reduce((s, m) => s + m.revenue, 0);
+  let headlineForecast = buildForecast(adjusted_ADR, base_occ);
+  let headlineAnnualRevenue = headlineForecast.reduce((s, m) => s + m.revenue, 0);
+
+  // ── Step 8c (income-accuracy fix): revenue ceiling ──
+  // The headline may not exceed what the best comparable actually earned —
+  // annualised for young listings but without the ramp-up uplift. Taken from
+  // the full-time comps on the full-time path, otherwise from every comp in
+  // the pool. Applied by scaling ADR (occupancy is left alone), then trimming
+  // rounding so the 12 months never sum above the cap.
+  const preCeilingRevenue = headlineAnnualRevenue;
+  let ceilingScale = 1;
+  let ceiling: ReturnType<typeof revenueCeiling> = null;
+  if (isNewModel) {
+    const actualRevenue = (c: ReportComp): number => {
+      const e = enrichment.get(c.listingID);
+      return e ? e.annualisedRevenue / (1 + e.rampUplift) : (c.annual_revenue_ltm ?? 0);
+    };
+    ceiling = revenueCeiling(ftComps.map(actualRevenue), effectiveComps.map(actualRevenue));
+    if (ceiling && headlineAnnualRevenue > ceiling.value) {
+      ceilingScale = ceiling.value / headlineAnnualRevenue;
+      adjusted_ADR = adjusted_ADR * ceilingScale;
+      const scaled = buildForecast(adjusted_ADR, base_occ);
+      const cappedMonthly = trimMonthlyToCap(scaled.map(m => m.revenue), ceiling.value);
+      headlineForecast = scaled.map((m, i) => ({ ...m, revenue: cappedMonthly[i] }));
+      headlineAnnualRevenue = headlineForecast.reduce((s, m) => s + m.revenue, 0);
+      log(`[INCOME] ceiling applied: £${preCeilingRevenue} → £${headlineAnnualRevenue} (cap £${Math.round(ceiling.value)} from ${ceiling.source})`);
+    }
+  }
 
   // ── Step 9 (V3 FIX): Scenarios (worst/base/best) ──
   // V2 had a copy-paste bug where `bestForecast = worstForecast`. V3 properly
@@ -1395,7 +1531,9 @@ function buildDataFromReportComps(
   // parking × condition + specials) so worst/base/best can still reflect property
   // characteristics even though the headline strips them.
   const { total: fullStackMultiplier } = getADRMultiplier(adrMultInput);
-  const scenarioADR = base_ADR * fullStackMultiplier;
+  // Scaled by the revenue ceiling (1 unless it applied) so scenarios stay
+  // consistent with the capped headline.
+  const scenarioADR = base_ADR * fullStackMultiplier * ceilingScale;
   const worstForecast = buildForecast(scenarioADR * qualityMultiplier, base_occ);
   const baseCaseForecast = buildForecast(scenarioADR * qualityMultiplier, Math.min(base_occ * 1.05, 1.0));
   const bestForecast = buildForecast(scenarioADR * qualityMultiplier * 1.05, Math.min(base_occ * 1.05, 1.0));
@@ -1436,7 +1574,7 @@ function buildDataFromReportComps(
   const crossCheck = Math.round(headlineAverageADR * headlineOccupancy * 365);
   const divergence = Math.abs(crossCheck - headlineAnnualRevenue) / headlineAnnualRevenue;
   if (divergence > 0.05) {
-    console.warn(`[V2] Cross-check divergence ${(divergence*100).toFixed(1)}%: calc=${crossCheck}, forecast=${headlineAnnualRevenue}`);
+    warn(`[V2] Cross-check divergence ${(divergence*100).toFixed(1)}%: calc=${crossCheck}, forecast=${headlineAnnualRevenue}`);
   }
 
   const activeListings = top12.length;
@@ -1481,6 +1619,50 @@ function buildDataFromReportComps(
   // Quiet the unused-binding linter — kept for future meta reporting
   void trimmed;
 
+  // ── Audit (income-accuracy fix): which path produced this headline ──
+  // Logged as one line and persisted with the report (analyser_reports
+  // raw_response.shortLet.incomeModel) so every estimate can be audited.
+  let incomeModel: IncomeModelMeta | undefined;
+  if (isNewModel) {
+    const round2 = (v: number) => Math.round(v * 100) / 100;
+    incomeModel = {
+      model,
+      path: incomePath,
+      fullTimeScope: ftScope,
+      compsConsidered: ftConsidered,
+      fullTimeComps: ftComps.length,
+      fullTimeByRevenueMonths: ftClasses.filter(c => c.byMonths).length,
+      fullTimeByOperatorOnly: ftClasses.filter(c => c.byOperator && !c.byMonths).length,
+      compsInPool: pool.length,
+      aggregationMethod,
+      targetRevPAR: round2(target_RevPAR),
+      featureLift: {
+        applied: featureLiftApplied,
+        fromRevPAR: round2(preLiftRevPAR),
+        toRevPAR: round2(target_RevPAR),
+      },
+      subjectAdjustment: {
+        subjectBeds: bedrooms,
+        subjectGuests: guests,
+        poolMedianBeds: medianPoolBeds,
+        poolMedianGuests: medianPoolGuests,
+        factor: round2(adjustmentFactor),
+        reason: adjustmentReason,
+      },
+      adjustedRevPAR: round2(adjusted_RevPAR),
+      occupancySource: occSource,
+      baseOccupancy: round2(base_occ),
+      ceiling: {
+        value: ceiling ? Math.round(ceiling.value) : null,
+        source: ceiling?.source ?? null,
+        applied: ceilingScale < 1,
+        preCeilingRevenue: Math.round(preCeilingRevenue),
+      },
+      annualRevenue: Math.round(headlineAnnualRevenue),
+    };
+    log(`[INCOME] ${JSON.stringify(incomeModel)}`);
+  }
+
   return {
     data: {
       annualRevenue: Math.round(headlineAnnualRevenue),
@@ -1493,6 +1675,7 @@ function buildDataFromReportComps(
       locationClass,
       adrMultipliers,
       annualisationMeta,
+      ...(incomeModel ? { incomeModel } : {}),
     },
     quality: {
       comparablesFound,
