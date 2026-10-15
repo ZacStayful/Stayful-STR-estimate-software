@@ -1,0 +1,2766 @@
+{
+ "urban-ng1": {
+  "data": {
+   "annualRevenue": 31374,
+   "monthlyRevenue": [
+    1742,
+    1673,
+    2097,
+    2351,
+    2729,
+    3308,
+    3904,
+    4031,
+    2868,
+    2286,
+    1836,
+    2549
+   ],
+   "occupancyRate": 0.71,
+   "averageDailyRate": 118,
+   "activeListings": 12,
+   "comparables": [
+    {
+     "title": "2 bed home u4",
+     "url": "https://www.airbnb.co.uk/rooms/u4",
+     "bedrooms": 2,
+     "accommodates": 6,
+     "averageDailyRate": 159,
+     "occupancyRate": 0.96,
+     "annualRevenue": 19134,
+     "distance": 0.13,
+     "rating": 4.8,
+     "reviewCount": 25,
+     "listingAge": 0,
+     "daysAvailable": 122,
+     "amenityCount": 1
+    },
+    {
+     "title": "2 bed home u1",
+     "url": "https://www.airbnb.co.uk/rooms/u1",
+     "bedrooms": 2,
+     "accommodates": 6,
+     "averageDailyRate": 113,
+     "occupancyRate": 0.72,
+     "annualRevenue": 30484,
+     "distance": 0.22,
+     "rating": 4.8,
+     "reviewCount": 25,
+     "listingAge": 0,
+     "daysAvailable": 365,
+     "amenityCount": 1
+    },
+    {
+     "title": "2 bed home u3",
+     "url": "https://www.airbnb.co.uk/rooms/u3",
+     "bedrooms": 2,
+     "accommodates": 5,
+     "averageDailyRate": 100,
+     "occupancyRate": 0.75,
+     "annualRevenue": 28281,
+     "distance": 0.27,
+     "rating": 4.8,
+     "reviewCount": 25,
+     "listingAge": 0,
+     "daysAvailable": 365,
+     "amenityCount": 1
+    },
+    {
+     "title": "2 bed home u2",
+     "url": "https://www.airbnb.co.uk/rooms/u2",
+     "bedrooms": 2,
+     "accommodates": 6,
+     "averageDailyRate": 128,
+     "occupancyRate": 0.68,
+     "annualRevenue": 32595,
+     "distance": 0.33,
+     "rating": 4.8,
+     "reviewCount": 25,
+     "listingAge": 0,
+     "daysAvailable": 365,
+     "amenityCount": 1
+    },
+    {
+     "title": "2 bed home u8",
+     "url": "https://www.airbnb.co.uk/rooms/u8",
+     "bedrooms": 2,
+     "accommodates": 6,
+     "averageDailyRate": 186,
+     "occupancyRate": 1,
+     "annualRevenue": 17604,
+     "distance": 0.4,
+     "rating": 4.8,
+     "reviewCount": 25,
+     "listingAge": 0,
+     "daysAvailable": 92,
+     "amenityCount": 1
+    },
+    {
+     "title": "2 bed home u11",
+     "url": "https://www.airbnb.co.uk/rooms/u11",
+     "bedrooms": 2,
+     "accommodates": 6,
+     "averageDailyRate": 143,
+     "occupancyRate": 0.88,
+     "annualRevenue": 23790,
+     "distance": 0.46,
+     "rating": 4.8,
+     "reviewCount": 25,
+     "listingAge": 0,
+     "daysAvailable": 184,
+     "amenityCount": 1
+    },
+    {
+     "title": "3 bed home u6",
+     "url": "https://www.airbnb.co.uk/rooms/u6",
+     "bedrooms": 3,
+     "accommodates": 6,
+     "averageDailyRate": 154,
+     "occupancyRate": 0.6,
+     "annualRevenue": 34630,
+     "distance": 0.49,
+     "rating": 4.8,
+     "reviewCount": 25,
+     "listingAge": 0,
+     "daysAvailable": 365,
+     "amenityCount": 1
+    },
+    {
+     "title": "2 bed home u5",
+     "url": "https://www.airbnb.co.uk/rooms/u5",
+     "bedrooms": 2,
+     "accommodates": 6,
+     "averageDailyRate": 107,
+     "occupancyRate": 0.66,
+     "annualRevenue": 26667,
+     "distance": 0.57,
+     "rating": 4.8,
+     "reviewCount": 25,
+     "listingAge": 0,
+     "daysAvailable": 365,
+     "amenityCount": 1
+    },
+    {
+     "title": "Serviced Apartments | 2BR | Parking | Central",
+     "url": "https://www.airbnb.co.uk/rooms/u14",
+     "bedrooms": 2,
+     "accommodates": 6,
+     "averageDailyRate": 124,
+     "occupancyRate": 0.67,
+     "annualRevenue": 31330,
+     "distance": 0.6,
+     "rating": 4.8,
+     "reviewCount": 25,
+     "listingAge": 0,
+     "daysAvailable": 365,
+     "amenityCount": 1
+    },
+    {
+     "title": "2 bed home u7",
+     "url": "https://www.airbnb.co.uk/rooms/u7",
+     "bedrooms": 2,
+     "accommodates": 7,
+     "averageDailyRate": 121,
+     "occupancyRate": 0.7,
+     "annualRevenue": 31962,
+     "distance": 0.67,
+     "rating": 4.8,
+     "reviewCount": 25,
+     "listingAge": 0,
+     "daysAvailable": 365,
+     "amenityCount": 1
+    },
+    {
+     "title": "1 bed home u9",
+     "url": "https://www.airbnb.co.uk/rooms/u9",
+     "bedrooms": 1,
+     "accommodates": 5,
+     "averageDailyRate": 92,
+     "occupancyRate": 0.74,
+     "annualRevenue": 25724,
+     "distance": 0.67,
+     "rating": 4.8,
+     "reviewCount": 25,
+     "listingAge": 0,
+     "daysAvailable": 365,
+     "amenityCount": 1
+    },
+    {
+     "title": "2 bed home u10",
+     "url": "https://www.airbnb.co.uk/rooms/u10",
+     "bedrooms": 2,
+     "accommodates": 6,
+     "averageDailyRate": 115,
+     "occupancyRate": 0.64,
+     "annualRevenue": 31630,
+     "distance": 0.47,
+     "rating": 4.8,
+     "reviewCount": 6,
+     "listingAge": 0,
+     "daysAvailable": 365,
+     "amenityCount": 1
+    }
+   ],
+   "scenarios": {
+    "worst": {
+     "annualRevenue": 32944,
+     "averageDailyRate": 124,
+     "occupancyPercent": 71,
+     "monthly": [
+      {
+       "label": "Jan",
+       "adr": 106,
+       "occupancy": 56,
+       "revenue": 1829
+      },
+      {
+       "label": "Feb",
+       "adr": 106,
+       "occupancy": 59,
+       "revenue": 1756
+      },
+      {
+       "label": "Mar",
+       "adr": 111,
+       "occupancy": 64,
+       "revenue": 2202
+      },
+      {
+       "label": "Apr",
+       "adr": 118,
+       "occupancy": 70,
+       "revenue": 2469
+      },
+      {
+       "label": "May",
+       "adr": 124,
+       "occupancy": 74,
+       "revenue": 2866
+      },
+      {
+       "label": "Jun",
+       "adr": 141,
+       "occupancy": 82,
+       "revenue": 3474
+      },
+      {
+       "label": "Jul",
+       "adr": 151,
+       "occupancy": 88,
+       "revenue": 4099
+      },
+      {
+       "label": "Aug",
+       "adr": 153,
+       "occupancy": 89,
+       "revenue": 4233
+      },
+      {
+       "label": "Sep",
+       "adr": 129,
+       "occupancy": 78,
+       "revenue": 3011
+      },
+      {
+       "label": "Oct",
+       "adr": 114,
+       "occupancy": 68,
+       "revenue": 2401
+      },
+      {
+       "label": "Nov",
+       "adr": 108,
+       "occupancy": 59,
+       "revenue": 1928
+      },
+      {
+       "label": "Dec",
+       "adr": 128,
+       "occupancy": 67,
+       "revenue": 2676
+      }
+     ]
+    },
+    "base": {
+     "annualRevenue": 34590,
+     "averageDailyRate": 124,
+     "occupancyPercent": 75,
+     "monthly": [
+      {
+       "label": "Jan",
+       "adr": 106,
+       "occupancy": 59,
+       "revenue": 1921
+      },
+      {
+       "label": "Feb",
+       "adr": 106,
+       "occupancy": 62,
+       "revenue": 1844
+      },
+      {
+       "label": "Mar",
+       "adr": 111,
+       "occupancy": 67,
+       "revenue": 2312
+      },
+      {
+       "label": "Apr",
+       "adr": 118,
+       "occupancy": 73,
+       "revenue": 2592
+      },
+      {
+       "label": "May",
+       "adr": 124,
+       "occupancy": 78,
+       "revenue": 3009
+      },
+      {
+       "label": "Jun",
+       "adr": 141,
+       "occupancy": 86,
+       "revenue": 3647
+      },
+      {
+       "label": "Jul",
+       "adr": 151,
+       "occupancy": 92,
+       "revenue": 4304
+      },
+      {
+       "label": "Aug",
+       "adr": 153,
+       "occupancy": 93,
+       "revenue": 4444
+      },
+      {
+       "label": "Sep",
+       "adr": 129,
+       "occupancy": 82,
+       "revenue": 3162
+      },
+      {
+       "label": "Oct",
+       "adr": 114,
+       "occupancy": 71,
+       "revenue": 2521
+      },
+      {
+       "label": "Nov",
+       "adr": 108,
+       "occupancy": 62,
+       "revenue": 2024
+      },
+      {
+       "label": "Dec",
+       "adr": 128,
+       "occupancy": 71,
+       "revenue": 2810
+      }
+     ]
+    },
+    "best": {
+     "annualRevenue": 36320,
+     "averageDailyRate": 130,
+     "occupancyPercent": 75,
+     "monthly": [
+      {
+       "label": "Jan",
+       "adr": 111,
+       "occupancy": 59,
+       "revenue": 2017
+      },
+      {
+       "label": "Feb",
+       "adr": 111,
+       "occupancy": 62,
+       "revenue": 1936
+      },
+      {
+       "label": "Mar",
+       "adr": 116,
+       "occupancy": 67,
+       "revenue": 2427
+      },
+      {
+       "label": "Apr",
+       "adr": 124,
+       "occupancy": 73,
+       "revenue": 2722
+      },
+      {
+       "label": "May",
+       "adr": 130,
+       "occupancy": 78,
+       "revenue": 3160
+      },
+      {
+       "label": "Jun",
+       "adr": 148,
+       "occupancy": 86,
+       "revenue": 3830
+      },
+      {
+       "label": "Jul",
+       "adr": 158,
+       "occupancy": 92,
+       "revenue": 4519
+      },
+      {
+       "label": "Aug",
+       "adr": 161,
+       "occupancy": 93,
+       "revenue": 4666
+      },
+      {
+       "label": "Sep",
+       "adr": 136,
+       "occupancy": 82,
+       "revenue": 3320
+      },
+      {
+       "label": "Oct",
+       "adr": 120,
+       "occupancy": 71,
+       "revenue": 2647
+      },
+      {
+       "label": "Nov",
+       "adr": 114,
+       "occupancy": 62,
+       "revenue": 2125
+      },
+      {
+       "label": "Dec",
+       "adr": 134,
+       "occupancy": 71,
+       "revenue": 2951
+      }
+     ]
+    }
+   },
+   "locationClass": "urban",
+   "adrMultipliers": {
+    "total": 1,
+    "location": 1,
+    "propertyType": 1,
+    "outdoorSpace": 1,
+    "parking": 1,
+    "condition": 1,
+    "specialFeatures": 0,
+    "baseAdrPreMult": 118,
+    "finalAdr": 118
+   },
+   "annualisationMeta": {
+    "compsAnnualised": 0,
+    "compsMature": 12,
+    "seasonalDataSource": "airbtics_market"
+   }
+  },
+  "quality": {
+   "comparablesFound": 12,
+   "comparablesTarget": 12,
+   "searchRadiusKm": 3,
+   "searchBroadened": false,
+   "level": "high",
+   "disclaimer": null
+  }
+ },
+ "rural-hp11": {
+  "data": {
+   "annualRevenue": 97961,
+   "monthlyRevenue": [
+    4595,
+    4410,
+    6409,
+    8089,
+    9167,
+    10104,
+    11887,
+    12276,
+    9253,
+    7665,
+    5614,
+    8492
+   ],
+   "occupancyRate": 0.56,
+   "averageDailyRate": 467,
+   "activeListings": 12,
+   "comparables": [
+    {
+     "title": "5 bed home r3",
+     "url": "https://www.airbnb.co.uk/rooms/r3",
+     "bedrooms": 5,
+     "accommodates": 10,
+     "averageDailyRate": 607,
+     "occupancyRate": 0.78,
+     "annualRevenue": 148116,
+     "distance": 2.76,
+     "rating": 4.8,
+     "reviewCount": 25,
+     "listingAge": 0,
+     "daysAvailable": 306,
+     "amenityCount": 1
+    },
+    {
+     "title": "4 bed home r4",
+     "url": "https://www.airbnb.co.uk/rooms/r4",
+     "bedrooms": 4,
+     "accommodates": 10,
+     "averageDailyRate": 312,
+     "occupancyRate": 0.77,
+     "annualRevenue": 53046,
+     "distance": 3.45,
+     "rating": 4.8,
+     "reviewCount": 25,
+     "listingAge": 0,
+     "daysAvailable": 214,
+     "amenityCount": 1
+    },
+    {
+     "title": "4 bed home r15",
+     "url": "https://www.airbnb.co.uk/rooms/r15",
+     "bedrooms": 4,
+     "accommodates": 9,
+     "averageDailyRate": 245,
+     "occupancyRate": 0.66,
+     "annualRevenue": 60923,
+     "distance": 3.53,
+     "rating": 4.8,
+     "reviewCount": 25,
+     "listingAge": 0,
+     "daysAvailable": 365,
+     "amenityCount": 1
+    },
+    {
+     "title": "6 bed home r5",
+     "url": "https://www.airbnb.co.uk/rooms/r5",
+     "bedrooms": 6,
+     "accommodates": 9,
+     "averageDailyRate": 369,
+     "occupancyRate": 0.36,
+     "annualRevenue": 50558,
+     "distance": 3.93,
+     "rating": 4.8,
+     "reviewCount": 25,
+     "listingAge": 0,
+     "daysAvailable": 365,
+     "amenityCount": 1
+    },
+    {
+     "title": "4 bed home r13",
+     "url": "https://www.airbnb.co.uk/rooms/r13",
+     "bedrooms": 4,
+     "accommodates": 10,
+     "averageDailyRate": 266,
+     "occupancyRate": 0.62,
+     "annualRevenue": 62120,
+     "distance": 4.13,
+     "rating": 4.8,
+     "reviewCount": 25,
+     "listingAge": 0,
+     "daysAvailable": 365,
+     "amenityCount": 1
+    },
+    {
+     "title": "5 bed home r14",
+     "url": "https://www.airbnb.co.uk/rooms/r14",
+     "bedrooms": 5,
+     "accommodates": 10,
+     "averageDailyRate": 307,
+     "occupancyRate": 0.58,
+     "annualRevenue": 67004,
+     "distance": 4.33,
+     "rating": 4.8,
+     "reviewCount": 25,
+     "listingAge": 0,
+     "daysAvailable": 365,
+     "amenityCount": 1
+    },
+    {
+     "title": "4 bed home r6",
+     "url": "https://www.airbnb.co.uk/rooms/r6",
+     "bedrooms": 4,
+     "accommodates": 10,
+     "averageDailyRate": 766,
+     "occupancyRate": 0.56,
+     "annualRevenue": 108110,
+     "distance": 4.66,
+     "rating": 4.8,
+     "reviewCount": 25,
+     "listingAge": 0,
+     "daysAvailable": 245,
+     "amenityCount": 1
+    },
+    {
+     "title": "4 bed home r11",
+     "url": "https://www.airbnb.co.uk/rooms/r11",
+     "bedrooms": 4,
+     "accommodates": 8,
+     "averageDailyRate": 535,
+     "occupancyRate": 0.57,
+     "annualRevenue": 66683,
+     "distance": 5,
+     "rating": 4.8,
+     "reviewCount": 25,
+     "listingAge": 0,
+     "daysAvailable": 214,
+     "amenityCount": 1
+    },
+    {
+     "title": "The Atelier by Fullards",
+     "url": "https://www.airbnb.co.uk/rooms/r8",
+     "bedrooms": 4,
+     "accommodates": 11,
+     "averageDailyRate": 811,
+     "occupancyRate": 0.38,
+     "annualRevenue": 114436,
+     "distance": 5.93,
+     "rating": 4.8,
+     "reviewCount": 25,
+     "listingAge": 0,
+     "daysAvailable": 365,
+     "amenityCount": 1
+    },
+    {
+     "title": "Contractor Base | 4BR | WiFi | Parking | Wycombe",
+     "url": "https://www.airbnb.co.uk/rooms/r9",
+     "bedrooms": 4,
+     "accommodates": 9,
+     "averageDailyRate": 444,
+     "occupancyRate": 0.55,
+     "annualRevenue": 61292,
+     "distance": 1.73,
+     "rating": 4.8,
+     "reviewCount": 6,
+     "listingAge": 0,
+     "daysAvailable": 214,
+     "amenityCount": 1
+    },
+    {
+     "title": "5 bed home r10",
+     "url": "https://www.airbnb.co.uk/rooms/r10",
+     "bedrooms": 5,
+     "accommodates": 10,
+     "averageDailyRate": 473,
+     "occupancyRate": 0.98,
+     "annualRevenue": 116763,
+     "distance": 2.45,
+     "rating": 4.8,
+     "reviewCount": 5,
+     "listingAge": 0,
+     "daysAvailable": 214,
+     "amenityCount": 1
+    },
+    {
+     "title": "4 bed home r12",
+     "url": "https://www.airbnb.co.uk/rooms/r12",
+     "bedrooms": 4,
+     "accommodates": 10,
+     "averageDailyRate": 702,
+     "occupancyRate": 0.4,
+     "annualRevenue": 89372,
+     "distance": 3.11,
+     "rating": 4.8,
+     "reviewCount": 0,
+     "listingAge": 0,
+     "daysAvailable": 245,
+     "amenityCount": 1
+    }
+   ],
+   "scenarios": {
+    "worst": {
+     "annualRevenue": 125488,
+     "averageDailyRate": 599,
+     "occupancyPercent": 56,
+     "monthly": [
+      {
+       "label": "Jan",
+       "adr": 457,
+       "occupancy": 42,
+       "revenue": 5886
+      },
+      {
+       "label": "Feb",
+       "adr": 457,
+       "occupancy": 44,
+       "revenue": 5649
+      },
+      {
+       "label": "Mar",
+       "adr": 517,
+       "occupancy": 51,
+       "revenue": 8210
+      },
+      {
+       "label": "Apr",
+       "adr": 600,
+       "occupancy": 58,
+       "revenue": 10362
+      },
+      {
+       "label": "May",
+       "adr": 624,
+       "occupancy": 61,
+       "revenue": 11742
+      },
+      {
+       "label": "Jun",
+       "adr": 673,
+       "occupancy": 64,
+       "revenue": 12944
+      },
+      {
+       "label": "Jul",
+       "adr": 722,
+       "occupancy": 68,
+       "revenue": 15228
+      },
+      {
+       "label": "Aug",
+       "adr": 734,
+       "occupancy": 69,
+       "revenue": 15726
+      },
+      {
+       "label": "Sep",
+       "adr": 636,
+       "occupancy": 62,
+       "revenue": 11853
+      },
+      {
+       "label": "Oct",
+       "adr": 616,
+       "occupancy": 51,
+       "revenue": 9819
+      },
+      {
+       "label": "Nov",
+       "adr": 505,
+       "occupancy": 47,
+       "revenue": 7191
+      },
+      {
+       "label": "Dec",
+       "adr": 643,
+       "occupancy": 55,
+       "revenue": 10878
+      }
+     ]
+    },
+    "base": {
+     "annualRevenue": 131764,
+     "averageDailyRate": 599,
+     "occupancyPercent": 59,
+     "monthly": [
+      {
+       "label": "Jan",
+       "adr": 457,
+       "occupancy": 44,
+       "revenue": 6181
+      },
+      {
+       "label": "Feb",
+       "adr": 457,
+       "occupancy": 46,
+       "revenue": 5931
+      },
+      {
+       "label": "Mar",
+       "adr": 517,
+       "occupancy": 54,
+       "revenue": 8621
+      },
+      {
+       "label": "Apr",
+       "adr": 600,
+       "occupancy": 60,
+       "revenue": 10880
+      },
+      {
+       "label": "May",
+       "adr": 624,
+       "occupancy": 64,
+       "revenue": 12330
+      },
+      {
+       "label": "Jun",
+       "adr": 673,
+       "occupancy": 67,
+       "revenue": 13591
+      },
+      {
+       "label": "Jul",
+       "adr": 722,
+       "occupancy": 71,
+       "revenue": 15989
+      },
+      {
+       "label": "Aug",
+       "adr": 734,
+       "occupancy": 73,
+       "revenue": 16512
+      },
+      {
+       "label": "Sep",
+       "adr": 636,
+       "occupancy": 65,
+       "revenue": 12446
+      },
+      {
+       "label": "Oct",
+       "adr": 616,
+       "occupancy": 54,
+       "revenue": 10310
+      },
+      {
+       "label": "Nov",
+       "adr": 505,
+       "occupancy": 50,
+       "revenue": 7551
+      },
+      {
+       "label": "Dec",
+       "adr": 643,
+       "occupancy": 57,
+       "revenue": 11422
+      }
+     ]
+    },
+    "best": {
+     "annualRevenue": 138350,
+     "averageDailyRate": 629,
+     "occupancyPercent": 59,
+     "monthly": [
+      {
+       "label": "Jan",
+       "adr": 480,
+       "occupancy": 44,
+       "revenue": 6490
+      },
+      {
+       "label": "Feb",
+       "adr": 480,
+       "occupancy": 46,
+       "revenue": 6228
+      },
+      {
+       "label": "Mar",
+       "adr": 542,
+       "occupancy": 54,
+       "revenue": 9052
+      },
+      {
+       "label": "Apr",
+       "adr": 630,
+       "occupancy": 60,
+       "revenue": 11424
+      },
+      {
+       "label": "May",
+       "adr": 655,
+       "occupancy": 64,
+       "revenue": 12946
+      },
+      {
+       "label": "Jun",
+       "adr": 707,
+       "occupancy": 67,
+       "revenue": 14270
+      },
+      {
+       "label": "Jul",
+       "adr": 758,
+       "occupancy": 71,
+       "revenue": 16788
+      },
+      {
+       "label": "Aug",
+       "adr": 771,
+       "occupancy": 73,
+       "revenue": 17338
+      },
+      {
+       "label": "Sep",
+       "adr": 668,
+       "occupancy": 65,
+       "revenue": 13068
+      },
+      {
+       "label": "Oct",
+       "adr": 647,
+       "occupancy": 54,
+       "revenue": 10825
+      },
+      {
+       "label": "Nov",
+       "adr": 531,
+       "occupancy": 50,
+       "revenue": 7928
+      },
+      {
+       "label": "Dec",
+       "adr": 675,
+       "occupancy": 57,
+       "revenue": 11993
+      }
+     ]
+    }
+   },
+   "locationClass": "rural_village",
+   "adrMultipliers": {
+    "total": 1,
+    "location": 1,
+    "propertyType": 1,
+    "outdoorSpace": 1,
+    "parking": 1,
+    "condition": 1,
+    "specialFeatures": 0,
+    "baseAdrPreMult": 467,
+    "finalAdr": 467
+   },
+   "annualisationMeta": {
+    "compsAnnualised": 0,
+    "compsMature": 12,
+    "seasonalDataSource": "airbtics_market"
+   }
+  },
+  "quality": {
+   "comparablesFound": 12,
+   "comparablesTarget": 12,
+   "searchRadiusKm": 3,
+   "searchBroadened": false,
+   "level": "high",
+   "disclaimer": null
+  }
+ },
+ "coastal-ct10": {
+  "data": {
+   "annualRevenue": 31804,
+   "monthlyRevenue": [
+    1822,
+    1749,
+    2191,
+    2459,
+    2780,
+    3218,
+    3815,
+    3934,
+    2935,
+    2395,
+    1920,
+    2586
+   ],
+   "occupancyRate": 0.78,
+   "averageDailyRate": 110,
+   "activeListings": 12,
+   "comparables": [
+    {
+     "title": "1 bed home c4",
+     "url": "https://www.airbnb.co.uk/rooms/c4",
+     "bedrooms": 1,
+     "accommodates": 2,
+     "averageDailyRate": 159,
+     "occupancyRate": 0.98,
+     "annualRevenue": 19443,
+     "distance": 0.21,
+     "rating": 4.8,
+     "reviewCount": 25,
+     "listingAge": 0,
+     "daysAvailable": 122,
+     "amenityCount": 1
+    },
+    {
+     "title": "1 bed home c1",
+     "url": "https://www.airbnb.co.uk/rooms/c1",
+     "bedrooms": 1,
+     "accommodates": 2,
+     "averageDailyRate": 97,
+     "occupancyRate": 0.78,
+     "annualRevenue": 28345,
+     "distance": 0.33,
+     "rating": 4.8,
+     "reviewCount": 25,
+     "listingAge": 0,
+     "daysAvailable": 365,
+     "amenityCount": 1
+    },
+    {
+     "title": "1 bed home c3",
+     "url": "https://www.airbnb.co.uk/rooms/c3",
+     "bedrooms": 1,
+     "accommodates": 3,
+     "averageDailyRate": 90,
+     "occupancyRate": 0.83,
+     "annualRevenue": 28016,
+     "distance": 0.35,
+     "rating": 4.8,
+     "reviewCount": 25,
+     "listingAge": 0,
+     "daysAvailable": 365,
+     "amenityCount": 1
+    },
+    {
+     "title": "1 bed home c2",
+     "url": "https://www.airbnb.co.uk/rooms/c2",
+     "bedrooms": 1,
+     "accommodates": 2,
+     "averageDailyRate": 123,
+     "occupancyRate": 0.7,
+     "annualRevenue": 32498,
+     "distance": 0.44,
+     "rating": 4.8,
+     "reviewCount": 25,
+     "listingAge": 0,
+     "daysAvailable": 365,
+     "amenityCount": 1
+    },
+    {
+     "title": "1 bed home c5",
+     "url": "https://www.airbnb.co.uk/rooms/c5",
+     "bedrooms": 1,
+     "accommodates": 2,
+     "averageDailyRate": 103,
+     "occupancyRate": 0.74,
+     "annualRevenue": 28835,
+     "distance": 0.67,
+     "rating": 4.8,
+     "reviewCount": 25,
+     "listingAge": 0,
+     "daysAvailable": 365,
+     "amenityCount": 1
+    },
+    {
+     "title": "1 bed home c8",
+     "url": "https://www.airbnb.co.uk/rooms/c8",
+     "bedrooms": 1,
+     "accommodates": 2,
+     "averageDailyRate": 164,
+     "occupancyRate": 0.66,
+     "annualRevenue": 40614,
+     "distance": 0.69,
+     "rating": 4.8,
+     "reviewCount": 25,
+     "listingAge": 0,
+     "daysAvailable": 365,
+     "amenityCount": 1
+    },
+    {
+     "title": "1 bed home c6",
+     "url": "https://www.airbnb.co.uk/rooms/c6",
+     "bedrooms": 1,
+     "accommodates": 2,
+     "averageDailyRate": 113,
+     "occupancyRate": 0.6,
+     "annualRevenue": 25399,
+     "distance": 0.83,
+     "rating": 4.8,
+     "reviewCount": 25,
+     "listingAge": 0,
+     "daysAvailable": 365,
+     "amenityCount": 1
+    },
+    {
+     "title": "1 bed home c11",
+     "url": "https://www.airbnb.co.uk/rooms/c11",
+     "bedrooms": 1,
+     "accommodates": 2,
+     "averageDailyRate": 118,
+     "occupancyRate": 0.73,
+     "annualRevenue": 32508,
+     "distance": 0.83,
+     "rating": 4.8,
+     "reviewCount": 25,
+     "listingAge": 0,
+     "daysAvailable": 365,
+     "amenityCount": 1
+    },
+    {
+     "title": "0 bed home c7",
+     "url": "https://www.airbnb.co.uk/rooms/c7",
+     "bedrooms": 0,
+     "accommodates": 2,
+     "averageDailyRate": 82,
+     "occupancyRate": 0.8,
+     "annualRevenue": 24485,
+     "distance": 1,
+     "rating": 4.8,
+     "reviewCount": 25,
+     "listingAge": 0,
+     "daysAvailable": 365,
+     "amenityCount": 1
+    },
+    {
+     "title": "1 bed home c9",
+     "url": "https://www.airbnb.co.uk/rooms/c9",
+     "bedrooms": 1,
+     "accommodates": 1,
+     "averageDailyRate": 77,
+     "occupancyRate": 0.71,
+     "annualRevenue": 20517,
+     "distance": 1.11,
+     "rating": 4.8,
+     "reviewCount": 25,
+     "listingAge": 0,
+     "daysAvailable": 365,
+     "amenityCount": 1
+    },
+    {
+     "title": "1 bed home c10",
+     "url": "https://www.airbnb.co.uk/rooms/c10",
+     "bedrooms": 1,
+     "accommodates": 2,
+     "averageDailyRate": 109,
+     "occupancyRate": 0.85,
+     "annualRevenue": 17685,
+     "distance": 1.33,
+     "rating": 4.8,
+     "reviewCount": 25,
+     "listingAge": 0,
+     "daysAvailable": 184,
+     "amenityCount": 1
+    },
+    {
+     "title": "2 bed home c12",
+     "url": "https://www.airbnb.co.uk/rooms/c12",
+     "bedrooms": 2,
+     "accommodates": 2,
+     "averageDailyRate": 133,
+     "occupancyRate": 0.64,
+     "annualRevenue": 32062,
+     "distance": 1.45,
+     "rating": 4.8,
+     "reviewCount": 25,
+     "listingAge": 0,
+     "daysAvailable": 365,
+     "amenityCount": 1
+    }
+   ],
+   "scenarios": {
+    "worst": {
+     "annualRevenue": 42744,
+     "averageDailyRate": 148,
+     "occupancyPercent": 78,
+     "monthly": [
+      {
+       "label": "Jan",
+       "adr": 128,
+       "occupancy": 62,
+       "revenue": 2449
+      },
+      {
+       "label": "Feb",
+       "adr": 128,
+       "occupancy": 66,
+       "revenue": 2351
+      },
+      {
+       "label": "Mar",
+       "adr": 134,
+       "occupancy": 71,
+       "revenue": 2945
+      },
+      {
+       "label": "Apr",
+       "adr": 143,
+       "occupancy": 77,
+       "revenue": 3305
+      },
+      {
+       "label": "May",
+       "adr": 147,
+       "occupancy": 82,
+       "revenue": 3736
+      },
+      {
+       "label": "Jun",
+       "adr": 163,
+       "occupancy": 88,
+       "revenue": 4325
+      },
+      {
+       "label": "Jul",
+       "adr": 175,
+       "occupancy": 95,
+       "revenue": 5127
+      },
+      {
+       "label": "Aug",
+       "adr": 178,
+       "occupancy": 96,
+       "revenue": 5287
+      },
+      {
+       "label": "Sep",
+       "adr": 154,
+       "occupancy": 85,
+       "revenue": 3945
+      },
+      {
+       "label": "Oct",
+       "adr": 138,
+       "occupancy": 75,
+       "revenue": 3219
+      },
+      {
+       "label": "Nov",
+       "adr": 131,
+       "occupancy": 66,
+       "revenue": 2580
+      },
+      {
+       "label": "Dec",
+       "adr": 152,
+       "occupancy": 74,
+       "revenue": 3475
+      }
+     ]
+    },
+    "base": {
+     "annualRevenue": 44844,
+     "averageDailyRate": 148,
+     "occupancyPercent": 82,
+     "monthly": [
+      {
+       "label": "Jan",
+       "adr": 128,
+       "occupancy": 65,
+       "revenue": 2572
+      },
+      {
+       "label": "Feb",
+       "adr": 128,
+       "occupancy": 69,
+       "revenue": 2469
+      },
+      {
+       "label": "Mar",
+       "adr": 134,
+       "occupancy": 75,
+       "revenue": 3092
+      },
+      {
+       "label": "Apr",
+       "adr": 143,
+       "occupancy": 81,
+       "revenue": 3470
+      },
+      {
+       "label": "May",
+       "adr": 147,
+       "occupancy": 86,
+       "revenue": 3923
+      },
+      {
+       "label": "Jun",
+       "adr": 163,
+       "occupancy": 93,
+       "revenue": 4541
+      },
+      {
+       "label": "Jul",
+       "adr": 175,
+       "occupancy": 99,
+       "revenue": 5383
+      },
+      {
+       "label": "Aug",
+       "adr": 178,
+       "occupancy": 100,
+       "revenue": 5514
+      },
+      {
+       "label": "Sep",
+       "adr": 154,
+       "occupancy": 90,
+       "revenue": 4142
+      },
+      {
+       "label": "Oct",
+       "adr": 138,
+       "occupancy": 79,
+       "revenue": 3380
+      },
+      {
+       "label": "Nov",
+       "adr": 131,
+       "occupancy": 69,
+       "revenue": 2709
+      },
+      {
+       "label": "Dec",
+       "adr": 152,
+       "occupancy": 78,
+       "revenue": 3649
+      }
+     ]
+    },
+    "best": {
+     "annualRevenue": 47085,
+     "averageDailyRate": 155,
+     "occupancyPercent": 82,
+     "monthly": [
+      {
+       "label": "Jan",
+       "adr": 134,
+       "occupancy": 65,
+       "revenue": 2700
+      },
+      {
+       "label": "Feb",
+       "adr": 134,
+       "occupancy": 69,
+       "revenue": 2592
+      },
+      {
+       "label": "Mar",
+       "adr": 140,
+       "occupancy": 75,
+       "revenue": 3247
+      },
+      {
+       "label": "Apr",
+       "adr": 150,
+       "occupancy": 81,
+       "revenue": 3644
+      },
+      {
+       "label": "May",
+       "adr": 155,
+       "occupancy": 86,
+       "revenue": 4119
+      },
+      {
+       "label": "Jun",
+       "adr": 171,
+       "occupancy": 93,
+       "revenue": 4768
+      },
+      {
+       "label": "Jul",
+       "adr": 184,
+       "occupancy": 99,
+       "revenue": 5652
+      },
+      {
+       "label": "Aug",
+       "adr": 187,
+       "occupancy": 100,
+       "revenue": 5789
+      },
+      {
+       "label": "Sep",
+       "adr": 162,
+       "occupancy": 90,
+       "revenue": 4349
+      },
+      {
+       "label": "Oct",
+       "adr": 145,
+       "occupancy": 79,
+       "revenue": 3549
+      },
+      {
+       "label": "Nov",
+       "adr": 138,
+       "occupancy": 69,
+       "revenue": 2845
+      },
+      {
+       "label": "Dec",
+       "adr": 159,
+       "occupancy": 78,
+       "revenue": 3831
+      }
+     ]
+    }
+   },
+   "locationClass": "coastal",
+   "adrMultipliers": {
+    "total": 1,
+    "location": 1,
+    "propertyType": 1,
+    "outdoorSpace": 1,
+    "parking": 1,
+    "condition": 1,
+    "specialFeatures": 0,
+    "baseAdrPreMult": 110,
+    "finalAdr": 110
+   },
+   "annualisationMeta": {
+    "compsAnnualised": 0,
+    "compsMature": 12,
+    "seasonalDataSource": "airbtics_market"
+   }
+  },
+  "quality": {
+   "comparablesFound": 12,
+   "comparablesTarget": 12,
+   "searchRadiusKm": 3,
+   "searchBroadened": false,
+   "level": "high",
+   "disclaimer": null
+  }
+ },
+ "compressed-eh1": {
+  "data": {
+   "annualRevenue": 66194,
+   "monthlyRevenue": [
+    3858,
+    3704,
+    4644,
+    5202,
+    5884,
+    6550,
+    7769,
+    8010,
+    5963,
+    5072,
+    4063,
+    5475
+   ],
+   "occupancyRate": 0.77,
+   "averageDailyRate": 231,
+   "activeListings": 12,
+   "comparables": [
+    {
+     "title": "2 bed home e3",
+     "url": "https://www.airbnb.co.uk/rooms/e3",
+     "bedrooms": 2,
+     "accommodates": 5,
+     "averageDailyRate": 266,
+     "occupancyRate": 0.74,
+     "annualRevenue": 74243,
+     "distance": 0.19,
+     "rating": 4.8,
+     "reviewCount": 25,
+     "listingAge": 0,
+     "daysAvailable": 365,
+     "amenityCount": 1
+    },
+    {
+     "title": "2 bed home e4",
+     "url": "https://www.airbnb.co.uk/rooms/e4",
+     "bedrooms": 2,
+     "accommodates": 4,
+     "averageDailyRate": 179,
+     "occupancyRate": 0.83,
+     "annualRevenue": 56073,
+     "distance": 0.19,
+     "rating": 4.8,
+     "reviewCount": 25,
+     "listingAge": 0,
+     "daysAvailable": 365,
+     "amenityCount": 1
+    },
+    {
+     "title": "2 bed home e1",
+     "url": "https://www.airbnb.co.uk/rooms/e1",
+     "bedrooms": 2,
+     "accommodates": 4,
+     "averageDailyRate": 215,
+     "occupancyRate": 0.8,
+     "annualRevenue": 64840,
+     "distance": 0.22,
+     "rating": 4.8,
+     "reviewCount": 25,
+     "listingAge": 0,
+     "daysAvailable": 365,
+     "amenityCount": 1
+    },
+    {
+     "title": "2 bed home e2",
+     "url": "https://www.airbnb.co.uk/rooms/e2",
+     "bedrooms": 2,
+     "accommodates": 4,
+     "averageDailyRate": 194,
+     "occupancyRate": 0.77,
+     "annualRevenue": 56477,
+     "distance": 0.22,
+     "rating": 4.8,
+     "reviewCount": 25,
+     "listingAge": 0,
+     "daysAvailable": 365,
+     "amenityCount": 1
+    },
+    {
+     "title": "2 bed home e7",
+     "url": "https://www.airbnb.co.uk/rooms/e7",
+     "bedrooms": 2,
+     "accommodates": 4,
+     "averageDailyRate": 223,
+     "occupancyRate": 0.92,
+     "annualRevenue": 32107,
+     "distance": 0.31,
+     "rating": 4.8,
+     "reviewCount": 25,
+     "listingAge": 0,
+     "daysAvailable": 153,
+     "amenityCount": 1
+    },
+    {
+     "title": "3 bed home e8",
+     "url": "https://www.airbnb.co.uk/rooms/e8",
+     "bedrooms": 3,
+     "accommodates": 4,
+     "averageDailyRate": 286,
+     "occupancyRate": 0.66,
+     "annualRevenue": 70463,
+     "distance": 0.31,
+     "rating": 4.8,
+     "reviewCount": 25,
+     "listingAge": 0,
+     "daysAvailable": 365,
+     "amenityCount": 1
+    },
+    {
+     "title": "1 bed home e5",
+     "url": "https://www.airbnb.co.uk/rooms/e5",
+     "bedrooms": 1,
+     "accommodates": 4,
+     "averageDailyRate": 164,
+     "occupancyRate": 0.8,
+     "annualRevenue": 49015,
+     "distance": 0.44,
+     "rating": 4.8,
+     "reviewCount": 25,
+     "listingAge": 0,
+     "daysAvailable": 365,
+     "amenityCount": 1
+    },
+    {
+     "title": "2 bed home e6",
+     "url": "https://www.airbnb.co.uk/rooms/e6",
+     "bedrooms": 2,
+     "accommodates": 4,
+     "averageDailyRate": 245,
+     "occupancyRate": 0.69,
+     "annualRevenue": 63697,
+     "distance": 0.44,
+     "rating": 4.8,
+     "reviewCount": 25,
+     "listingAge": 0,
+     "daysAvailable": 365,
+     "amenityCount": 1
+    },
+    {
+     "title": "2 bed home e9",
+     "url": "https://www.airbnb.co.uk/rooms/e9",
+     "bedrooms": 2,
+     "accommodates": 3,
+     "averageDailyRate": 189,
+     "occupancyRate": 0.76,
+     "annualRevenue": 54378,
+     "distance": 0.67,
+     "rating": 4.8,
+     "reviewCount": 25,
+     "listingAge": 0,
+     "daysAvailable": 365,
+     "amenityCount": 1
+    },
+    {
+     "title": "2 bed home e10",
+     "url": "https://www.airbnb.co.uk/rooms/e10",
+     "bedrooms": 2,
+     "accommodates": 4,
+     "averageDailyRate": 210,
+     "occupancyRate": 0.78,
+     "annualRevenue": 61109,
+     "distance": 0.67,
+     "rating": 4.8,
+     "reviewCount": 25,
+     "listingAge": 0,
+     "daysAvailable": 365,
+     "amenityCount": 1
+    },
+    {
+     "title": "2 bed home e11",
+     "url": "https://www.airbnb.co.uk/rooms/e11",
+     "bedrooms": 2,
+     "accommodates": 4,
+     "averageDailyRate": 235,
+     "occupancyRate": 0.72,
+     "annualRevenue": 63696,
+     "distance": 0.79,
+     "rating": 4.8,
+     "reviewCount": 25,
+     "listingAge": 0,
+     "daysAvailable": 365,
+     "amenityCount": 1
+    },
+    {
+     "title": "2 bed home e12",
+     "url": "https://www.airbnb.co.uk/rooms/e12",
+     "bedrooms": 2,
+     "accommodates": 4,
+     "averageDailyRate": 199,
+     "occupancyRate": 0.84,
+     "annualRevenue": 62652,
+     "distance": 0.79,
+     "rating": 4.8,
+     "reviewCount": 25,
+     "listingAge": 0,
+     "daysAvailable": 365,
+     "amenityCount": 1
+    }
+   ],
+   "scenarios": {
+    "worst": {
+     "annualRevenue": 69505,
+     "averageDailyRate": 243,
+     "occupancyPercent": 77,
+     "monthly": [
+      {
+       "label": "Jan",
+       "adr": 212,
+       "occupancy": 62,
+       "revenue": 4051
+      },
+      {
+       "label": "Feb",
+       "adr": 212,
+       "occupancy": 66,
+       "revenue": 3889
+      },
+      {
+       "label": "Mar",
+       "adr": 222,
+       "occupancy": 71,
+       "revenue": 4877
+      },
+      {
+       "label": "Apr",
+       "adr": 236,
+       "occupancy": 77,
+       "revenue": 5463
+      },
+      {
+       "label": "May",
+       "adr": 245,
+       "occupancy": 81,
+       "revenue": 6178
+      },
+      {
+       "label": "Jun",
+       "adr": 264,
+       "occupancy": 87,
+       "revenue": 6877
+      },
+      {
+       "label": "Jul",
+       "adr": 283,
+       "occupancy": 93,
+       "revenue": 8158
+      },
+      {
+       "label": "Aug",
+       "adr": 288,
+       "occupancy": 94,
+       "revenue": 8410
+      },
+      {
+       "label": "Sep",
+       "adr": 249,
+       "occupancy": 84,
+       "revenue": 6261
+      },
+      {
+       "label": "Oct",
+       "adr": 229,
+       "occupancy": 75,
+       "revenue": 5326
+      },
+      {
+       "label": "Nov",
+       "adr": 217,
+       "occupancy": 66,
+       "revenue": 4266
+      },
+      {
+       "label": "Dec",
+       "adr": 253,
+       "occupancy": 73,
+       "revenue": 5749
+      }
+     ]
+    },
+    "base": {
+     "annualRevenue": 72981,
+     "averageDailyRate": 243,
+     "occupancyPercent": 81,
+     "monthly": [
+      {
+       "label": "Jan",
+       "adr": 212,
+       "occupancy": 65,
+       "revenue": 4254
+      },
+      {
+       "label": "Feb",
+       "adr": 212,
+       "occupancy": 69,
+       "revenue": 4083
+      },
+      {
+       "label": "Mar",
+       "adr": 222,
+       "occupancy": 75,
+       "revenue": 5121
+      },
+      {
+       "label": "Apr",
+       "adr": 236,
+       "occupancy": 81,
+       "revenue": 5736
+      },
+      {
+       "label": "May",
+       "adr": 245,
+       "occupancy": 86,
+       "revenue": 6487
+      },
+      {
+       "label": "Jun",
+       "adr": 264,
+       "occupancy": 91,
+       "revenue": 7221
+      },
+      {
+       "label": "Jul",
+       "adr": 283,
+       "occupancy": 98,
+       "revenue": 8566
+      },
+      {
+       "label": "Aug",
+       "adr": 288,
+       "occupancy": 99,
+       "revenue": 8831
+      },
+      {
+       "label": "Sep",
+       "adr": 249,
+       "occupancy": 88,
+       "revenue": 6574
+      },
+      {
+       "label": "Oct",
+       "adr": 229,
+       "occupancy": 79,
+       "revenue": 5592
+      },
+      {
+       "label": "Nov",
+       "adr": 217,
+       "occupancy": 69,
+       "revenue": 4480
+      },
+      {
+       "label": "Dec",
+       "adr": 253,
+       "occupancy": 77,
+       "revenue": 6036
+      }
+     ]
+    },
+    "best": {
+     "annualRevenue": 76631,
+     "averageDailyRate": 255,
+     "occupancyPercent": 81,
+     "monthly": [
+      {
+       "label": "Jan",
+       "adr": 222,
+       "occupancy": 65,
+       "revenue": 4467
+      },
+      {
+       "label": "Feb",
+       "adr": 222,
+       "occupancy": 69,
+       "revenue": 4288
+      },
+      {
+       "label": "Mar",
+       "adr": 233,
+       "occupancy": 75,
+       "revenue": 5377
+      },
+      {
+       "label": "Apr",
+       "adr": 248,
+       "occupancy": 81,
+       "revenue": 6023
+      },
+      {
+       "label": "May",
+       "adr": 257,
+       "occupancy": 86,
+       "revenue": 6812
+      },
+      {
+       "label": "Jun",
+       "adr": 277,
+       "occupancy": 91,
+       "revenue": 7582
+      },
+      {
+       "label": "Jul",
+       "adr": 297,
+       "occupancy": 98,
+       "revenue": 8994
+      },
+      {
+       "label": "Aug",
+       "adr": 302,
+       "occupancy": 99,
+       "revenue": 9272
+      },
+      {
+       "label": "Sep",
+       "adr": 262,
+       "occupancy": 88,
+       "revenue": 6902
+      },
+      {
+       "label": "Oct",
+       "adr": 240,
+       "occupancy": 79,
+       "revenue": 5872
+      },
+      {
+       "label": "Nov",
+       "adr": 228,
+       "occupancy": 69,
+       "revenue": 4704
+      },
+      {
+       "label": "Dec",
+       "adr": 266,
+       "occupancy": 77,
+       "revenue": 6338
+      }
+     ]
+    }
+   },
+   "locationClass": "urban",
+   "adrMultipliers": {
+    "total": 1,
+    "location": 1,
+    "propertyType": 1,
+    "outdoorSpace": 1,
+    "parking": 1,
+    "condition": 1,
+    "specialFeatures": 0,
+    "baseAdrPreMult": 231,
+    "finalAdr": 231
+   },
+   "annualisationMeta": {
+    "compsAnnualised": 0,
+    "compsMature": 12,
+    "seasonalDataSource": "airbtics_market"
+   }
+  },
+  "quality": {
+   "comparablesFound": 12,
+   "comparablesTarget": 12,
+   "searchRadiusKm": 3,
+   "searchBroadened": false,
+   "level": "high",
+   "disclaimer": null
+  }
+ },
+ "boost-m1": {
+  "data": {
+   "annualRevenue": 40814,
+   "monthlyRevenue": [
+    2378,
+    2287,
+    2858,
+    3208,
+    3625,
+    4037,
+    4789,
+    4951,
+    3677,
+    3123,
+    2508,
+    3373
+   ],
+   "occupancyRate": 0.72,
+   "averageDailyRate": 154,
+   "activeListings": 12,
+   "comparables": [
+    {
+     "title": "2 bed home m3",
+     "url": "https://www.airbnb.co.uk/rooms/m3",
+     "bedrooms": 2,
+     "accommodates": 6,
+     "averageDailyRate": 118,
+     "occupancyRate": 0.75,
+     "annualRevenue": 33209,
+     "distance": 0.2,
+     "rating": 4.8,
+     "reviewCount": 25,
+     "listingAge": 0,
+     "daysAvailable": 365,
+     "amenityCount": 1
+    },
+    {
+     "title": "2 bed home m4",
+     "url": "https://www.airbnb.co.uk/rooms/m4",
+     "bedrooms": 2,
+     "accommodates": 6,
+     "averageDailyRate": 138,
+     "occupancyRate": 0.66,
+     "annualRevenue": 34275,
+     "distance": 0.2,
+     "rating": 4.8,
+     "reviewCount": 25,
+     "listingAge": 0,
+     "daysAvailable": 365,
+     "amenityCount": 1
+    },
+    {
+     "title": "2 bed home m1",
+     "url": "https://www.airbnb.co.uk/rooms/m1",
+     "bedrooms": 2,
+     "accommodates": 6,
+     "averageDailyRate": 123,
+     "occupancyRate": 0.72,
+     "annualRevenue": 33254,
+     "distance": 0.22,
+     "rating": 4.8,
+     "reviewCount": 25,
+     "listingAge": 0,
+     "daysAvailable": 365,
+     "amenityCount": 1
+    },
+    {
+     "title": "2 bed home m2",
+     "url": "https://www.airbnb.co.uk/rooms/m2",
+     "bedrooms": 2,
+     "accommodates": 6,
+     "averageDailyRate": 131,
+     "occupancyRate": 0.7,
+     "annualRevenue": 34669,
+     "distance": 0.22,
+     "rating": 4.8,
+     "reviewCount": 25,
+     "listingAge": 0,
+     "daysAvailable": 365,
+     "amenityCount": 1
+    },
+    {
+     "title": "2 bed home m7",
+     "url": "https://www.airbnb.co.uk/rooms/m7",
+     "bedrooms": 2,
+     "accommodates": 6,
+     "averageDailyRate": 128,
+     "occupancyRate": 0.71,
+     "annualRevenue": 34156,
+     "distance": 0.33,
+     "rating": 4.8,
+     "reviewCount": 25,
+     "listingAge": 0,
+     "daysAvailable": 365,
+     "amenityCount": 1
+    },
+    {
+     "title": "2 bed home m8",
+     "url": "https://www.airbnb.co.uk/rooms/m8",
+     "bedrooms": 2,
+     "accommodates": 6,
+     "averageDailyRate": 121,
+     "occupancyRate": 0.74,
+     "annualRevenue": 33723,
+     "distance": 0.33,
+     "rating": 4.8,
+     "reviewCount": 25,
+     "listingAge": 0,
+     "daysAvailable": 365,
+     "amenityCount": 1
+    },
+    {
+     "title": "2 bed home m5",
+     "url": "https://www.airbnb.co.uk/rooms/m5",
+     "bedrooms": 2,
+     "accommodates": 6,
+     "averageDailyRate": 113,
+     "occupancyRate": 0.78,
+     "annualRevenue": 32804,
+     "distance": 0.44,
+     "rating": 4.8,
+     "reviewCount": 25,
+     "listingAge": 0,
+     "daysAvailable": 365,
+     "amenityCount": 1
+    },
+    {
+     "title": "3 bed home m6",
+     "url": "https://www.airbnb.co.uk/rooms/m6",
+     "bedrooms": 3,
+     "accommodates": 6,
+     "averageDailyRate": 153,
+     "occupancyRate": 0.63,
+     "annualRevenue": 36500,
+     "distance": 0.44,
+     "rating": 4.8,
+     "reviewCount": 25,
+     "listingAge": 0,
+     "daysAvailable": 365,
+     "amenityCount": 1
+    },
+    {
+     "title": "2 bed home m9",
+     "url": "https://www.airbnb.co.uk/rooms/m9",
+     "bedrooms": 2,
+     "accommodates": 6,
+     "averageDailyRate": 125,
+     "occupancyRate": 0.69,
+     "annualRevenue": 32353,
+     "distance": 0.67,
+     "rating": 4.8,
+     "reviewCount": 25,
+     "listingAge": 0,
+     "daysAvailable": 365,
+     "amenityCount": 1
+    },
+    {
+     "title": "2 bed home m10",
+     "url": "https://www.airbnb.co.uk/rooms/m10",
+     "bedrooms": 2,
+     "accommodates": 6,
+     "averageDailyRate": 133,
+     "occupancyRate": 0.73,
+     "annualRevenue": 36707,
+     "distance": 0.67,
+     "rating": 4.8,
+     "reviewCount": 25,
+     "listingAge": 0,
+     "daysAvailable": 365,
+     "amenityCount": 1
+    },
+    {
+     "title": "2 bed home m11",
+     "url": "https://www.airbnb.co.uk/rooms/m11",
+     "bedrooms": 2,
+     "accommodates": 6,
+     "averageDailyRate": 114,
+     "occupancyRate": 0.76,
+     "annualRevenue": 32900,
+     "distance": 0.78,
+     "rating": 4.8,
+     "reviewCount": 25,
+     "listingAge": 0,
+     "daysAvailable": 365,
+     "amenityCount": 1
+    },
+    {
+     "title": "2 bed home m12",
+     "url": "https://www.airbnb.co.uk/rooms/m12",
+     "bedrooms": 2,
+     "accommodates": 6,
+     "averageDailyRate": 143,
+     "occupancyRate": 0.66,
+     "annualRevenue": 35242,
+     "distance": 0.78,
+     "rating": 4.8,
+     "reviewCount": 25,
+     "listingAge": 0,
+     "daysAvailable": 365,
+     "amenityCount": 1
+    }
+   ],
+   "scenarios": {
+    "worst": {
+     "annualRevenue": 46245,
+     "averageDailyRate": 174,
+     "occupancyPercent": 72,
+     "monthly": [
+      {
+       "label": "Jan",
+       "adr": 152,
+       "occupancy": 57,
+       "revenue": 2695
+      },
+      {
+       "label": "Feb",
+       "adr": 152,
+       "occupancy": 61,
+       "revenue": 2591
+      },
+      {
+       "label": "Mar",
+       "adr": 159,
+       "occupancy": 66,
+       "revenue": 3239
+      },
+      {
+       "label": "Apr",
+       "adr": 170,
+       "occupancy": 71,
+       "revenue": 3635
+      },
+      {
+       "label": "May",
+       "adr": 176,
+       "occupancy": 75,
+       "revenue": 4108
+      },
+      {
+       "label": "Jun",
+       "adr": 190,
+       "occupancy": 80,
+       "revenue": 4574
+      },
+      {
+       "label": "Jul",
+       "adr": 204,
+       "occupancy": 86,
+       "revenue": 5426
+      },
+      {
+       "label": "Aug",
+       "adr": 207,
+       "occupancy": 87,
+       "revenue": 5609
+      },
+      {
+       "label": "Sep",
+       "adr": 180,
+       "occupancy": 77,
+       "revenue": 4166
+      },
+      {
+       "label": "Oct",
+       "adr": 164,
+       "occupancy": 69,
+       "revenue": 3539
+      },
+      {
+       "label": "Nov",
+       "adr": 156,
+       "occupancy": 61,
+       "revenue": 2841
+      },
+      {
+       "label": "Dec",
+       "adr": 182,
+       "occupancy": 68,
+       "revenue": 3822
+      }
+     ]
+    },
+    "base": {
+     "annualRevenue": 48556,
+     "averageDailyRate": 174,
+     "occupancyPercent": 75,
+     "monthly": [
+      {
+       "label": "Jan",
+       "adr": 152,
+       "occupancy": 60,
+       "revenue": 2830
+      },
+      {
+       "label": "Feb",
+       "adr": 152,
+       "occupancy": 64,
+       "revenue": 2721
+      },
+      {
+       "label": "Mar",
+       "adr": 159,
+       "occupancy": 69,
+       "revenue": 3401
+      },
+      {
+       "label": "Apr",
+       "adr": 170,
+       "occupancy": 75,
+       "revenue": 3816
+      },
+      {
+       "label": "May",
+       "adr": 176,
+       "occupancy": 79,
+       "revenue": 4313
+      },
+      {
+       "label": "Jun",
+       "adr": 190,
+       "occupancy": 84,
+       "revenue": 4802
+      },
+      {
+       "label": "Jul",
+       "adr": 204,
+       "occupancy": 90,
+       "revenue": 5697
+      },
+      {
+       "label": "Aug",
+       "adr": 207,
+       "occupancy": 92,
+       "revenue": 5890
+      },
+      {
+       "label": "Sep",
+       "adr": 180,
+       "occupancy": 81,
+       "revenue": 4374
+      },
+      {
+       "label": "Oct",
+       "adr": 164,
+       "occupancy": 73,
+       "revenue": 3716
+      },
+      {
+       "label": "Nov",
+       "adr": 156,
+       "occupancy": 64,
+       "revenue": 2983
+      },
+      {
+       "label": "Dec",
+       "adr": 182,
+       "occupancy": 71,
+       "revenue": 4013
+      }
+     ]
+    },
+    "best": {
+     "annualRevenue": 50984,
+     "averageDailyRate": 183,
+     "occupancyPercent": 75,
+     "monthly": [
+      {
+       "label": "Jan",
+       "adr": 160,
+       "occupancy": 60,
+       "revenue": 2971
+      },
+      {
+       "label": "Feb",
+       "adr": 160,
+       "occupancy": 64,
+       "revenue": 2857
+      },
+      {
+       "label": "Mar",
+       "adr": 167,
+       "occupancy": 69,
+       "revenue": 3571
+      },
+      {
+       "label": "Apr",
+       "adr": 178,
+       "occupancy": 75,
+       "revenue": 4007
+      },
+      {
+       "label": "May",
+       "adr": 185,
+       "occupancy": 79,
+       "revenue": 4529
+      },
+      {
+       "label": "Jun",
+       "adr": 200,
+       "occupancy": 84,
+       "revenue": 5042
+      },
+      {
+       "label": "Jul",
+       "adr": 214,
+       "occupancy": 90,
+       "revenue": 5982
+      },
+      {
+       "label": "Aug",
+       "adr": 218,
+       "occupancy": 92,
+       "revenue": 6184
+      },
+      {
+       "label": "Sep",
+       "adr": 189,
+       "occupancy": 81,
+       "revenue": 4593
+      },
+      {
+       "label": "Oct",
+       "adr": 173,
+       "occupancy": 73,
+       "revenue": 3901
+      },
+      {
+       "label": "Nov",
+       "adr": 164,
+       "occupancy": 64,
+       "revenue": 3133
+      },
+      {
+       "label": "Dec",
+       "adr": 191,
+       "occupancy": 71,
+       "revenue": 4214
+      }
+     ]
+    }
+   },
+   "locationClass": "urban",
+   "adrMultipliers": {
+    "total": 1.061,
+    "location": 1,
+    "propertyType": 1,
+    "outdoorSpace": 1.03,
+    "parking": 1.03,
+    "condition": 1,
+    "specialFeatures": 0,
+    "baseAdrPreMult": 145,
+    "finalAdr": 154
+   },
+   "annualisationMeta": {
+    "compsAnnualised": 0,
+    "compsMature": 12,
+    "seasonalDataSource": "airbtics_market"
+   }
+  },
+  "quality": {
+   "comparablesFound": 12,
+   "comparablesTarget": 12,
+   "searchRadiusKm": 3,
+   "searchBroadened": false,
+   "level": "high",
+   "disclaimer": null
+  }
+ },
+ "thin-ls1": {
+  "data": {
+   "annualRevenue": 45765,
+   "monthlyRevenue": [
+    2663,
+    2561,
+    3198,
+    3596,
+    4053,
+    4557,
+    5363,
+    5519,
+    4160,
+    3490,
+    2809,
+    3796
+   ],
+   "occupancyRate": 0.66,
+   "averageDailyRate": 187,
+   "activeListings": 7,
+   "comparables": [
+    {
+     "title": "4 bed home t3",
+     "url": "https://www.airbnb.co.uk/rooms/t3",
+     "bedrooms": 4,
+     "accommodates": 8,
+     "averageDailyRate": 215,
+     "occupancyRate": 0.58,
+     "annualRevenue": 46919,
+     "distance": 0.26,
+     "rating": 4.8,
+     "reviewCount": 25,
+     "listingAge": 0,
+     "daysAvailable": 365,
+     "amenityCount": 1
+    },
+    {
+     "title": "3 bed home t4",
+     "url": "https://www.airbnb.co.uk/rooms/t4",
+     "bedrooms": 3,
+     "accommodates": 7,
+     "averageDailyRate": 654,
+     "occupancyRate": 0.61,
+     "annualRevenue": 150312,
+     "distance": 0.26,
+     "rating": 4.8,
+     "reviewCount": 25,
+     "listingAge": 0,
+     "daysAvailable": 365,
+     "amenityCount": 1
+    },
+    {
+     "title": "3 bed home t1",
+     "url": "https://www.airbnb.co.uk/rooms/t1",
+     "bedrooms": 3,
+     "accommodates": 8,
+     "averageDailyRate": 174,
+     "occupancyRate": 0.66,
+     "annualRevenue": 43193,
+     "distance": 0.33,
+     "rating": 4.8,
+     "reviewCount": 25,
+     "listingAge": 0,
+     "daysAvailable": 365,
+     "amenityCount": 1
+    },
+    {
+     "title": "3 bed home t2",
+     "url": "https://www.airbnb.co.uk/rooms/t2",
+     "bedrooms": 3,
+     "accommodates": 8,
+     "averageDailyRate": 159,
+     "occupancyRate": 0.7,
+     "annualRevenue": 41963,
+     "distance": 0.33,
+     "rating": 4.8,
+     "reviewCount": 25,
+     "listingAge": 0,
+     "daysAvailable": 365,
+     "amenityCount": 1
+    },
+    {
+     "title": "3 bed home t5",
+     "url": "https://www.airbnb.co.uk/rooms/t5",
+     "bedrooms": 3,
+     "accommodates": 8,
+     "averageDailyRate": 204,
+     "occupancyRate": 0.99,
+     "annualRevenue": 25370,
+     "distance": 0.56,
+     "rating": 4.8,
+     "reviewCount": 25,
+     "listingAge": 0,
+     "daysAvailable": 122,
+     "amenityCount": 1
+    },
+    {
+     "title": "3 bed home t6",
+     "url": "https://www.airbnb.co.uk/rooms/t6",
+     "bedrooms": 3,
+     "accommodates": 9,
+     "averageDailyRate": 169,
+     "occupancyRate": 0.64,
+     "annualRevenue": 40725,
+     "distance": 0.56,
+     "rating": 4.8,
+     "reviewCount": 25,
+     "listingAge": 0,
+     "daysAvailable": 365,
+     "amenityCount": 1
+    },
+    {
+     "title": "3 bed home t7",
+     "url": "https://www.airbnb.co.uk/rooms/t7",
+     "bedrooms": 3,
+     "accommodates": 8,
+     "averageDailyRate": 179,
+     "occupancyRate": 0.69,
+     "annualRevenue": 46501,
+     "distance": 27.8,
+     "rating": 4.8,
+     "reviewCount": 25,
+     "listingAge": 0,
+     "daysAvailable": 365,
+     "amenityCount": 1
+    }
+   ],
+   "scenarios": {
+    "worst": {
+     "annualRevenue": 48054,
+     "averageDailyRate": 197,
+     "occupancyPercent": 66,
+     "monthly": [
+      {
+       "label": "Jan",
+       "adr": 174,
+       "occupancy": 52,
+       "revenue": 2796
+      },
+      {
+       "label": "Feb",
+       "adr": 174,
+       "occupancy": 55,
+       "revenue": 2689
+      },
+      {
+       "label": "Mar",
+       "adr": 182,
+       "occupancy": 59,
+       "revenue": 3358
+      },
+      {
+       "label": "Apr",
+       "adr": 194,
+       "occupancy": 65,
+       "revenue": 3776
+      },
+      {
+       "label": "May",
+       "adr": 202,
+       "occupancy": 68,
+       "revenue": 4255
+      },
+      {
+       "label": "Jun",
+       "adr": 209,
+       "occupancy": 76,
+       "revenue": 4785
+      },
+      {
+       "label": "Jul",
+       "adr": 224,
+       "occupancy": 81,
+       "revenue": 5631
+      },
+      {
+       "label": "Aug",
+       "adr": 228,
+       "occupancy": 82,
+       "revenue": 5795
+      },
+      {
+       "label": "Sep",
+       "adr": 197,
+       "occupancy": 74,
+       "revenue": 4369
+      },
+      {
+       "label": "Oct",
+       "adr": 188,
+       "occupancy": 63,
+       "revenue": 3664
+      },
+      {
+       "label": "Nov",
+       "adr": 178,
+       "occupancy": 55,
+       "revenue": 2950
+      },
+      {
+       "label": "Dec",
+       "adr": 208,
+       "occupancy": 62,
+       "revenue": 3986
+      }
+     ]
+    },
+    "base": {
+     "annualRevenue": 50455,
+     "averageDailyRate": 197,
+     "occupancyPercent": 69,
+     "monthly": [
+      {
+       "label": "Jan",
+       "adr": 174,
+       "occupancy": 54,
+       "revenue": 2936
+      },
+      {
+       "label": "Feb",
+       "adr": 174,
+       "occupancy": 58,
+       "revenue": 2823
+      },
+      {
+       "label": "Mar",
+       "adr": 182,
+       "occupancy": 62,
+       "revenue": 3526
+      },
+      {
+       "label": "Apr",
+       "adr": 194,
+       "occupancy": 68,
+       "revenue": 3965
+      },
+      {
+       "label": "May",
+       "adr": 202,
+       "occupancy": 71,
+       "revenue": 4468
+      },
+      {
+       "label": "Jun",
+       "adr": 209,
+       "occupancy": 80,
+       "revenue": 5025
+      },
+      {
+       "label": "Jul",
+       "adr": 224,
+       "occupancy": 85,
+       "revenue": 5912
+      },
+      {
+       "label": "Aug",
+       "adr": 228,
+       "occupancy": 86,
+       "revenue": 6084
+      },
+      {
+       "label": "Sep",
+       "adr": 197,
+       "occupancy": 77,
+       "revenue": 4587
+      },
+      {
+       "label": "Oct",
+       "adr": 188,
+       "occupancy": 66,
+       "revenue": 3847
+      },
+      {
+       "label": "Nov",
+       "adr": 178,
+       "occupancy": 58,
+       "revenue": 3097
+      },
+      {
+       "label": "Dec",
+       "adr": 208,
+       "occupancy": 65,
+       "revenue": 4185
+      }
+     ]
+    },
+    "best": {
+     "annualRevenue": 52979,
+     "averageDailyRate": 206,
+     "occupancyPercent": 69,
+     "monthly": [
+      {
+       "label": "Jan",
+       "adr": 183,
+       "occupancy": 54,
+       "revenue": 3083
+      },
+      {
+       "label": "Feb",
+       "adr": 183,
+       "occupancy": 58,
+       "revenue": 2964
+      },
+      {
+       "label": "Mar",
+       "adr": 191,
+       "occupancy": 62,
+       "revenue": 3703
+      },
+      {
+       "label": "Apr",
+       "adr": 204,
+       "occupancy": 68,
+       "revenue": 4163
+      },
+      {
+       "label": "May",
+       "adr": 212,
+       "occupancy": 71,
+       "revenue": 4691
+      },
+      {
+       "label": "Jun",
+       "adr": 219,
+       "occupancy": 80,
+       "revenue": 5276
+      },
+      {
+       "label": "Jul",
+       "adr": 235,
+       "occupancy": 85,
+       "revenue": 6208
+      },
+      {
+       "label": "Aug",
+       "adr": 239,
+       "occupancy": 86,
+       "revenue": 6388
+      },
+      {
+       "label": "Sep",
+       "adr": 207,
+       "occupancy": 77,
+       "revenue": 4816
+      },
+      {
+       "label": "Oct",
+       "adr": 198,
+       "occupancy": 66,
+       "revenue": 4040
+      },
+      {
+       "label": "Nov",
+       "adr": 187,
+       "occupancy": 58,
+       "revenue": 3252
+      },
+      {
+       "label": "Dec",
+       "adr": 218,
+       "occupancy": 65,
+       "revenue": 4395
+      }
+     ]
+    }
+   },
+   "locationClass": "urban",
+   "adrMultipliers": {
+    "total": 1,
+    "location": 1,
+    "propertyType": 1,
+    "outdoorSpace": 1,
+    "parking": 1,
+    "condition": 1,
+    "specialFeatures": 0,
+    "baseAdrPreMult": 187,
+    "finalAdr": 187
+   },
+   "annualisationMeta": {
+    "compsAnnualised": 0,
+    "compsMature": 7,
+    "seasonalDataSource": "airbtics_market"
+   }
+  },
+  "quality": {
+   "comparablesFound": 7,
+   "comparablesTarget": 12,
+   "searchRadiusKm": 3,
+   "searchBroadened": false,
+   "level": "moderate",
+   "disclaimer": "7 comparable properties (accommodating ~8 guests) were found within 3km. Data accuracy may be slightly reduced. This could indicate a unique property type for the area, which is often advantageous for short-term letting."
+  }
+ },
+ "none-ng7": {
+  "data": {
+   "annualRevenue": 28105,
+   "monthlyRevenue": [
+    1921,
+    1991,
+    2225,
+    2342,
+    2529,
+    2764,
+    2928,
+    2857,
+    2576,
+    2295,
+    2061,
+    1874
+   ],
+   "occupancyRate": 0.7,
+   "averageDailyRate": 110,
+   "activeListings": 0,
+   "comparables": []
+  },
+  "quality": {
+   "comparablesFound": 0,
+   "comparablesTarget": 12,
+   "searchRadiusKm": 3,
+   "searchBroadened": false,
+   "level": "low",
+   "disclaimer": "No comparable properties accommodating ~6 guests were found. Market-level estimates have been used. Book a web meeting with Stayful for accurate, personalised revenue projections."
+  }
+ }
+}
