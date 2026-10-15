@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "node --import ./scripts/register-test-resolver.mjs --test 'src/**/*.test.ts'"
+    "test": "node --import ./scripts/register-test-resolver.mjs --test 'src/**/*.test.ts'",
+    "backtest": "node --import ./scripts/register-test-resolver.mjs scripts/backtest.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.3.0",

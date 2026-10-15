@@ -44,3 +44,6 @@ scripts/calibration-results.json
 
 # Local output from scripts/render-pdf-sample.mts
 .pdf-preview/
+
+# Local data + output from scripts/backtest-fetch.mjs / scripts/backtest.mjs
+scripts/.backtest-data/
