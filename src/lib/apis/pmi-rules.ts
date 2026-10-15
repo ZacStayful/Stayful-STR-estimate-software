@@ -165,7 +165,8 @@ export const MIN_FULLTIME_COMPS = 5;
 //   'wide'  — the whole guest-matched list, keeping the first 12 full-time
 //             comps in the same review-tier → distance order.
 // The displayed comparables are the same 12 either way. Chosen by backtest
-// (scripts/backtest.mjs) — see the PR for the numbers.
+// (npm run backtest; 365 cached reports, 5,335 leave-one-out subjects):
+// 'shown' 44.9% within ±25% / 28.4% median abs error vs 'wide' 44.5% / 28.6%.
 export const FULLTIME_POOL_SCOPE: 'shown' | 'wide' = 'shown';
 
 // Downward mirror of BED_GAP_BOOST_PER_BED: when the subject has fewer

@@ -72,6 +72,10 @@ function formatPostcode(compact) {
 const areaOf = (postcode) => (postcode.match(/^[A-Z]{1,2}/) ?? ['?'])[0];
 const bedBucket = (b) => (b >= 6 ? '6+' : String(b));
 const MONTH_KEY = /^\d{4}-\d{2}$/;
+const CONSISTENT_TOLERANCE = 0.25;
+// A segment is flagged when the shipped NEW is at least this much worse than
+// OLD on share-within-±25% or on median absolute error (percentage points).
+const MATERIAL = 0.03;
 
 function loadReports() {
   if (!existsSync(REPORTS)) return [];
@@ -201,10 +205,16 @@ for (const file of reports) {
 
     const rest = { ...report, comps: report.comps.filter((c) => c !== comp) };
     const subject = { bedrooms: beds, guests, lat: comp.latitude, lng: comp.longitude, postcode, locationClass };
+    const last12 = keys.slice(-12).reduce((sum, k) => sum + (comp.revenue_ltm_monthly[k] ?? 0), 0);
     const row = {
       cacheKey: file.cache_key, listingID: comp.listingID, name: comp.name, area: areaOf(postcode),
       locationClass, beds, guests, actual, byMonths: cls.byMonths, byOperator: cls.byOperator,
-      pred: {}, err: {}, path: {}, ceilingApplied: {},
+      // The monthly series lags annual_revenue_ltm by months. Where the two
+      // disagree by more than 25% the listing changed how much it traded in
+      // between (opened, paused, delisted), so its "actual" is not a clean
+      // full-year figure.
+      consistent: Math.abs(last12 - actual) / actual <= CONSISTENT_TOLERANCE,
+      pred: {}, err: {}, path: {}, ceilingApplied: {}, bedShrink: {},
     };
     for (const v of VERSIONS) {
       const r = predict(rest, subject, v.run);
@@ -212,6 +222,7 @@ for (const file of reports) {
       row.err[v.key] = (r.data.annualRevenue - actual) / actual;
       row.path[v.key] = r.data.incomeModel?.path ?? (v.key === 'old' ? 'legacy' : 'no_comps');
       row.ceilingApplied[v.key] = r.data.incomeModel?.ceiling.applied ?? false;
+      row.bedShrink[v.key] = /bed_gap_shrink/.test(r.data.incomeModel?.subjectAdjustment.reason ?? '');
     }
     Object.defineProperty(row, 'inputs', { value: { rest, subject }, enumerable: false });
     rows.push(row);
@@ -240,20 +251,30 @@ p();
 p(`Reports: **${reports.length}** cached Airbtics reports, **${compsTotal}** raw comps. Latest month in the monthly series: ${monthlyMax}.`);
 p(`Leave-one-out subjects (whole homes, full-time, ≥12 months of monthly data, deduplicated): **${rows.length}**.`);
 p();
+function overallTable(subset) {
+  p('| Version | n | within ±15% | within ±25% | median abs error | mean bias | median bias |');
+  p('|---|---:|---:|---:|---:|---:|---:|');
+  for (const v of [...VERSIONS, { ...EXPERIMENT, label: `${EXPERIMENT.label} (${winnerLabel}, not shipped)` }]) {
+    const m = metrics(subset, v.key);
+    p(`| ${v.label} | ${m.n} | ${pct(m.within15)} | ${pct(m.within25)} | ${pct(m.medianAbsErr)} | ${signed(m.meanBias)} | ${signed(m.medianBias)} |`);
+  }
+  p();
+}
+const consistentRows = rows.filter((r) => r.consistent);
 p('## Overall');
 p();
-p('| Version | n | within ±15% | within ±25% | median abs error | mean bias | median bias |');
-p('|---|---:|---:|---:|---:|---:|---:|');
-for (const v of [...VERSIONS, { ...EXPERIMENT, label: `${EXPERIMENT.label} (${winnerLabel}, not shipped)` }]) {
-  const m = overall[v.key];
-  p(`| ${v.label} | ${m.n} | ${pct(m.within15)} | ${pct(m.within25)} | ${pct(m.medianAbsErr)} | ${signed(m.meanBias)} | ${signed(m.medianBias)} |`);
-}
+overallTable(rows);
+p(`### Subjects whose monthly data agrees with their annual revenue (±${CONSISTENT_TOLERANCE * 100}%)`);
 p();
+p(`${consistentRows.length} of ${rows.length} subjects. The rest opened, paused or delisted between Airbtics' monthly window and its annual figure, so their "actual" is not a clean full year.`);
+p();
+overallTable(consistentRows);
 p(`Better NEW scope: **${winnerLabel}** (higher share within ±25%, tie-break median abs error).`);
 for (const v of VERSIONS.slice(1)) {
   const share = rows.filter((r) => r.path[v.key] === 'fulltime').length / (rows.length || 1);
   const cap = rows.filter((r) => r.ceilingApplied[v.key]).length / (rows.length || 1);
-  p(`- ${v.label}: full-time path on ${pct(share)} of predictions (rest fall back to the old method); ceiling applied on ${pct(cap)}.`);
+  const shrink = rows.filter((r) => r.bedShrink[v.key]).length / (rows.length || 1);
+  p(`- ${v.label}: full-time path on ${pct(share)} of predictions (rest fall back to the old method); bedroom shrink on ${pct(shrink)}; ceiling applied on ${pct(cap)}.`);
 }
 p();
 
@@ -267,16 +288,17 @@ function breakdown(title, keyFn, order) {
   const keys = [...groups.keys()].sort(order ?? ((a, b) => groups.get(b).length - groups.get(a).length));
   p(`## By ${title}`);
   p();
-  p(`| ${title} | n | OLD ±25% | ${winnerLabel} ±25% | OLD med abs err | ${winnerLabel} med abs err | OLD bias | ${winnerLabel} bias | NEW worse? |`);
+  p(`| ${title} | n | OLD ±25% | ${winnerLabel} ±25% | OLD med abs err | ${winnerLabel} med abs err | OLD bias | ${winnerLabel} bias | NEW worse (≥${MATERIAL * 100} pts)? |`);
   p('|---|---:|---:|---:|---:|---:|---:|---:|---|');
   const worse = [];
   for (const k of keys) {
     const g = groups.get(k);
     const o = metrics(g, 'old');
     const w = metrics(g, winner);
-    const isWorse = g.length >= 10 && (w.within25 < o.within25 || w.medianAbsErr > o.medianAbsErr);
-    if (isWorse) worse.push(k);
-    p(`| ${k} | ${g.length} | ${pct(o.within25)} | ${pct(w.within25)} | ${pct(o.medianAbsErr)} | ${pct(w.medianAbsErr)} | ${signed(o.meanBias)} | ${signed(w.meanBias)} | ${isWorse ? '**yes**' : g.length < 10 ? '(n<10)' : ''} |`);
+    const material = g.length >= 10 && (o.within25 - w.within25 >= MATERIAL || w.medianAbsErr - o.medianAbsErr >= MATERIAL);
+    const slight = !material && g.length >= 10 && (w.within25 < o.within25 || w.medianAbsErr > o.medianAbsErr);
+    if (material) worse.push(k);
+    p(`| ${k} | ${g.length} | ${pct(o.within25)} | ${pct(w.within25)} | ${pct(o.medianAbsErr)} | ${pct(w.medianAbsErr)} | ${signed(o.meanBias)} | ${signed(w.meanBias)} | ${material ? '**yes**' : slight ? 'slightly' : g.length < 10 ? '(n<10)' : ''} |`);
   }
   p();
   return worse;
@@ -330,9 +352,9 @@ p('- Each hidden comp keeps its real guest count, not our bedrooms × 2 + 2 sofa
 p(`- Airbtics' monthly series ends ${monthlyMax}, months before the reports were created, so the "10 of the last 12 months" test looks at an older window than annual_revenue_ltm.`);
 p();
 if (worseArea.length || worseClass.length || worseBeds.length) {
-  p(`Segments (n ≥ 10) where ${winnerLabel} is worse than OLD: ${[...worseArea.map((x) => `area ${x}`), ...worseClass.map((x) => x), ...worseBeds.map((x) => `${x}-bed`)].join(', ')}.`);
+  p(`Segments (n ≥ 10) where ${winnerLabel} is materially worse than OLD (≥${MATERIAL * 100} points on ±25% share or median abs error): ${[...worseArea.map((x) => `area ${x}`), ...worseClass.map((x) => x), ...worseBeds.map((x) => `${x}-bed`)].join(', ')}.`);
 } else {
-  p(`No segment with n ≥ 10 where ${winnerLabel} is worse than OLD.`);
+  p(`No segment with n ≥ 10 where ${winnerLabel} is materially worse than OLD.`);
 }
 
 const md = lines.join('\n') + '\n';
