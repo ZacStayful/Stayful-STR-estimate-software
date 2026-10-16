@@ -106,6 +106,22 @@ function envConfig() {
   };
 }
 
+/**
+ * Board, columns and credential for the /report lookup (app/api/get-report),
+ * so it reads the same board and the same reports column the uploads write to.
+ * Null when Monday isn't configured.
+ */
+export function reportLookupConfig(): { token: string; boardId: string; emailColumnId: string; fileColumnId: string } | null {
+  const cfg = envConfig();
+  if (!cfg) return null;
+  return {
+    token: cfg.token,
+    boardId: cfg.boardId,
+    emailColumnId: cfg.emailColumnId,
+    fileColumnId: process.env.MONDAY_FILE_COLUMN_ID || DEFAULTS.fileColumnId,
+  };
+}
+
 async function mondayQuery<T>(token: string, query: string, variables: Record<string, unknown>): Promise<T | null> {
   try {
     const res = await fetch(MONDAY_API_URL, {
