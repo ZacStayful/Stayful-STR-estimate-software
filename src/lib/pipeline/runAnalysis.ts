@@ -32,6 +32,7 @@ import { getNearbyEvents } from '../apis/ticketmaster.ts';
 import { fetchPriceLabsRevenueEstimate, buildCrossValidation } from '../apis/pricelabs.ts';
 import { calculateFinancials, assessRisk, generateVerdict, getRecommendation, estimateLongLet } from '../analysis.ts';
 import type { NormalisedInput } from './input.ts';
+import type { Attribution } from '../linkParams.ts';
 import { persistAndSync, type SideEffectGate, type SideEffectOutcome } from './persist.ts';
 
 export interface ProgressEvent {
@@ -59,6 +60,10 @@ export interface RunAnalysisOptions {
   sideEffectGate?: SideEffectGate;
   /** Serialises the PDF render so concurrent rows can't OOM the function. */
   renderLock?: <T>(fn: () => Promise<T>) => Promise<T>;
+  /** Where the lead came from (link UTM tags and page). Live form only. */
+  attribution?: Attribution | null;
+  /** A test lead: skip the stored report and every Monday write. See ./persist. */
+  testLead?: boolean;
 }
 
 export type RunAnalysisOutcome =
@@ -114,6 +119,8 @@ export async function runAnalysis(
         requestId: options.requestId ?? null,
         gate: options.sideEffectGate,
         renderLock: options.renderLock,
+        attribution: options.attribution ?? null,
+        testLead: options.testLead === true,
       });
       return { ok: true, result, ...sideEffects };
     }
@@ -402,6 +409,8 @@ export async function runAnalysis(
       requestId: options.requestId ?? null,
       gate: options.sideEffectGate,
       renderLock: options.renderLock,
+      attribution: options.attribution ?? null,
+      testLead: options.testLead === true,
     });
 
     return { ok: true, result, ...sideEffects };

@@ -1,3 +1,6 @@
+> **Links from the website:** the calculator can be pre-filled and told where a lead came from through its link,
+> and test leads never touch Monday. See [docs/LINK_PARAMETERS.md](docs/LINK_PARAMETERS.md).
+
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
 ## Getting Started
