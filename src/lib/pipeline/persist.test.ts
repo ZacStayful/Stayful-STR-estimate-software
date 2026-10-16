@@ -13,6 +13,7 @@ const ENV_KEYS = ['MONDAY_API_TOKEN', 'MONDAY_API_KEY', 'SUPABASE_URL', 'SUPABAS
 
 let queries: string[] = [];
 let warnings: string[] = [];
+let output: string[] = [];
 const realFetch = globalThis.fetch;
 const realConsole = { warn: console.warn, log: console.log, error: console.error };
 const savedEnv: Record<string, string | undefined> = {};
@@ -29,10 +30,12 @@ function result() {
 }
 
 const noLeadLines = () => warnings.filter((w) => w.includes('No Monday lead found'));
+const emailLogged = () => output.some((line) => line.includes(EMAIL));
 
 beforeEach(() => {
   queries = [];
   warnings = [];
+  output = [];
   for (const key of ENV_KEYS) savedEnv[key] = process.env[key];
   for (const key of ENV_KEYS) delete process.env[key];
   process.env.MONDAY_API_TOKEN = 'test-token';
@@ -42,9 +45,15 @@ beforeEach(() => {
     queries.push(body.query ?? '');
     return new Response(JSON.stringify({ data: { items_page_by_column_values: { items: [] } } }));
   }) as typeof fetch;
-  console.warn = (...args: unknown[]) => { warnings.push(args.map(String).join(' ')); };
-  console.log = () => {};
-  console.error = () => {};
+  // Every log line is kept, so the tests can check that none of them holds the email.
+  const keep = (into: string[]) => (...args: unknown[]) => {
+    const line = args.map(String).join(' ');
+    into.push(line);
+    output.push(line);
+  };
+  console.warn = keep(warnings);
+  console.log = keep([]);
+  console.error = keep([]);
 });
 
 afterEach(() => {
@@ -67,6 +76,8 @@ test('a lead not in Monday logs one line with the postcode and not the email', a
   assert.equal(lines.length, 1);
   assert.ok(lines[0].includes(POSTCODE), lines[0]);
   assert.ok(!lines[0].includes(EMAIL), 'the email must not be logged');
+  assert.ok(lines[0].includes('on Management Leads'), lines[0]);
+  assert.ok(!emailLogged(), 'no log line may hold the email');
   assert.equal(outcome.mondayItemId, null);
   assert.equal(outcome.mondaySynced, false);
   assert.equal(outcome.pdfUploaded, false);
@@ -98,4 +109,5 @@ test('a known lead does not log the line', async () => {
 
   assert.equal(outcome.mondayItemId, '123');
   assert.equal(noLeadLines().length, 0);
+  assert.ok(!emailLogged(), 'no log line may hold the email');
 });

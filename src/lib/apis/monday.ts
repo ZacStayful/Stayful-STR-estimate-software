@@ -444,7 +444,7 @@ export async function incrementAnalyserUseCount(email: string): Promise<void> {
 
   const itemId = await findItemIdByEmail(cfg.token, cfg.boardId, cfg.emailColumnId, email);
   if (!itemId) {
-    console.log(`[Monday] Analyser-use increment skipped — no lead for: ${email}`);
+    console.log(`[Monday] Analyser-use increment skipped — no lead matched the email`);
     return;
   }
   const current = await readUseCount(cfg, itemId);
@@ -452,9 +452,9 @@ export async function incrementAnalyserUseCount(email: string): Promise<void> {
     [analyserUsesColumnId()]: String(current + 1),
   });
   if (ok) {
-    console.log(`[Monday] Analyser uses for ${email} → ${current + 1}`);
+    console.log(`[Monday] Analyser uses for item ${itemId} → ${current + 1}`);
   } else {
-    console.error(`[Monday] Analyser-use increment failed for ${email} (item ${itemId})`);
+    console.error(`[Monday] Analyser-use increment failed (item ${itemId})`);
   }
 }
 
@@ -497,7 +497,7 @@ export async function syncAnalysisToMonday(
       postcode: property?.postcode,
     });
   if (!itemId) {
-    console.log(`[Monday] No lead found (sync skipped): email=${email} postcode=${property?.postcode ?? "?"}`);
+    console.log(`[Monday] No lead found (sync skipped): postcode=${property?.postcode ?? "?"}`);
     return;
   }
 
@@ -535,9 +535,9 @@ export async function syncAnalysisToMonday(
 
   const ok = await updateItemColumns(cfg.token, cfg.boardId, itemId, columnValues);
   if (ok) {
-    console.log(`[Monday] Synced analysis for ${email} → item ${itemId}`);
+    console.log(`[Monday] Synced analysis → item ${itemId}`);
   } else {
-    console.error(`[Monday] Column update failed for ${email} (item ${itemId})`);
+    console.error(`[Monday] Column update failed (item ${itemId})`);
   }
 }
 
@@ -642,7 +642,7 @@ export async function uploadPdfToMonday(
       postcode: property?.postcode,
     });
   if (!itemId) {
-    console.log(`[Monday] PDF upload skipped — no lead for: email=${email} postcode=${property?.postcode ?? "?"}`);
+    console.log(`[Monday] PDF upload skipped — no lead for: postcode=${property?.postcode ?? "?"}`);
     return;
   }
 
@@ -677,7 +677,7 @@ export async function uploadPdfToMonday(
       console.error(`[Monday] PDF upload HTTP ${res.status}: ${await res.text()}`);
       return;
     }
-    console.log(`[Monday] PDF uploaded for ${email} → item ${itemId}`);
+    console.log(`[Monday] PDF uploaded → item ${itemId}`);
   } catch (err) {
     console.error("[Monday] PDF upload error:", err);
   }
@@ -706,7 +706,7 @@ export async function syncTimeOnSiteToMonday(
 
   const itemId = await findItemIdByEmail(cfg.token, cfg.boardId, cfg.emailColumnId, email);
   if (!itemId) {
-    console.log(`[Monday] Time sync skipped — no lead for: ${email}`);
+    console.log(`[Monday] Time sync skipped — no lead matched the email`);
     return;
   }
 
@@ -725,8 +725,8 @@ export async function syncTimeOnSiteToMonday(
     { boardId: cfg.boardId, itemId, values: valuesJson },
   );
   if (data?.change_multiple_column_values?.id) {
-    console.log(`[Monday] Time synced for ${email}: ${formatted}`);
+    console.log(`[Monday] Time synced for item ${itemId}: ${formatted}`);
   } else {
-    console.error(`[Monday] Time update failed for ${email}`);
+    console.error(`[Monday] Time update failed (item ${itemId})`);
   }
 }
