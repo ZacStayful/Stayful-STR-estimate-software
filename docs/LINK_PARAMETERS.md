@@ -77,9 +77,10 @@ to end without touching anything real:
 - no Meta pixel or Google Analytics conversion event fires;
 - the form shows "Test email: this run will not be saved to Monday."
 
-To make **every** run a test run on a deployment (for example Vercel previews), set `CALCULATOR_TEST_MODE=1` on
-that deployment's environment. That stops the Monday and Supabase writes; the browser does not know about it, so
-use a test email as well if you also want the pixel to stay quiet.
+To make **every** run of the form a test run on a deployment (for example Vercel previews), set
+`CALCULATOR_TEST_MODE=1` on that deployment's environment. That stops the Monday and Supabase writes; the browser
+does not know about it, so use a test email as well if you also want the pixel to stay quiet. The admin bulk upload
+is not affected (it has its own `MONDAY_DRY_RUN`).
 
 When Resend sign-ups are added to the calculator (build plan batch 3), they must skip test emails too
 (`isTestLead` in `src/lib/linkParams.ts`).
